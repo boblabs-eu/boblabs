@@ -1,0 +1,128 @@
+{
+  "9": {
+    "inputs": {
+      "filename_prefix": "Flux.1_Dev",
+      "images": [
+        "56:53",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "56:47": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "56:48": {
+    "inputs": {
+      "unet_name": "flux1-dev.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "56:49": {
+    "inputs": {
+      "clip_name1": "clip_l.safetensors",
+      "clip_name2": "t5xxl_fp16.safetensors",
+      "type": "flux",
+      "device": "default"
+    },
+    "class_type": "DualCLIPLoader",
+    "_meta": {
+      "title": "DualCLIPLoader"
+    }
+  },
+  "56:50": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "56:51": {
+    "inputs": {
+      "text": "Beautiful photography of a gorgeous-haired female artist, natural and authentic, her hair styled in a messy casual bun, smiling joyfully and looking directly at the camera, cinematic lighting, soft natural daylight, shallow depth of field, warm gentle tones, film grain, high detail, 8K, realistic portrait\n",
+      "clip": [
+        "56:49",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "56:52": {
+    "inputs": {
+      "seed": 53943644181156,
+      "steps": 20,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "56:48",
+        0
+      ],
+      "positive": [
+        "56:51",
+        0
+      ],
+      "negative": [
+        "56:54",
+        0
+      ],
+      "latent_image": [
+        "56:50",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "56:53": {
+    "inputs": {
+      "samples": [
+        "56:52",
+        0
+      ],
+      "vae": [
+        "56:47",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "56:54": {
+    "inputs": {
+      "conditioning": [
+        "56:51",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "ConditioningZeroOut"
+    }
+  }
+}

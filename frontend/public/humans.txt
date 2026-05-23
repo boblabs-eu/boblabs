@@ -1,0 +1,14 @@
+/* TEAM */
+Founder & Engineer: Bob Labs
+Contact: support [at] boblabs.eu
+Site: https://boblabs.eu
+Location: Europe
+
+/* SITE */
+Last update: 2026-04
+Standards: HTML5, CSS3, ES2020+
+Components: React, FastAPI, Postgres, Redis, ComfyUI, custom GPU services
+Software: Docker, Nginx, Linux
+
+/* THANKS */
+The open-source ecosystem.

@@ -1,0 +1,7 @@
+# Ignore model weights — only keep directory structure
+*.pth
+*.index
+*.pt
+*.bin
+*.onnx
+!.gitkeep

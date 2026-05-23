@@ -1,0 +1,12 @@
+Bob Manager
+Copyright 2026 Bob Labs (boblabs.eu)
+
+This product includes software developed by Bob Labs and contributors,
+released under the Apache License, Version 2.0.
+See LICENSE for the full license text.
+
+Third-party components retain their own licenses; see individual
+subdirectories (notably gpu-services/, sandbox/, frontend/, demo-video/)
+and the docs in CITATIONS.md for attribution of upstream models, datasets,
+and tools (e.g. Riffusion, LightRAG, Qdrant, Ollama, vLLM, ComfyUI,
+Remotion, Suno Bark, Coqui XTTS, MusicGen, RVC, LTX-Video, Wan-Video).

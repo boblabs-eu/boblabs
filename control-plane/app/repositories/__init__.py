@@ -1,0 +1,1 @@
+"""Bob Manager — Repositories package."""

@@ -1,0 +1,38 @@
+# https://www.robotstxt.org/robotstxt.html
+# Bob Manager — internal lab/admin backoffice.
+# We allow indexing the public landing/login and a few public docs only.
+
+User-agent: *
+Allow: /$
+Allow: /login
+Allow: /register
+Allow: /docs-md/
+Allow: /assets/
+Disallow: /admin
+Disallow: /api/
+Disallow: /ws/
+Disallow: /labs
+Disallow: /agents
+Disallow: /dispatcher
+Disallow: /projects
+Disallow: /generations
+Disallow: /resources
+Disallow: /settings
+
+# AI scraper opt-in: we welcome respectful indexing by LLM crawlers.
+User-agent: GPTBot
+Allow: /$
+Allow: /docs-md/
+Disallow: /admin
+
+User-agent: ClaudeBot
+Allow: /$
+Allow: /docs-md/
+Disallow: /admin
+
+User-agent: PerplexityBot
+Allow: /$
+Allow: /docs-md/
+Disallow: /admin
+
+Sitemap: https://lab.boblabs.eu/sitemap.xml

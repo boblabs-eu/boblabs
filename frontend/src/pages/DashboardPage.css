@@ -1,0 +1,404 @@
+/**
+ * Dashboard restyle — built on the global design tokens (:root in index.css),
+ * matched to the polish of the .orch-* (Load Balancer) and .lab-* (Labs) views.
+ */
+
+/* ── Sections ── */
+.dash-section {
+  margin-bottom: 1.75rem;
+}
+
+.dash-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.dash-section-header::before {
+  content: '';
+  width: 3px;
+  height: 15px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  flex-shrink: 0;
+}
+
+.dash-section-header .dash-section-spacer {
+  flex: 1;
+}
+
+/* ── Grids ── */
+.dash-grid {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.dash-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.dash-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.dash-grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+@media (max-width: 1100px) {
+  .dash-grid-3,
+  .dash-grid-4 { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 680px) {
+  .dash-grid-2,
+  .dash-grid-3,
+  .dash-grid-4 { grid-template-columns: 1fr; }
+}
+
+/* ── Cards ── */
+.dash-card {
+  background: linear-gradient(160deg, var(--surface-1), var(--bg-card));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.1rem;
+  transition: border-color var(--transition), transform var(--transition),
+    box-shadow var(--transition);
+}
+
+.dash-card.dash-clickable {
+  cursor: pointer;
+}
+
+.dash-card.dash-clickable:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* ── Simple stat tile (label + big value) ── */
+.dash-stat-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.dash-stat-value {
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1.1;
+  margin-top: 0.25rem;
+}
+
+.dash-stat-sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+/* ── Metric card with a row of sub-stats ── */
+.dash-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 0.85rem;
+}
+
+.dash-card-title .dash-card-title-spacer {
+  flex: 1;
+}
+
+.dash-stat-row {
+  display: flex;
+  gap: 1.4rem;
+}
+
+.dash-substat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.dash-substat-value {
+  font-size: 1.65rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.dash-substat-label {
+  font-size: 0.63rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+/* Value color accents */
+.is-accent { color: var(--accent); }
+.is-success { color: var(--success); }
+.is-warning { color: var(--warning); }
+.is-error { color: var(--error); }
+.is-info { color: var(--secondary); }
+.is-muted { color: var(--text-muted); }
+
+/* ── Period toggle (segmented control) ── */
+.dash-period-toggle {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.dash-period-toggle button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.2rem 0.55rem;
+  border-radius: calc(var(--radius-sm) - 2px);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: background var(--transition), color var(--transition);
+}
+
+.dash-period-toggle button:hover {
+  color: var(--text-secondary);
+}
+
+.dash-period-toggle button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── Status pills (success / pending / failed) ── */
+.dash-status-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dash-status-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.32rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+}
+
+.dash-status-pill .dash-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dash-status-pill.is-success {
+  background: var(--success-soft);
+  color: var(--success);
+  border-color: rgba(52, 211, 153, 0.25);
+}
+.dash-status-pill.is-success .dash-dot { background: var(--success); }
+
+.dash-status-pill.is-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border-color: rgba(251, 191, 36, 0.25);
+}
+.dash-status-pill.is-warning .dash-dot { background: var(--warning); }
+
+.dash-status-pill.is-error {
+  background: var(--error-soft);
+  color: var(--error);
+  border-color: rgba(248, 113, 113, 0.25);
+}
+.dash-status-pill.is-error .dash-dot { background: var(--error); }
+
+/* ── List rows (recent projects / resources) ── */
+.dash-list-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  margin-bottom: 0.3rem;
+  cursor: pointer;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  transition: border-color var(--transition);
+}
+
+.dash-list-row:last-child { margin-bottom: 0; }
+
+.dash-list-row:hover {
+  border-color: var(--accent);
+}
+
+.dash-list-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.dash-list-row-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.dash-list-row-date {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.dash-tag {
+  font-size: 0.68rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 9999px;
+}
+
+.dash-empty {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Server cards ── */
+.dash-server-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.dash-server-host {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 0.15rem 0 0.8rem;
+}
+
+.dash-temp-row {
+  display: flex;
+  gap: 1.1rem;
+  margin-bottom: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.dash-temp {
+  text-align: center;
+}
+
+.dash-temp-label {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dash-temp-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.dash-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.dash-counts-row {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.8rem;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.dash-counts-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* ── Sub-card headers ── */
+.dash-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+/* ── Crypto row ── */
+.dash-crypto-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.dash-crypto {
+  flex: 1;
+  min-width: 80px;
+  text-align: center;
+}
+
+.dash-crypto-symbol {
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.dash-crypto-price {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.dash-crypto-change {
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.dash-portfolio {
+  border-top: 1px solid var(--border);
+  margin-top: 0.7rem;
+  padding-top: 0.55rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ── News rows ── */
+.dash-news-row {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.dash-news-row:last-child {
+  border-bottom: none;
+}
+
+.dash-news-title {
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.dash-news-source {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+/* ── Empty state ── */
+.dash-empty-card {
+  text-align: center;
+  padding: 3rem;
+}

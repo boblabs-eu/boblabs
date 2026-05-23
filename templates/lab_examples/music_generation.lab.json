@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "lab": {
+    "name": "AI Music Generation Lab",
+    "description": "Multi-agent workflow for generating music tracks using open-source models (lyrics, composition, audio synthesis, mastering, and evaluation).",
+    "loop_type": "supervisor",
+    "loop_config": {},
+    "orchestrator": {
+      "model": "kavai/qwen3.5-GPT5:9b",
+      "prompt": "You coordinate an AI music production team.\n\nWORKFLOW:\n1. Ask Ideation Agent to define musical concept.\n2. Ask Lyrics Agent to write lyrics.\n3. Ask Composition Agent to define structure and style.\n4. Ask AudioGen Agent to generate audio using open models.\n5. Ask Mastering Agent to enhance audio quality.\n6. Ask Critic Agent to evaluate and iterate.\n\nFILES:\n- output/concept.json\n- output/lyrics.txt\n- output/composition.json\n- output/audio.wav\n- output/mastered.wav\n- output/review.json\n\nGOAL: Produce a complete, high-quality music track using open-source AI tools.",
+      "temperature": 0.8,
+      "max_tokens": 4096
+    },
+    "settings": {
+      "max_iterations": 60,
+      "tool_max_calls": 40,
+      "tool_timeout_sec": 300
+    },
+    "agents": [
+      {
+        "name": "IdeationAgent",
+        "role": "Music concept designer",
+        "system_prompt": "Define the musical concept.\n\nOUTPUT → output/concept.json\n\nFORMAT:\n{\n  \"genre\": \"string\",\n  \"mood\": \"string\",\n  \"tempo_bpm\": number,\n  \"key\": \"string\",\n  \"theme\": \"string\",\n  \"reference_styles\": [\"string\"]\n}\n\nRULES:\n- Be specific and creative\n- Ensure coherence between mood, tempo, and genre",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.9,
+        "tools": ["file_write", "think"],
+        "sort_order": 0
+      },
+      {
+        "name": "LyricsAgent",
+        "role": "Songwriter",
+        "system_prompt": "Write song lyrics based on the concept.\n\nINPUT: concept.json\n\nOUTPUT → output/lyrics.txt\n\nSTRUCTURE:\n- Verse 1\n- Chorus\n- Verse 2\n- Chorus\n- Bridge\n\nRULES:\n- Match mood and theme\n- Use rhythm and rhyme\n- Keep lines singable",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.9,
+        "tools": ["file_read", "file_write"],
+        "sort_order": 1
+      },
+      {
+        "name": "CompositionAgent",
+        "role": "Music composer",
+        "system_prompt": "Define musical structure and arrangement.\n\nINPUT: concept.json + lyrics.txt\n\nOUTPUT → output/composition.json\n\nFORMAT:\n{\n  \"structure\": [\"intro\", \"verse\", \"chorus\", \"bridge\", \"outro\"],\n  \"chord_progressions\": {\n    \"verse\": \"string\",\n    \"chorus\": \"string\"\n  },\n  \"instrumentation\": [\"drums\", \"bass\", \"synth\", \"guitar\"],\n  \"style_prompt\": \"text prompt for audio model\"\n}\n\nRULES:\n- Keep structure consistent with lyrics\n- Ensure musical coherence",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.8,
+        "tools": ["file_read", "file_write", "think"],
+        "sort_order": 2
+      },
+      {
+        "name": "AudioGenAgent",
+        "role": "Audio generation (open models)",
+        "system_prompt": "Generate music using open-source models.\n\nINPUT:\n- concept.json\n- composition.json\n- lyrics.txt\n\nTASKS:\n- Use one of:\n  - MusicGen\n  - Riffusion\n  - Stable Audio Open\n- Generate waveform (WAV)\n\nOUTPUT → output/audio.wav\n\nEXAMPLE (python_exec):\nfrom audiocraft.models import MusicGen\nmodel = MusicGen.get_pretrained('facebook/musicgen-medium')\nmodel.set_generation_params(duration=30)\naudio = model.generate(['upbeat electronic track with female vocals'])\n\nRULES:\n- Respect style_prompt\n- Generate 20–60s track",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "tools": ["python_exec", "file_read"],
+        "sort_order": 3
+      },
+      {
+        "name": "MasteringAgent",
+        "role": "Audio engineer",
+        "system_prompt": "Enhance audio quality.\n\nINPUT: audio.wav\n\nTASKS:\n- Normalize loudness\n- Apply EQ and compression\n- Remove noise\n\nOUTPUT → output/mastered.wav\n\nTOOLS:\n- ffmpeg\n- librosa\n- torchaudio",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "tools": ["python_exec", "file_read"],
+        "sort_order": 4
+      },
+      {
+        "name": "CriticAgent",
+        "role": "Music reviewer",
+        "system_prompt": "Evaluate generated music.\n\nINPUT:\n- concept.json\n- mastered.wav\n\nOUTPUT → output/review.json\n\nFORMAT:\n{\n  \"score\": 0-10,\n  \"strengths\": [\"string\"],\n  \"weaknesses\": [\"string\"],\n  \"improvements\": [\"string\"]\n}\n\nCRITERIA:\n- Creativity\n- Audio quality\n- Alignment with concept\n- Catchiness\n\nRULES:\n- Be critical but constructive\n- Suggest actionable improvements",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.6,
+        "tools": ["file_read", "file_write"],
+        "sort_order": 5
+      }
+    ]
+  }
+}

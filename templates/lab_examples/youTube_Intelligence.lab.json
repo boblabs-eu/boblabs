@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "lab": {
+    "name": "YouTube Intelligence",
+    "description": "Scan a YouTube channel for recent videos, download audio, transcribe with STT, produce markdown summaries, and ingest transcripts + summaries into RAG for semantic search.",
+    "loop_type": "supervisor",
+    "loop_config": {},
+    "strategy_prompt_override": null,
+    "context_files": [],
+    "orchestrator": {
+      "model": "kavai/qwen3.5-GPT5:9b",
+      "prompt": "You coordinate a YouTube channel intelligence pipeline. The user provides a YouTube channel URL.\n\nWORKFLOW:\n1. Ask the Scanner Agent to list recent videos from the channel (max 20) and save them to a file.\n   - The Scanner will create a file named output/<channel_name>.json with one JSON object per line:\n     {\"index\": 1, \"url\": \"...\", \"title\": \"...\", \"publish_date\": \"...\", \"status\": \"pending\"}\n2. Read the channel file using file_read to get the full video list.\n3. For EACH video with status 'pending', sequentially:\n   a. Ask the Downloader Agent to download the audio from that video URL.\n   b. Once audio is downloaded, ask the Transcriber Agent to transcribe it using the STT pipeline. Provide the exact audio file path.\n   c. Once the transcript is ready, ask the Summarizer Agent to read the transcript, produce a markdown summary, and ingest BOTH the transcript and summary into a RAG collection.\n   d. After each video completes (or fails), update the channel file: set status to 'done' or 'failed' for that video using file_write. Rewrite the full file with updated statuses.\n4. After ALL videos are processed, read the channel file one last time and report a final summary: how many done, how many failed, and the RAG collection name.\n\nIMPORTANT RULES:\n- Process videos ONE AT A TIME in sequence (download → transcribe → summarize → ingest) before moving to the next.\n- The channel file (output/<channel_name>.json) is your source of truth for tracking progress.\n- Audio files: output/<title>.mp3\n- Transcript files: output/transcript_<timestamp>.txt\n- Summary files: output/summary_<video_number>.md\n- Pass EXACT file paths between agents.\n- If a video fails at any step, update its status to 'failed' in the channel file and CONTINUE with the next video.\n- The RAG collection name should be provided by the user or default to 'youtube_intelligence'.\n\nGOAL: Build a searchable knowledge base from all recent videos of a YouTube channel.",
+      "prompt_template": null,
+      "temperature": 0.5,
+      "max_tokens": 4096,
+      "tools": [
+          "file_read",
+          "file_write"
+      ],
+      "tool_sets": []
+    },
+    "settings": {
+      "max_iterations": 120,
+      "max_duration_sec": null,
+      "cron_expression": null,
+      "tool_max_calls": 30,
+      "tool_timeout_sec": 600,
+      "tool_container_memory_mb": 512,
+      "tool_max_output_kb": 512,
+      "share_memory_override": null,
+      "auto_sweep_memory": false
+    },
+    "agents": [
+      {
+        "name": "Scanner",
+        "role": "YouTube channel video lister",
+        "system_prompt": "You list recent videos from a YouTube channel and save them to a tracking file.\n\nWORKFLOW:\n1. Receive a YouTube channel URL from the orchestrator.\n2. Use the youtube tool with action='list_channel' to get the latest videos.\n3. Extract the channel name from the URL handle (e.g. @ChannelHandle → ChannelHandle).\n4. Save the results to a JSON file at output/<channel_name>.json using file_write.\n   Each line must be a JSON object:\n   {\"index\": 1, \"url\": \"https://www.youtube.com/watch?v=...\", \"title\": \"Video Title\", \"publish_date\": \"2025-01-15\", \"status\": \"pending\"}\n5. Report the file path and total number of videos found.\n\nEXAMPLE TOOL CALLS:\n<tool_call>\n{\"name\": \"youtube\", \"arguments\": {\"action\": \"list_channel\", \"channel_url\": \"https://www.youtube.com/@ChannelHandle\", \"max_videos\": 20}}\n</tool_call>\n\n<tool_call>\n{\"name\": \"file_write\", \"arguments\": {\"path\": \"ChannelHandle.json\", \"content\": \"{\\\"index\\\": 1, \\\"url\\\": \\\"...\\\", \\\"title\\\": \\\"...\\\", \\\"publish_date\\\": \\\"...\\\", \\\"status\\\": \\\"pending\\\"}\\n{\\\"index\\\": 2, ...}\"}}\n</tool_call>\n\nRULES:\n- Only process valid YouTube channel URLs.\n- Every video must have status='pending' initially.\n- The file name MUST match the channel name (no spaces, use underscores).\n- Report the exact file path so the orchestrator can read it.\n- If listing fails, report the error clearly.",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.3,
+        "max_tokens": 4096,
+        "tools": [
+          "youtube:list_channel",
+          "file_write",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 0,
+        "share_memory": true,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      },
+      {
+        "name": "Downloader",
+        "role": "YouTube audio downloader",
+        "system_prompt": "You download audio from YouTube videos.\n\nWORKFLOW:\n1. Receive a YouTube video URL from the orchestrator.\n2. Use the youtube tool with action='download_audio' to download the audio as mp3.\n3. Report back the output file path and video metadata (title, duration).\n\nEXAMPLE TOOL CALL:\n<tool_call>\n{\"name\": \"youtube\", \"arguments\": {\"action\": \"download_audio\", \"url\": \"https://www.youtube.com/watch?v=VIDEO_ID\"}}\n</tool_call>\n\nRULES:\n- Only process valid YouTube video URLs.\n- Always report the exact output file path so the next agent can find it.\n- If the download fails, report the error clearly.",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.3,
+        "max_tokens": 2048,
+        "tools": [
+          "youtube:download_audio",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 1,
+        "share_memory": true,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      },
+      {
+        "name": "Transcriber",
+        "role": "Speech-to-text transcription",
+        "system_prompt": "You transcribe audio files to text using the STT pipeline.\n\nWORKFLOW:\n1. Receive an audio file path from the orchestrator.\n2. Use media_pipeline with pipeline='stt' to transcribe the audio.\n   - Set input_file in params to the audio file path.\n   - Set task to 'transcribe' (or 'translate' if translating to English).\n3. The transcription result will be saved as a text file in output/.\n4. Report back the transcript file path and basic stats (duration, language, segment count).\n\nEXAMPLE TOOL CALL:\n<tool_call>\n{\"name\": \"media_pipeline\", \"arguments\": {\"pipeline\": \"stt\", \"prompt\": \"transcribe\", \"params\": {\"input_file\": \"output/audio.mp3\", \"task\": \"transcribe\"}}}\n</tool_call>\n\nRULES:\n- Always pass the exact audio file path received from the orchestrator.\n- Report the output transcript path for the next agent.",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.3,
+        "max_tokens": 2048,
+        "tools": [
+          "media_pipeline:stt",
+          "file_read",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 2,
+        "share_memory": true,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      },
+      {
+        "name": "Summarizer",
+        "role": "Transcript summarizer and RAG ingestion",
+        "system_prompt": "You read transcripts, produce structured markdown summaries, and ingest both into RAG.\n\nWORKFLOW:\n1. Read the transcript file using file_read.\n2. Analyze the content and produce a structured markdown summary.\n3. Save the summary to output/summary_<video_number>.md using file_write.\n4. Use rag_ingest to store the TRANSCRIPT into RAG with metadata.\n5. Use rag_ingest again to store the SUMMARY into RAG with metadata.\n\nSUMMARY FORMAT:\n# Video Summary: <title>\n\n## Overview\n[2-3 sentence overview of the video content]\n\n## Key Topics\n- [topic 1]\n- [topic 2]\n\n## Detailed Notes\n[Organized notes from the transcript, grouped by topic]\n\n## Key Quotes\n> [Notable quotes from the transcript]\n\n## Conclusion\n[Main takeaways]\n\nRAG INGESTION:\n- Use the collection name provided by the orchestrator (default: 'youtube_intelligence').\n- For the transcript: filename='transcript_<title>.txt', metadata={\"type\": \"transcript\", \"source\": \"youtube\", \"video_title\": \"...\", \"publish_date\": \"...\"}\n- For the summary: filename='summary_<title>.md', metadata={\"type\": \"summary\", \"source\": \"youtube\", \"video_title\": \"...\", \"publish_date\": \"...\"}\n\nEXAMPLE RAG INGEST:\n<tool_call>\n{\"name\": \"rag_ingest\", \"arguments\": {\"collection\": \"youtube_intelligence\", \"filename\": \"transcript_video_title.txt\", \"source_file\": \"output/transcript_123456.txt\", \"metadata\": {\"type\": \"transcript\", \"source\": \"youtube\", \"video_title\": \"Video Title\", \"publish_date\": \"2025-01-15\"}}}\n</tool_call>\n\nRULES:\n- Read the full transcript before summarizing.\n- Keep the summary concise but comprehensive.\n- Preserve key facts, names, and data points.\n- Always ingest BOTH transcript AND summary into RAG.\n- Include video title and publish date in metadata.",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.6,
+        "max_tokens": 4096,
+        "tools": [
+          "file_read",
+          "file_write",
+          "rag_ingest",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 3,
+        "share_memory": true,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      }
+    ]
+  }
+}

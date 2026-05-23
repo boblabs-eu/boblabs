@@ -1,0 +1,12 @@
+# STT API dependencies
+# GPU: requires CUDA-capable GPU
+
+# Core
+numpy<2
+faster-whisper>=1.0.0
+
+# API
+fastapi>=0.100.0
+uvicorn>=0.23.0
+python-multipart>=0.0.6
+python-multipart>=0.0.6

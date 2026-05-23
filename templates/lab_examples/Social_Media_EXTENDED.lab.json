@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "lab": {
+    "name": "Advanced Social Media Automation Lab",
+    "description": "End-to-end multi-agent system for generating, optimizing, publishing, and learning from social media content.",
+    "loop_type": "supervisor",
+    "loop_config": {},
+    "orchestrator": {
+      "model": "kavai/qwen3.5-GPT5:9b",
+      "prompt": "You coordinate a full social media automation team.\n\nWORKFLOW:\n1. Ask the Writer to generate base content.\n2. Ask Platform Agents (LinkedIn, X, Facebook) to adapt content.\n3. Ask ABTester to create 2 variants per platform.\n4. Ask Reviewer to approve or request improvements.\n5. Ask Publisher to publish posts via APIs.\n6. Ask Analytics Agent to collect performance data.\n7. Use insights to refine future posts.\n\nFILES:\n- output/base_post.json\n- output/platform_posts.json\n- output/ab_tests.json\n- output/final_posts.json\n- output/analytics.json\n\nGOAL: Maximize engagement and continuously improve content performance.",
+      "temperature": 0.7,
+      "max_tokens": 4096,
+      "tools": []
+    },
+    "settings": {
+      "max_iterations": 100,
+      "tool_max_calls": 30,
+      "tool_timeout_sec": 180
+    },
+    "agents": [
+      {
+        "name": "Writer",
+        "role": "Base content generator",
+        "system_prompt": "Generate a core social media message.\n\nOUTPUT → output/base_post.json\n{\n  \"topic\": \"string\",\n  \"core_message\": \"string\",\n  \"target_audience\": \"string\",\n  \"tone\": \"string\"\n}",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.8,
+        "tools": ["file_write", "think"],
+        "sort_order": 0
+      },
+      {
+        "name": "LinkedInAgent",
+        "role": "LinkedIn content specialist",
+        "system_prompt": "Adapt content for LinkedIn (professional, storytelling, value-driven).\n\nINPUT: base_post.json\nOUTPUT → output/platform_posts.json (append linkedin)",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "tools": ["file_read", "file_write"],
+        "sort_order": 1
+      },
+      {
+        "name": "XAgent",
+        "role": "X (Twitter) specialist",
+        "system_prompt": "Adapt content for X (short, punchy, viral hooks, <=280 chars).\n\nINPUT: base_post.json\nOUTPUT → output/platform_posts.json (append x)",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "tools": ["file_read", "file_write"],
+        "sort_order": 2
+      },
+      {
+        "name": "FacebookAgent",
+        "role": "Facebook content specialist",
+        "system_prompt": "Adapt content for Facebook (engaging, conversational, community-driven).\n\nINPUT: base_post.json\nOUTPUT → output/platform_posts.json (append facebook)",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "tools": ["file_read", "file_write"],
+        "sort_order": 3
+      },
+      {
+        "name": "ABTester",
+        "role": "A/B testing generator",
+        "system_prompt": "Create 2 variants (A/B) per platform.\n\nINPUT: platform_posts.json\nOUTPUT → output/ab_tests.json\n\nFORMAT:\n{\n  \"platform\": {\n    \"A\": \"version A\",\n    \"B\": \"version B\"\n  }\n}",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.9,
+        "tools": ["file_read", "file_write"],
+        "sort_order": 4
+      },
+      {
+        "name": "Reviewer",
+        "role": "Quality control",
+        "system_prompt": "Review all variants for clarity, engagement, and brand alignment.\n\nINPUT: ab_tests.json\nOUTPUT → output/final_posts.json\n\n- Approve best variant OR improve\n- Add \"selected_variant\" field",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "tools": ["file_read", "file_write", "think"],
+        "sort_order": 5
+      },
+      {
+        "name": "Publisher",
+        "role": "API publishing agent",
+        "system_prompt": "Publish posts via APIs.\n\nINPUT: final_posts.json\n\nTASKS:\n- Post using API calls:\n  - X API\n  - LinkedIn API\n  - Facebook Graph API\n- Return post IDs and status\n\nOUTPUT → output/publishing_results.json\n\nFORMAT:\n{\n  \"platform\": {\n    \"post_id\": \"string\",\n    \"status\": \"posted\"\n  }\n}",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "tools": ["file_read", "http_request"],
+        "sort_order": 6
+      },
+      {
+        "name": "Analytics",
+        "role": "Performance tracking agent",
+        "system_prompt": "Collect and analyze engagement metrics.\n\nINPUT: publishing_results.json\n\nTASKS:\n- Fetch metrics via APIs (likes, shares, comments, impressions)\n- Compare A/B variants\n- Identify best-performing patterns\n\nOUTPUT → output/analytics.json\n\nFORMAT:\n{\n  \"platform\": {\n    \"metrics\": {\n      \"likes\": 0,\n      \"comments\": 0,\n      \"shares\": 0\n    },\n    \"insights\": \"string\"\n  }\n}",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "tools": ["file_read", "http_request", "file_write"],
+        "sort_order": 7
+      },
+      {
+        "name": "LearningAgent",
+        "role": "Continuous improvement",
+        "system_prompt": "Use analytics to improve future content.\n\nINPUT: analytics.json\n\nTASKS:\n- Extract patterns (tone, length, hashtags)\n- Suggest improvements\n- Store learnings in output/learning_memory.json",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "tools": ["file_read", "file_write", "think"],
+        "sort_order": 8
+      }
+    ]
+  }
+}

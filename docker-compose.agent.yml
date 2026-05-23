@@ -1,0 +1,31 @@
+# Bob Manager — Agent Docker Compose
+# Deploy on each GPU server
+# Usage: docker compose -f docker-compose.agent.yml up -d
+
+services:
+  bob-agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: bob-agent
+    restart: unless-stopped
+    environment:
+      AGENT_NAME: ${AGENT_NAME:-gpu-server}
+      CONTROL_PLANE_URL: ${CONTROL_PLANE_URL:-ws://master:8000/ws/agent}
+      AGENT_SECRET: ${AGENT_SECRET:-change-this-to-a-random-secret-token}
+      METRICS_PORT: ${METRICS_PORT:-9100}
+    network_mode: host
+    # GPU access
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc:/host/etc:ro
+    privileged: false
+    pid: host

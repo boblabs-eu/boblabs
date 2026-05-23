@@ -1,0 +1,19 @@
+# Wan 2.2 Video API — Python dependencies
+# Most deps are installed directly in the Dockerfile for correct CUDA wheel resolution.
+# This file is kept for reference / local development.
+torch
+torchvision
+torchaudio
+diffusers @ git+https://github.com/huggingface/diffusers
+transformers
+accelerate
+sentencepiece
+protobuf
+ftfy
+imageio
+imageio-ffmpeg
+fastapi
+uvicorn[standard]
+pydantic
+python-multipart>=0.0.6
+pillow

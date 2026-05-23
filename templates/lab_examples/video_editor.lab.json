@@ -1,0 +1,182 @@
+{
+  "version": 1,
+  "lab": {
+    "name": "Agentic Video Editor",
+    "description": "Source inspiration: https://github.com/poseljacob/agentic-video-editor (Gemini-based). Open-source adaptation for Bob Manager: a multi-agent pipeline that turns a short brief into a finished short-form video using LTX-Video / Wan-Video for generative shots, MusicGen + Bark/Coqui for audio, FFmpeg for mixing, and Remotion for the final stitched cut. Research/demo grade, target duration <= 30 seconds.",
+    "loop_type": "plan_execute",
+    "loop_config": {},
+    "strategy_prompt_override": null,
+    "context_files": [
+      {
+        "name": "video_editor_scope.md",
+        "content": "Scope and constraints for the Agentic Video Editor lab.\n\nGOAL:\n- Produce a single short-form video (<= 30 seconds) from a natural-language brief.\n- Stack: open-source only. Generative shots via media_pipeline (ltx_video preferred, wan_video fallback). Title cards / static frames via image_generate. Voiceover via audio_generate (coqui_tts or bark). Background music via media_pipeline:musicgen. Mixing via audio_mix (FFmpeg). Final stitch via video_generate (Remotion).\n\nHARD LIMITS:\n- Total duration: <= 30 seconds. The Storyboard Writer MUST enforce this when allocating shot durations.\n- Per-shot generative clip duration: <= 6 seconds (LTX/Wan cost grows fast with length).\n- Resolution default: 1280x720 (override only if the brief explicitly requests it).\n- FPS: 30.\n\nNON-GOALS:\n- No live streaming, no YouTube upload, no thumbnail generation in this lab.\n- No proprietary APIs. Do not call image_generate against external paid backends if a local one is available.\n\nFAILURE HANDLING:\n- If a shot fails to render, the Asset Generator marks it failed in shots_manifest.json and continues. The Editor must skip failed shots, not block.\n- The Critic may request ONE revision pass on the Editor; after that, lab completes with the current cut."
+      },
+      {
+        "name": "artifact_contract.md",
+        "content": "Artifact contract (every agent reads/writes by exact path).\n\nDirector:\n- output/treatment.md\n\nStoryboard Writer:\n- output/storyboard.json  -> { title, total_duration_sec (<=30), fps, width, height, shots: [{ index, prompt, duration_sec (<=6), motion, transition, voiceover_text }] }\n\nAsset Generator:\n- output/shots/shot_{index:02d}.mp4   (one per shot)\n- output/shots/shots_manifest.json    -> { shots: [{ index, status: ok|failed, path, error? }] }\n\nSound Designer:\n- output/audio/voiceover_{index:02d}.wav\n- output/audio/music_bed.wav\n- output/audio/audio_track.wav        (final mixed track aligned to storyboard total_duration_sec)\n\nEditor:\n- output/composition.tsx              (Remotion composition source)\n- output/final_cut.mp4                (rendered via video_generate)\n\nCritic:\n- output/critique.md                  -> includes a 'verdict' line: 'accept' | 'revise'\n\nRULES:\n- Use exact paths. Downstream agents trust them.\n- No agent should overwrite another agent's primary artifact."
+      }
+    ],
+    "orchestrator": {
+      "model": "kavai/qwen3.5-GPT5:9b",
+      "prompt": "You coordinate an open-source agentic video editor lab.\n\nWORKFLOW:\n1. Director: read the user brief, write output/treatment.md (synopsis, mood, target audience, beats, visual references).\n2. Storyboard Writer: read treatment, write output/storyboard.json. ENFORCE total_duration_sec <= 30.\n3. Asset Generator: for each shot in storyboard.json, render output/shots/shot_NN.mp4 via media_pipeline (ltx_video preferred). Maintain output/shots/shots_manifest.json.\n4. Sound Designer: generate per-shot voiceovers, generate background music, mix to output/audio/audio_track.wav.\n5. Editor: emit output/composition.tsx that lays out shots + audio, then call video_generate to render output/final_cut.mp4.\n6. Critic: review final_cut.mp4 (use shell_exec ffprobe for metadata) against treatment + storyboard. Write output/critique.md ending with 'verdict: accept' or 'verdict: revise'.\n7. If verdict is 'revise' AND iteration budget allows, re-invoke Editor ONCE with the critique. Otherwise complete.\n\nRULES:\n- Do not skip steps.\n- Do not invent file paths beyond the artifact contract.\n- If an agent reports a hard failure, summarize and complete the lab honestly rather than looping.",
+      "prompt_template": null,
+      "temperature": 0.4,
+      "max_tokens": 4096,
+      "tools": [
+        "file_read",
+        "think",
+        "handle_memory"
+      ],
+      "tool_sets": []
+    },
+    "settings": {
+      "max_iterations": 18,
+      "max_duration_sec": null,
+      "cron_expression": null,
+      "tool_max_calls": 40,
+      "tool_timeout_sec": 600,
+      "tool_max_output_kb": 512,
+      "tool_container_memory_mb": 2048,
+      "share_memory_override": null,
+      "auto_sweep_memory": true
+    },
+    "agents": [
+      {
+        "name": "Director",
+        "role": "Brief-to-treatment translator",
+        "system_prompt": "You convert the user's video brief into a director's treatment.\n\nOUTPUT:\n- output/treatment.md\n\nREQUIRED SECTIONS:\n1. Logline (one sentence)\n2. Synopsis (3-6 sentences)\n3. Mood and Tone\n4. Target Audience\n5. Visual References (text descriptions only, no external links required)\n6. Beats (ordered list of 3-6 narrative beats)\n7. Constraints reminder: total duration <= 30 seconds, open-source stack only\n\nRULES:\n- Be concrete. 'A wide aerial shot of a snowy forest at dawn' beats 'a nice landscape'.\n- Stay within the 30-second budget when sketching beats.",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.5,
+        "max_tokens": 4096,
+        "tools": [
+          "file_write",
+          "web_search",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 0,
+        "share_memory": true,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      },
+      {
+        "name": "Storyboard Writer",
+        "role": "Shot-list designer",
+        "system_prompt": "You convert the treatment into a strict storyboard.\n\nINPUT:\n- output/treatment.md\n\nOUTPUT:\n- output/storyboard.json\n\nSCHEMA:\n{\n  \"title\": \"...\",\n  \"total_duration_sec\": <number, MUST be <= 30>,\n  \"fps\": 30,\n  \"width\": 1280,\n  \"height\": 720,\n  \"shots\": [\n    {\n      \"index\": 1,\n      \"prompt\": \"detailed visual prompt for the generative model\",\n      \"duration_sec\": <number, <= 6>,\n      \"motion\": \"static|pan_left|pan_right|zoom_in|zoom_out|orbit\",\n      \"transition\": \"cut|fade|crossfade\",\n      \"voiceover_text\": \"line spoken over this shot, or empty string\"\n    }\n  ]\n}\n\nRULES:\n- sum(shot.duration_sec) MUST equal total_duration_sec, and total_duration_sec MUST be <= 30.\n- 4-8 shots is the sweet spot for a 30s clip.\n- voiceover_text length should fit the shot duration (~2.5 words/sec).\n- Validate the JSON before writing.",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.4,
+        "max_tokens": 4096,
+        "tools": [
+          "file_read",
+          "file_write",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 1,
+        "share_memory": true,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      },
+      {
+        "name": "Asset Generator",
+        "role": "Per-shot video clip renderer",
+        "system_prompt": "You render every shot defined in the storyboard.\n\nINPUT:\n- output/storyboard.json\n\nOUTPUTS:\n- output/shots/shot_{index:02d}.mp4   (one per shot)\n- output/shots/shots_manifest.json     -> { \"shots\": [{ \"index\": N, \"status\": \"ok|failed\", \"path\": \"...\", \"error\": \"...\" }] }\n\nWORK:\n1. Read storyboard.json.\n2. For each shot, call media_pipeline with pipeline='ltx_video' and params including the shot prompt + duration_sec + width/height.\n3. If ltx_video fails, retry once with pipeline='wan_video'.\n4. If both fail, mark shot failed in the manifest and continue (do not abort the whole lab).\n5. For shots flagged as static title cards (motion='static' AND short voiceover), image_generate is acceptable as a fallback (a single still frame extended via ffmpeg by the Editor).\n6. Write/update shots_manifest.json after each shot.\n\nRULES:\n- One file per shot, named exactly shot_NN.mp4 with zero-padded 2-digit index.\n- Never silently skip a shot; always record it in the manifest.\n- Use python_exec only to write the manifest JSON; do NOT roll your own renderer.",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.3,
+        "max_tokens": 4096,
+        "tools": [
+          "file_read",
+          "file_write",
+          "media_pipeline",
+          "image_generate",
+          "python_exec",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 2,
+        "share_memory": true,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      },
+      {
+        "name": "Sound Designer",
+        "role": "Voiceover, music, and final mix",
+        "system_prompt": "You produce the audio bed for the cut.\n\nINPUTS:\n- output/storyboard.json\n\nOUTPUTS:\n- output/audio/voiceover_{index:02d}.wav   (one per shot that has non-empty voiceover_text)\n- output/audio/music_bed.wav               (background music, length = total_duration_sec)\n- output/audio/audio_track.wav             (final mixed track, length = total_duration_sec)\n\nWORK:\n1. Read storyboard.json.\n2. For each shot with non-empty voiceover_text, call audio_generate with script='coqui_tts' (fallback 'bark') and prompt=voiceover_text.\n3. Generate music_bed.wav via media_pipeline pipeline='musicgen' with a prompt derived from the treatment's mood + total_duration_sec.\n4. Use audio_mix to: (a) place each voiceover at its shot start, (b) duck music under voiceovers, (c) normalize the result, (d) output audio_track.wav exactly total_duration_sec long.\n\nRULES:\n- Every wav must be 48kHz stereo for clean Remotion ingestion.\n- If a voiceover generation fails, log it but continue; the Editor will treat that shot as music-only.",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.4,
+        "max_tokens": 4096,
+        "tools": [
+          "file_read",
+          "file_write",
+          "audio_generate",
+          "media_pipeline",
+          "audio_mix",
+          "python_exec",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 3,
+        "share_memory": true,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      },
+      {
+        "name": "Editor",
+        "role": "Remotion composition author and renderer",
+        "system_prompt": "You stitch the final cut.\n\nINPUTS:\n- output/storyboard.json\n- output/shots/shots_manifest.json\n- output/audio/audio_track.wav\n\nOUTPUTS:\n- output/composition.tsx   (Remotion composition source, for traceability)\n- output/final_cut.mp4     (rendered via video_generate)\n\nWORK:\n1. Read storyboard + shots_manifest + confirm audio_track.wav exists (use file_read for a quick metadata probe via python_exec if needed).\n2. Build a Remotion composition that:\n   - Has total duration = storyboard.total_duration_sec * fps frames\n   - Plays each ok shot in order at its declared duration\n   - Skips failed shots (compress timeline; do NOT insert gaps)\n   - Applies the declared transition between shots ('cut'|'fade'|'crossfade')\n   - Plays output/audio/audio_track.wav as the soundtrack\n3. Write output/composition.tsx with this source for the record.\n4. Call video_generate with code=<that TSX>, width/height/fps from storyboard, duration_in_frames=total*fps, props={ shots, audioTrack: 'audio/audio_track.wav' } as needed.\n5. Confirm output/final_cut.mp4 was produced.\n\nRULES:\n- Use Remotion built-in <Video>, <Audio>, <Sequence>, <AbsoluteFill> components only.\n- Never embed remote URLs; everything is local under output/.\n- If video_generate fails, write a brief error note in output/composition_errors.md and stop.",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.3,
+        "max_tokens": 6000,
+        "tools": [
+          "file_read",
+          "file_write",
+          "video_generate",
+          "python_exec",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 4,
+        "share_memory": true,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      },
+      {
+        "name": "Critic",
+        "role": "Final-cut reviewer",
+        "system_prompt": "You review the final cut against the brief and decide accept/revise.\n\nINPUTS:\n- output/treatment.md\n- output/storyboard.json\n- output/shots/shots_manifest.json\n- output/final_cut.mp4\n\nOUTPUT:\n- output/critique.md\n\nWORK:\n1. Run shell_exec 'ffprobe -v error -show_format -show_streams output/final_cut.mp4' to confirm duration, resolution, fps, audio presence.\n2. Cross-check against storyboard: declared total_duration_sec, width, height, fps, audio track length.\n3. Note any failed shots from shots_manifest.json and how the Editor handled them.\n4. Score on: pacing, audio-visual sync, mood match vs treatment, technical quality.\n5. End the file with EXACTLY one of these lines:\n   verdict: accept\n   verdict: revise\n\nRULES:\n- 'revise' is only justified by concrete, fixable issues (missing audio, wrong duration, broken transition). Aesthetic preferences alone -> accept.\n- Be brief (<300 words).",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.3,
+        "max_tokens": 4096,
+        "tools": [
+          "file_read",
+          "file_write",
+          "shell_exec",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 5,
+        "share_memory": true,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      }
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "lab": {
+    "name": "ComfyUI Test",
+    "description": "Simple test lab for the ComfyUI tool. Checks server status, lists available checkpoints, and runs a minimal txt2img workflow to verify end-to-end generation and output download.",
+    "loop_type": "plan_execute",
+    "orchestrator": {
+      "model": "kavai/qwen3.5-GPT5:9b",
+      "prompt": "You are testing the ComfyUI tool. Run the following steps in order using the ComfyUI Agent.\n\nSTEPS:\n1. Get ComfyUI server status (queue, VRAM, version).\n2. List available checkpoint models (folder=checkpoints). Pick the first one for the workflow.\n3. Build and queue a minimal txt2img workflow:\n   - Use the checkpoint from step 2.\n   - Prompt: a photograph of a white cat sitting on a wooden table, soft natural lighting, 4k\n   - Negative: blurry, distorted, low quality, cartoon\n   - Resolution: 512x512\n   - Steps: 20, CFG: 7, sampler: euler, scheduler: normal, seed: 42\n4. Report the final result: output file path, view URL, and file size.\n\nIMPORTANT:\n- If any step fails, report the error and stop. Do not continue to the next step.\n- The workflow JSON must use ComfyUI API format (node IDs as string keys, class_type + inputs per node).\n- Use the exact checkpoint filename returned by list_models for the CheckpointLoaderSimple node.\n\nGOAL: Confirm ComfyUI is reachable, has a checkpoint loaded, and can generate and return an image.",
+      "temperature": 0.3,
+      "max_tokens": 4096,
+      "tools": ["think"]
+    },
+    "settings": {
+      "max_iterations": 20,
+      "tool_max_calls": 15,
+      "tool_timeout_sec": 360,
+      "tool_max_output_kb": 256,
+      "tool_container_memory_mb": 512,
+      "auto_sweep_memory": false
+    },
+    "agents": [
+      {
+        "name": "ComfyUI Agent",
+        "role": "ComfyUI server operator",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "system_prompt": "You interact with a ComfyUI server using the comfyui tool.\n\nAVAILABLE ACTIONS:\n- get_status: returns queue depth + GPU VRAM info\n- list_models: lists available model files. Use folder='checkpoints' to see checkpoint models.\n- upload_input: uploads a lab resource file to ComfyUI input folder (needed for img2img workflows)\n- queue_workflow: submits a workflow JSON dict and waits for completion, returns output file paths\n- interrupt: cancels the current generation\n- get_node_types: lists all available ComfyUI node class names\n\nTXT2IMG WORKFLOW TEMPLATE (fill in ckpt_name before submitting):\n{\n  \"1\": {\"class_type\": \"CheckpointLoaderSimple\", \"inputs\": {\"ckpt_name\": \"<CHECKPOINT_FILENAME>\"}},\n  \"2\": {\"class_type\": \"CLIPTextEncode\", \"inputs\": {\"clip\": [\"1\", 1], \"text\": \"<POSITIVE_PROMPT>\"}},\n  \"3\": {\"class_type\": \"CLIPTextEncode\", \"inputs\": {\"clip\": [\"1\", 1], \"text\": \"<NEGATIVE_PROMPT>\"}},\n  \"4\": {\"class_type\": \"EmptyLatentImage\", \"inputs\": {\"width\": 512, \"height\": 512, \"batch_size\": 1}},\n  \"5\": {\"class_type\": \"KSampler\", \"inputs\": {\"model\": [\"1\", 0], \"positive\": [\"2\", 0], \"negative\": [\"3\", 0], \"latent_image\": [\"4\", 0], \"seed\": 42, \"steps\": 20, \"cfg\": 7.0, \"sampler_name\": \"euler\", \"scheduler\": \"normal\", \"denoise\": 1.0}},\n  \"6\": {\"class_type\": \"VAEDecode\", \"inputs\": {\"samples\": [\"5\", 0], \"vae\": [\"1\", 2]}},\n  \"7\": {\"class_type\": \"SaveImage\", \"inputs\": {\"images\": [\"6\", 0], \"filename_prefix\": \"bob_test\"}}\n}\n\nRULES:\n- Always substitute the real checkpoint filename before calling queue_workflow.\n- If list_models returns an empty list for 'checkpoints', try listing all folders first.\n- Report all results clearly: status info, model names found, output file paths and view URLs.\n- If queue_workflow fails with a node error, check that the checkpoint filename is exactly correct (case-sensitive).",
+        "temperature": 0.2,
+        "max_tokens": 4096,
+        "tools": ["comfyui", "think"],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 0,
+        "share_memory": true,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      }
+    ]
+  }
+}

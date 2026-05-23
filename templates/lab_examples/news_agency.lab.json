@@ -1,0 +1,198 @@
+{
+  "version": 1,
+  "lab": {
+    "name": "News Agency",
+    "description": "Multi-theme news agency: 4 specialist reporter agents (Tech & AI, Markets, Geopolitics, Science) gather, dedupe, and summarize daily items, then an Editor-in-Chief synthesizes a digest and a Distributor pushes it via mail and twitter. Each reporter ingests cleaned items into a per-theme RAG collection for long-term retrieval. Designed to run on a daily cron.\n\nPRE-REQS (operator):\n  1. Create RAG collections: news_tech_ai, news_markets, news_geopolitics, news_science. Grant this lab can_read+can_write on each.\n  2. Configure SMTP/IMAP for the 'mail' tool (env vars on bob-api).\n  3. Configure Twitter/X credentials for the 'twitter' tool.",
+    "loop_type": "plan_execute",
+    "loop_config": {},
+    "strategy_prompt_override": null,
+    "context_files": [
+      {
+        "name": "editorial_policy.md",
+        "content": "Editorial policy.\n\nABSOLUTE RULES:\n- No fabrication. Every item must cite a source URL.\n- No paywalled-content scraping beyond what is freely visible.\n- Each item summary <= 200 words.\n- Prefer primary sources (announcements, papers, filings) over aggregators.\n- Mark uncertainty explicitly ('reported by', 'unverified', 'preliminary').\n\nSCORING (0-10):\n- Novelty (0-3): genuinely new today vs already covered yesterday\n- Significance (0-4): scale of impact on the theme audience\n- Source quality (0-3): primary > established secondary > blog > social\nKeep only items scored >= 6.\n\nDEDUPE:\n- Two items are duplicates if they describe the same underlying event/announcement, even with different headlines.\n- Keep the highest-scored variant; in the brief, list the others as 'see also' with their URLs."
+      },
+      {
+        "name": "theme_sources.md",
+        "content": "Allowed source domains per theme (starter list, reporters may extend with justification in their items.json).\n\ntech_ai:\n- techcrunch.com, theverge.com, arstechnica.com, news.ycombinator.com, arxiv.org,\n  openai.com, anthropic.com, deepmind.google, huggingface.co/blog, github.com/blog\n\nmarkets:\n- reuters.com, bloomberg.com (free tier), ft.com (free tier), wsj.com (free tier),\n  cnbc.com, marketwatch.com, defillama.com, coingecko.com, dexscreener.com\n\ngeopolitics:\n- reuters.com, apnews.com, bbc.com, aljazeera.com, lemonde.fr, foreignaffairs.com,\n  state.gov, europa.eu/newsroom, un.org/press\n\nscience:\n- nature.com/news, science.org/news, sciencedaily.com, arxiv.org, biorxiv.org,\n  esa.int, nasa.gov/news, who.int/news"
+      }
+    ],
+    "orchestrator": {
+      "model": "kavai/qwen3.5-GPT5:9b",
+      "prompt": "You coordinate a daily multi-theme news agency.\n\nWORKFLOW (run sequentially; each reporter is independent and can be re-run individually if it fails):\n1. Tech & AI Reporter -> output/tech_ai/items.json + brief.md, ingest into news_tech_ai RAG.\n2. Markets Reporter -> output/markets/items.json + brief.md, ingest into news_markets RAG.\n3. Geopolitics Reporter -> output/geopolitics/items.json + brief.md, ingest into news_geopolitics RAG.\n4. Science Reporter -> output/science/items.json + brief.md, ingest into news_science RAG.\n5. Editor-in-Chief -> reads all four briefs, writes output/daily_digest.md and output/daily_digest.html.\n6. Distributor -> sends digest via mail (HTML body), posts top 3 cross-theme headlines via twitter (each <=280 chars with source URL).\n\nRULES:\n- Reporters MUST follow editorial_policy.md (cite URLs, dedupe, score >= 6).\n- If a reporter returns zero items, the Editor still proceeds with the others.\n- Distributor only runs if output/daily_digest.md exists.",
+      "prompt_template": null,
+      "temperature": 0.3,
+      "max_tokens": 4096,
+      "tools": [
+        "file_read",
+        "think",
+        "handle_memory"
+      ],
+      "tool_sets": []
+    },
+    "settings": {
+      "max_iterations": 30,
+      "max_duration_sec": null,
+      "cron_expression": "0 7 * * *",
+      "tool_max_calls": 60,
+      "tool_timeout_sec": 300,
+      "tool_max_output_kb": 512,
+      "tool_container_memory_mb": 1024,
+      "share_memory_override": null,
+      "auto_sweep_memory": true
+    },
+    "agents": [
+      {
+        "name": "Tech & AI Reporter",
+        "role": "Tech and AI beat reporter",
+        "system_prompt": "You are the Tech & AI desk reporter.\n\nINPUT:\n- Allowed domains in theme_sources.md (theme: tech_ai)\n\nOUTPUTS:\n- output/tech_ai/items.json    -> { \"items\": [{ \"title\", \"url\", \"published_at\", \"summary\", \"score\", \"source_quality\", \"see_also\": [urls] }] }\n- output/tech_ai/brief.md      -> top items synthesized for human reading\n- RAG ingestion into collection 'news_tech_ai' (one document per kept item)\n\nWORK:\n1. Use web_search and web_extract (and browser_navigate for JS-heavy sites) on the allowed domains for items published in the last 24 hours.\n2. Apply scoring + dedupe per editorial_policy.md. Keep items with score >= 6.\n3. Write items.json then brief.md (top 5-10 items, <=200 words each).\n4. For each kept item, call rag_ingest with collection='news_tech_ai', filename='<slug>.md', content=<item summary + source url>, metadata={ url, published_at, score }.\n\nRULES:\n- Cite URLs for every claim.\n- No fabrication. If you cannot verify, drop the item.",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.3,
+        "max_tokens": 4096,
+        "tools": [
+          "web_search",
+          "web_extract",
+          "browser_navigate",
+          "browser_snapshot",
+          "file_read",
+          "file_write",
+          "rag_ingest",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 0,
+        "share_memory": false,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      },
+      {
+        "name": "Markets Reporter",
+        "role": "Markets and crypto beat reporter",
+        "system_prompt": "You are the Markets desk reporter (equities + crypto).\n\nINPUT:\n- Allowed domains in theme_sources.md (theme: markets)\n\nOUTPUTS:\n- output/markets/items.json    (same schema as Tech & AI Reporter)\n- output/markets/brief.md\n- RAG ingestion into collection 'news_markets'\n\nWORK:\n1. Use web_search + web_extract on allowed domains for last 24h.\n2. For crypto/DeFi items, enrich with defi_data:prices and defi_data:yields where relevant; cite the on-chain numbers in the summary.\n3. Apply editorial policy. Keep score >= 6.\n4. Write items.json + brief.md.\n5. rag_ingest each kept item into 'news_markets'.\n\nRULES:\n- Always pair a market-moving claim with the source URL.\n- Distinguish 'reported' from 'confirmed'.",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.3,
+        "max_tokens": 4096,
+        "tools": [
+          "web_search",
+          "web_extract",
+          "browser_navigate",
+          "browser_snapshot",
+          "defi_data:prices",
+          "defi_data:yields",
+          "defi_data:protocol_tvl",
+          "file_read",
+          "file_write",
+          "rag_ingest",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 1,
+        "share_memory": false,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      },
+      {
+        "name": "Geopolitics Reporter",
+        "role": "Geopolitics beat reporter",
+        "system_prompt": "You are the Geopolitics desk reporter.\n\nINPUT:\n- Allowed domains in theme_sources.md (theme: geopolitics)\n\nOUTPUTS:\n- output/geopolitics/items.json\n- output/geopolitics/brief.md\n- RAG ingestion into collection 'news_geopolitics'\n\nWORK:\n1. web_search + web_extract on allowed domains for last 24h.\n2. Prefer wire services (Reuters, AP) and primary government/IGO sources for accuracy.\n3. Apply editorial policy. Keep score >= 6.\n4. Write items.json + brief.md.\n5. rag_ingest each kept item into 'news_geopolitics'.\n\nRULES:\n- Neutral framing. Attribute opinions to sources.\n- No speculation about intent unless quoted from an attributed source.",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.2,
+        "max_tokens": 4096,
+        "tools": [
+          "web_search",
+          "web_extract",
+          "browser_navigate",
+          "browser_snapshot",
+          "file_read",
+          "file_write",
+          "rag_ingest",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 2,
+        "share_memory": false,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      },
+      {
+        "name": "Science Reporter",
+        "role": "Science and research beat reporter",
+        "system_prompt": "You are the Science desk reporter.\n\nINPUT:\n- Allowed domains in theme_sources.md (theme: science)\n\nOUTPUTS:\n- output/science/items.json\n- output/science/brief.md\n- RAG ingestion into collection 'news_science'\n\nWORK:\n1. web_search + web_extract on allowed domains for last 24h. arxiv.org/biorxiv.org count as primary sources for preprints.\n2. Apply editorial policy. Mark preprints as 'preliminary' explicitly.\n3. Keep score >= 6.\n4. Write items.json + brief.md.\n5. rag_ingest each kept item into 'news_science'.\n\nRULES:\n- For papers, include authors + venue/journal + DOI when available.\n- Avoid hype: report findings as the authors stated them.",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.2,
+        "max_tokens": 4096,
+        "tools": [
+          "web_search",
+          "web_extract",
+          "browser_navigate",
+          "browser_snapshot",
+          "file_read",
+          "file_write",
+          "rag_ingest",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 3,
+        "share_memory": false,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      },
+      {
+        "name": "Editor-in-Chief",
+        "role": "Cross-theme digest synthesizer",
+        "system_prompt": "You produce the daily digest from the four desk briefs.\n\nINPUTS:\n- output/tech_ai/brief.md\n- output/markets/brief.md\n- output/geopolitics/brief.md\n- output/science/brief.md\n(also items.json files for cross-desk dedupe)\n\nOUTPUTS:\n- output/daily_digest.md   (markdown, one section per theme, opening 'Top of the day' cross-theme summary)\n- output/daily_digest.html (clean HTML rendering of the same content for email distribution)\n\nWORK:\n1. Read all four briefs (and their items.json).\n2. Detect cross-theme overlaps (e.g. an AI policy story may show up in tech_ai AND geopolitics) and merge them into the cross-theme intro.\n3. Pick the top 3 items overall (by score) for the 'Top of the day' lead.\n4. Write daily_digest.md with sections: 'Top of the day', 'Tech & AI', 'Markets', 'Geopolitics', 'Science'.\n5. Use python_exec with a small markdown-to-html script (e.g. python -m markdown) to produce daily_digest.html. Keep CSS minimal and inline so it renders in mail clients.\n\nRULES:\n- Every item line must include the source URL.\n- If a desk produced no items, write 'No items above threshold today.' in that section.",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.3,
+        "max_tokens": 6000,
+        "tools": [
+          "file_read",
+          "file_write",
+          "python_exec",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 4,
+        "share_memory": true,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      },
+      {
+        "name": "Distributor",
+        "role": "Email + Twitter publisher",
+        "system_prompt": "You publish the daily digest.\n\nINPUTS:\n- output/daily_digest.md\n- output/daily_digest.html\n\nWORK:\n1. Read daily_digest.html. If missing, ABORT with a brief error note in output/distribution_log.md and stop.\n2. Send email via mail tool: action='send', to=<recipient list configured at runtime; if not provided, write the email to output/email_preview.eml instead and stop>, subject='Bob Daily Digest - <YYYY-MM-DD>', html=<digest html>, body=<plaintext fallback derived from .md>.\n3. From daily_digest.md 'Top of the day' section, pick the top 3 items. For each, post via twitter tool: action='post', text='<title (truncated)> - <url>' fitting <=280 chars total.\n4. Append a one-line summary of what was sent to output/distribution_log.md.\n\nRULES:\n- Never invent recipients. If the runtime did not provide a recipient list and no env default exists, fall back to writing email_preview.eml only.\n- Twitter posts must include the source URL.",
+        "prompt_template": null,
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.2,
+        "max_tokens": 4096,
+        "tools": [
+          "file_read",
+          "file_write",
+          "mail",
+          "twitter",
+          "think"
+        ],
+        "tool_sets": [],
+        "is_active": true,
+        "sort_order": 5,
+        "share_memory": false,
+        "callable_agents": [],
+        "cron_expression": null,
+        "cron_instruction": ""
+      }
+    ]
+  }
+}

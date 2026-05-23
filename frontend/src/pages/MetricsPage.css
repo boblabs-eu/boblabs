@@ -1,0 +1,378 @@
+/**
+ * Metrics Servers page — restyle to match the Dashboard / Orchestrator polish.
+ * Builds on the global design tokens (:root in index.css). Pairs with
+ * DashboardPage.css for shared `.dash-*` classes (cards, sections, status colors).
+ */
+
+/* ── Add-Server inline form ── */
+.met-add-form {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.met-add-form .met-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.met-add-form .met-field label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.met-add-form .met-field input {
+  padding: 0.45rem 0.6rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  min-width: 140px;
+}
+
+.met-add-form .met-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.met-add-form .met-field-name { flex: 1; min-width: 160px; }
+.met-add-form .met-field-host { flex: 1; min-width: 160px; }
+.met-add-form .met-field-port input { min-width: 90px; max-width: 110px; }
+
+/* ── Server row ── */
+.met-row {
+  background: linear-gradient(160deg, var(--surface-1), var(--bg-card));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 0.55rem;
+  overflow: hidden;
+  transition: border-color var(--transition);
+}
+
+.met-row.met-row-open {
+  border-color: var(--border-strong);
+}
+
+.met-row-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  flex-wrap: wrap;
+  user-select: none;
+  transition: background var(--transition);
+}
+
+.met-row-header:hover {
+  background: var(--bg-hover);
+}
+
+.met-row-open .met-row-header {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.met-row-chevron {
+  color: var(--text-muted);
+  display: inline-flex;
+  width: 16px;
+  align-items: center;
+}
+
+.met-row-open .met-row-chevron {
+  color: var(--accent);
+}
+
+.met-row-name {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  min-width: 160px;
+}
+
+.met-row-tail {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+/* Compact metric cell (CPU / GPU / RAM / Disk) */
+.met-cell {
+  text-align: center;
+  min-width: 80px;
+}
+
+.met-cell-label {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.met-cell-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.met-cell-value .met-temp-suffix {
+  margin-left: 4px;
+  font-size: 0.85rem;
+}
+
+/* Threshold colors */
+.met-temp-low { color: var(--success); }
+.met-temp-mid { color: var(--warning); }
+.met-temp-high { color: var(--error); }
+.met-use-ok { color: var(--text-secondary); }
+.met-use-mid { color: var(--warning); }
+.met-use-high { color: var(--error); }
+.met-use-muted { color: var(--text-muted); }
+
+/* ── Expanded body ── */
+.met-expanded {
+  padding: 1rem 1rem 1.1rem;
+}
+
+/* Server-info grid (host, OS, GPUs, heartbeat, etc.) */
+.met-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.7rem 1.2rem;
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 1rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.met-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.met-info-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.met-info-value {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.met-info-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* Stat strip (CPU / RAM / Net) above progress bars */
+.met-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 800px) {
+  .met-stat-strip { grid-template-columns: repeat(2, 1fr); }
+}
+
+.met-stat {
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+}
+
+.met-stat-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.met-stat-value {
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.1;
+  margin-top: 0.2rem;
+}
+
+.met-stat-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+/* Temperature tiles row (CPU + per-GPU) */
+.met-temp-row {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.met-temp-tile {
+  text-align: center;
+}
+
+.met-temp-tile-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.met-temp-tile-value {
+  font-size: 1.85rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+/* Progress bar group */
+.met-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* GPU card */
+.met-gpu-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+}
+
+@media (max-width: 800px) {
+  .met-gpu-grid { grid-template-columns: 1fr; }
+}
+
+.met-gpu-card {
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+}
+
+.met-gpu-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.55rem;
+}
+
+.met-gpu-card-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.met-gpu-card-temp {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.met-gpu-card-power {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  margin-top: 0.35rem;
+}
+
+/* ── Collapsible sub-sections (Disks / Docker / Services / Procs / Ports) ── */
+.met-sub-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  padding: 0.5rem 0;
+  margin-top: 0.85rem;
+  margin-bottom: 0.45rem;
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+.met-sub-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.met-sub-chevron {
+  color: var(--text-muted);
+  display: inline-flex;
+}
+
+/* Service pills */
+.met-service-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.met-service-pill {
+  font-size: 0.7rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 4px;
+  background: rgba(52, 211, 153, 0.1);
+  color: var(--text-muted);
+}
+
+.met-service-pill.is-failed {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.met-service-failed-label {
+  font-size: 0.72rem;
+  color: var(--error);
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+}
+
+/* Empty / placeholder */
+.met-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Small inline danger button (Remove) */
+.met-btn-remove {
+  background: var(--error-soft);
+  color: var(--error);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.met-btn-remove:hover {
+  background: rgba(248, 113, 113, 0.22);
+}

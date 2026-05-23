@@ -1,0 +1,187 @@
+# Bob Manager — Control Plane Docker Compose
+# Usage: docker compose up -d
+
+services:
+  # ── PostgreSQL Database ─────────────────────────
+  bob-db:
+    image: postgres:16-alpine
+    container_name: bob-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bobmanager}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_in_production}
+      POSTGRES_DB: ${POSTGRES_DB:-bobmanager}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./control-plane/app/migrations/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5435:5432"
+    networks:
+      - bob-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bobmanager}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI Control Plane ───────────────────────
+  bob-api:
+    build:
+      context: ./control-plane
+      dockerfile: Dockerfile
+    container_name: bob-api
+    restart: unless-stopped
+    depends_on:
+      bob-db:
+        condition: service_healthy
+      bob-qdrant:
+        condition: service_healthy
+      docker-socket-proxy:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-bobmanager}:${POSTGRES_PASSWORD:-changeme_in_production}@bob-db:5432/${POSTGRES_DB:-bobmanager}
+      AGENT_SECRET: ${AGENT_SECRET:-change-this-to-a-random-secret-token}
+      JWT_SECRET: ${JWT_SECRET:-change-this-jwt-secret-key}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-1440}
+      IMAGE_GEN_API_URL: ${IMAGE_GEN_API_URL:-}
+      IMAGE_GEN_API_KEY: ${IMAGE_GEN_API_KEY:-}
+      QDRANT_URL: ${QDRANT_URL:-http://bob-qdrant:6333}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-64}
+      RAG_STAGING_PATH: ${RAG_STAGING_PATH:-/data/rag_staging}
+      REMOTION_API_URL: ${REMOTION_API_URL:-http://bob-remotion:3020}
+      ADMIN_SECRET: ${ADMIN_SECRET:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      TRADING_PRIVATE_KEYS: ${TRADING_PRIVATE_KEYS:-}
+      ONEINCH_API_KEY: ${ONEINCH_API_KEY:-}
+      # Manage per-lab sandboxes through a restricted docker-socket-proxy
+      # rather than mounting /var/run/docker.sock directly into bob-api.
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+    ports:
+      - "${API_PORT:-8888}:8000"
+    networks:
+      - bob-network
+      - rag-internal
+    volumes:
+      - ./templates:/app/templates
+      - lab_resources:/data/lab_resources
+      - qdrant_staging:/data/rag_staging
+
+  # ── Restricted Docker socket proxy ─────────────
+  # Exposes only the endpoints container_manager needs (Containers / Networks /
+  # Images read). bob-api talks to it via DOCKER_HOST=tcp://docker-socket-proxy:2375.
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: bob-docker-proxy
+    restart: unless-stopped
+    environment:
+      # Permissions: 1=allow, 0=deny. Anything not listed defaults to 0.
+      CONTAINERS: 1     # list/inspect/start/stop/remove
+      NETWORKS: 1       # ensure_sandbox attaches new containers to bob-network
+      IMAGES: 1         # required by docker.containers.run to resolve the sandbox image
+      POST: 1           # enable POST endpoints (create/start/stop/remove)
+      EXEC: 0
+      VOLUMES: 0
+      INFO: 1
+      VERSION: 1
+      AUTH: 0
+      SECRETS: 0
+      SERVICES: 0
+      SWARM: 0
+      NODES: 0
+      TASKS: 0
+      PLUGINS: 0
+      SYSTEM: 0
+      EVENTS: 1
+      PING: 1
+      BUILD: 0
+      COMMIT: 0
+      CONFIGS: 0
+      DISTRIBUTION: 0
+      SESSION: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - bob-network
+
+  # ── Sandbox image (per-lab containers created dynamically) ──
+  bob-sandbox:
+    build:
+      context: ./sandbox
+      dockerfile: Dockerfile
+    container_name: bob-sandbox
+    profiles:
+      - build-only
+    networks:
+      - bob-network
+    volumes:
+      - lab_resources:/data/lab_resources
+    mem_limit: 2g
+    cpus: 2.0
+
+  # ── React Frontend ─────────────────────────────
+  bob-ui:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: bob-ui
+    restart: unless-stopped
+    depends_on:
+      - bob-api
+    ports:
+      - "3000:80"
+    networks:
+      - bob-network
+
+  # ── Remotion Rendering Service ─────────────────
+  bob-remotion:
+    build:
+      context: ./remotion-api
+      dockerfile: Dockerfile
+    container_name: bob-remotion
+    restart: unless-stopped
+    networks:
+      - bob-network
+    mem_limit: 4g
+    cpus: 2.0
+
+  # ── Qdrant Vector Store ────────────────────────
+  bob-qdrant:
+    image: qdrant/qdrant:v1.12.6
+    container_name: bob-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    networks:
+      - rag-internal
+    mem_limit: 1g
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/6333 && printf \"GET /healthz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -q \"200 OK\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  pgdata:
+  lab_resources:
+  qdrant_data:
+  qdrant_staging:
+
+networks:
+  bob-network:
+    driver: bridge
+  rag-internal:
+    driver: bridge
+    internal: true

@@ -1,0 +1,1 @@
+"""Bob Manager — WebSocket package."""

@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "lab": {
+    "name": "Social Media Content Lab",
+    "description": "Multi-agent workflow to generate, review, and store social media posts. Agents collaborate via structured files: draft → review → approval → storage.",
+    "loop_type": "supervisor",
+    "loop_config": {},
+    "strategy_prompt_override": null,
+    "context_files": [],
+    "orchestrator": {
+      "model": "kavai/qwen3.5-GPT5:9b",
+      "prompt": "You coordinate a social media content team. The workflow is:\n\n1. Ask the Writer Agent to generate a social media post draft based on the user’s topic.\n2. Ask the Reviewer Agent to review and improve the draft (tone, clarity, engagement, correctness).\n3. If the post is not satisfactory, send feedback back to the Writer Agent.\n4. Once approved, ask the Storage Agent to save the final version.\n\nIMPORTANT:\n- Agents communicate via files in the output/ directory.\n- Draft file: output/post_draft.json\n- Final approved file: output/post_final.json\n\nGOAL: Produce high-quality, engaging, and platform-appropriate social media content.",
+      "prompt_template": null,
+      "temperature": 0.7,
+      "max_tokens": 4096,
+      "tools": [],
+      "tool_sets": []
+    },
+    "settings": {
+      "max_iterations": 50,
+      "max_duration_sec": null,
+      "tool_max_calls": 20,
+      "tool_timeout_sec": 120,
+      "tool_max_output_kb": 256,
+      "tool_container_memory_mb": 512,
+      "share_memory_override": null,
+      "auto_sweep_memory": false
+    },
+    "agents": [
+      {
+        "name": "Writer",
+        "role": "Social media content creator",
+        "system_prompt": "You are a social media expert. Your task is to create engaging posts based on user input.\n\nOUTPUT: Write to output/post_draft.json using file_write.\n\nFORMAT:\n{\n  \"platform\": \"twitter | linkedin | instagram\",\n  \"topic\": \"string\",\n  \"content\": \"string\",\n  \"hashtags\": [\"#tag1\", \"#tag2\"],\n  \"tone\": \"professional | casual | humorous\"\n}\n\nRULES:\n- Adapt tone and style to the platform\n- Keep posts concise and engaging\n- Include relevant hashtags\n- Do not exceed platform character limits\n\nWORKFLOW:\n1. Understand the topic\n2. Generate a compelling post\n3. Save structured JSON output",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.8,
+        "max_tokens": 2048,
+        "tools": [
+          "file_write",
+          "file_read",
+          "think"
+        ],
+        "is_active": true,
+        "sort_order": 0,
+        "share_memory": true
+      },
+      {
+        "name": "Reviewer",
+        "role": "Content quality reviewer",
+        "system_prompt": "You are a social media reviewer. Improve clarity, engagement, and correctness.\n\nINPUT: Read output/post_draft.json\nOUTPUT: Write improved version to output/post_final.json\n\nREVIEW CHECKLIST:\n1. Clarity and readability\n2. Engagement (hooks, CTA, emotional appeal)\n3. Tone appropriateness for platform\n4. Grammar and spelling\n5. Hashtag relevance\n\nIf issues are found:\n- Improve the content directly\n- Add a \"review_notes\" field explaining changes\n\nRULES:\n- Do not change the original topic\n- Enhance, don’t rewrite unnecessarily\n- Keep platform constraints in mind",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.6,
+        "max_tokens": 2048,
+        "tools": [
+          "file_read",
+          "file_write",
+          "think"
+        ],
+        "is_active": true,
+        "sort_order": 1,
+        "share_memory": true
+      },
+      {
+        "name": "Storage",
+        "role": "Content storage and archiving",
+        "system_prompt": "You are responsible for storing approved social media posts.\n\nINPUT: Read output/post_final.json\n\nTASKS:\n1. Validate the structure\n2. Add metadata:\n   - timestamp\n   - status: \"approved\"\n3. Save to output/archive/post_<timestamp>.json\n\nRULES:\n- Do not modify content text\n- Ensure file naming consistency\n- Maintain a clean archive structure",
+        "model": "kavai/qwen3.5-GPT5:9b",
+        "temperature": 0.3,
+        "max_tokens": 1024,
+        "tools": [
+          "file_read",
+          "file_write"
+        ],
+        "is_active": true,
+        "sort_order": 2,
+        "share_memory": false
+      }
+    ]
+  }
+}

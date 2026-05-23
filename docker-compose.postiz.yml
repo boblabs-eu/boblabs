@@ -1,0 +1,114 @@
+# Postiz — Social Media Scheduling (Optional Overlay)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.postiz.yml up -d
+#
+# After first start:
+#   1. Open Postiz UI at http://localhost:4007
+#   2. Create account & connect social media channels
+#   3. Go to Settings → API → generate an API key
+#   4. In Bob Manager Settings → Tool Configs → Postiz: set api_url and api_key
+#   5. Add "postiz" to a lab's tool set
+
+services:
+  bob-postiz:
+    image: ghcr.io/gitroomhq/postiz-app:latest
+    container_name: bob-postiz
+    restart: unless-stopped
+    depends_on:
+      bob-postiz-db:
+        condition: service_healthy
+      bob-postiz-redis:
+        condition: service_healthy
+    environment:
+      MAIN_URL: ${POSTIZ_URL:-http://localhost:4007}
+      FRONTEND_URL: ${POSTIZ_URL:-http://localhost:4007}
+      NEXT_PUBLIC_BACKEND_URL: ${POSTIZ_URL:-http://localhost:4007}/api
+      BACKEND_INTERNAL_URL: http://localhost:3000
+      JWT_SECRET: ${POSTIZ_JWT_SECRET:-change-this-postiz-jwt-secret}
+      DATABASE_URL: postgresql://postiz:postiz@bob-postiz-db:5432/postiz
+      REDIS_URL: redis://bob-postiz-redis:6379
+      IS_GENERAL: "true"
+      STORAGE_PROVIDER: local
+      UPLOAD_DIRECTORY: /uploads
+      NEXT_PUBLIC_UPLOAD_DIRECTORY: /uploads
+      # Increase API rate limit for internal use (default 30/hr)
+      API_LIMIT: ${POSTIZ_API_LIMIT:-500}
+      # Disable registration after initial setup if desired
+      DISABLE_REGISTRATION: ${POSTIZ_DISABLE_REGISTRATION:-false}
+      NX_ADD_PLUGINS: "false"
+      # Social media API keys — configure in Postiz UI or set here
+      X_API_KEY: ${POSTIZ_X_API_KEY:-}
+      X_API_SECRET: ${POSTIZ_X_API_SECRET:-}
+      LINKEDIN_CLIENT_ID: ${POSTIZ_LINKEDIN_CLIENT_ID:-}
+      LINKEDIN_CLIENT_SECRET: ${POSTIZ_LINKEDIN_CLIENT_SECRET:-}
+      REDDIT_CLIENT_ID: ${POSTIZ_REDDIT_CLIENT_ID:-}
+      REDDIT_CLIENT_SECRET: ${POSTIZ_REDDIT_CLIENT_SECRET:-}
+      FACEBOOK_APP_ID: ${POSTIZ_FACEBOOK_APP_ID:-}
+      FACEBOOK_APP_SECRET: ${POSTIZ_FACEBOOK_APP_SECRET:-}
+      YOUTUBE_CLIENT_ID: ${POSTIZ_YOUTUBE_CLIENT_ID:-}
+      YOUTUBE_CLIENT_SECRET: ${POSTIZ_YOUTUBE_CLIENT_SECRET:-}
+      TIKTOK_CLIENT_ID: ${POSTIZ_TIKTOK_CLIENT_ID:-}
+      TIKTOK_CLIENT_SECRET: ${POSTIZ_TIKTOK_CLIENT_SECRET:-}
+      DISCORD_CLIENT_ID: ${POSTIZ_DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${POSTIZ_DISCORD_CLIENT_SECRET:-}
+      DISCORD_BOT_TOKEN_ID: ${POSTIZ_DISCORD_BOT_TOKEN_ID:-}
+      SLACK_ID: ${POSTIZ_SLACK_ID:-}
+      SLACK_SECRET: ${POSTIZ_SLACK_SECRET:-}
+      MASTODON_URL: ${POSTIZ_MASTODON_URL:-https://mastodon.social}
+      MASTODON_CLIENT_ID: ${POSTIZ_MASTODON_CLIENT_ID:-}
+      MASTODON_CLIENT_SECRET: ${POSTIZ_MASTODON_CLIENT_SECRET:-}
+      PINTEREST_CLIENT_ID: ${POSTIZ_PINTEREST_CLIENT_ID:-}
+      PINTEREST_CLIENT_SECRET: ${POSTIZ_PINTEREST_CLIENT_SECRET:-}
+      INSTAGRAM_APP_ID: ${POSTIZ_INSTAGRAM_APP_ID:-}
+      INSTAGRAM_APP_SECRET: ${POSTIZ_INSTAGRAM_APP_SECRET:-}
+      THREADS_APP_ID: ${POSTIZ_THREADS_APP_ID:-}
+      THREADS_APP_SECRET: ${POSTIZ_THREADS_APP_SECRET:-}
+    volumes:
+      - postiz-config:/config/
+      - postiz-uploads:/uploads/
+    ports:
+      - "${POSTIZ_PORT:-4007}:5000"
+    networks:
+      - bob-network
+
+  bob-postiz-db:
+    image: postgres:17-alpine
+    container_name: bob-postiz-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postiz
+      POSTGRES_PASSWORD: postiz
+      POSTGRES_DB: postiz
+    volumes:
+      - postiz-pgdata:/var/lib/postgresql/data
+    networks:
+      - bob-network
+    healthcheck:
+      test: pg_isready -U postiz -d postiz
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  bob-postiz-redis:
+    image: redis:7.2-alpine
+    container_name: bob-postiz-redis
+    restart: unless-stopped
+    volumes:
+      - postiz-redis-data:/data
+    networks:
+      - bob-network
+    healthcheck:
+      test: redis-cli ping
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  postiz-pgdata:
+  postiz-redis-data:
+  postiz-config:
+  postiz-uploads:
+
+networks:
+  bob-network:
+    external: true
+    name: bob-manager_bob-network

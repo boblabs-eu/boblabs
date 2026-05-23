@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#1a1a2e" />
+
+  <title>Bob Manager — Self-hosted AI Orchestration by Bob Labs</title>
+  <meta name="description" content="Bob Manager is a self-hosted AI orchestration platform: agents, GPU pipelines (image/video/music/TTS/STT), web3 tools and custom automation labs running on your own infrastructure. By Bob Labs." />
+  <meta name="author" content="Bob Labs" />
+  <meta name="keywords" content="self-hosted AI, AI orchestration, LLM agents, ComfyUI, GPU pipeline, RAG, automation, Bob Labs" />
+  <link rel="canonical" href="https://lab.boblabs.eu/" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Bob Manager" />
+  <meta property="og:title" content="Bob Manager — Self-hosted AI Orchestration" />
+  <meta property="og:description" content="Run LLM agents, GPU pipelines and custom automation labs on your own infrastructure. By Bob Labs." />
+  <meta property="og:url" content="https://lab.boblabs.eu/" />
+  <meta property="og:image" content="https://lab.boblabs.eu/assets/agent_templates.png" />
+  <meta property="og:locale" content="en_US" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Bob Manager — Self-hosted AI Orchestration" />
+  <meta name="twitter:description" content="Run LLM agents, GPU pipelines and custom automation labs on your own infrastructure." />
+  <meta name="twitter:image" content="https://lab.boblabs.eu/assets/agent_templates.png" />
+
+  <!-- AI / agents -->
+  <link rel="alternate" type="text/markdown" href="/llms.txt" title="LLM-friendly summary" />
+  <link rel="alternate" type="text/markdown" href="/AGENTS.md" title="Agent rules" />
+
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Theme bootstrap — applies the saved accent theme before React mounts so there
+       is no flash of the default theme on reload. Mirrors the picker in Sidebar.js. -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('bob_theme');
+        if (t && /^(blue|red|green|grey)$/.test(t)) {
+          document.documentElement.setAttribute('data-theme', t);
+        }
+      } catch (e) { /* localStorage unavailable — keep default theme */ }
+    })();
+  </script>
+
+  <!-- JSON-LD -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Bob Manager",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Linux (self-hosted)",
+    "url": "https://lab.boblabs.eu/",
+    "publisher": {
+      "@type": "Organization",
+      "name": "Bob Labs",
+      "url": "https://boblabs.eu",
+      "email": "support@boblabs.eu"
+    },
+    "description": "Self-hosted AI orchestration platform: agents, GPU pipelines and custom automation labs."
+  }
+  </script>
+
+  <!-- Plausible analytics (privacy-friendly, no cookie banner needed). -->
+  <script defer data-domain="lab.boblabs.eu" src="https://plausible.io/js/script.outbound-links.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>

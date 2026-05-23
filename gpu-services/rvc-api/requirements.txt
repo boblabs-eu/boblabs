@@ -1,0 +1,21 @@
+# RVC API dependencies
+# GPU: requires CUDA-capable GPU
+
+# Core
+numpy<2
+torch>=2.1.0
+fairseq>=0.12.2
+faiss-gpu>=1.7.2
+praat-parselmouth>=0.4.3
+pyworld>=0.3.4
+torchcrepe>=0.0.22
+
+# Audio I/O
+soundfile>=0.12.1
+scipy>=1.11.0
+librosa>=0.10.1
+
+# API
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0

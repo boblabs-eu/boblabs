@@ -1,0 +1,174 @@
+# GPU Services — Docker Compose
+# Deploy on a machine with an NVIDIA GPU and nvidia-container-toolkit installed.
+#
+# Usage:
+#   docker compose up -d            # start all
+#   docker compose up -d musicgen   # start one service
+#   docker compose logs -f musicgen # follow logs
+#
+# RVC voice models:
+#   Place .pth and .index files in ./models/rvc/ on the host.
+#   They appear inside the container at /models and are picked up automatically.
+#
+# CoquiTTS speaker voices:
+#   Place .wav reference files (~6s each) in ./models/speakers/ on the host.
+#   They appear inside the container at /speakers and are listed via GET /speakers.
+#
+# HuggingFace cache is shared across services to avoid re-downloading weights.
+#
+# All services share a single GPU.  PyTorch needs /dev/shm > 64 MB for CUDA
+# IPC, so every container gets shm_size: 2g.  NVIDIA_VISIBLE_DEVICES=all
+# ensures the runtime exposes the GPU to each container without reservation
+# conflicts.
+
+x-gpu-common: &gpu-common
+  shm_size: "2g"
+  environment: &gpu-env
+    NVIDIA_VISIBLE_DEVICES: all
+    NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+
+services:
+  musicgen:
+    <<: *gpu-common
+    build: ./musicgen-api
+    container_name: musicgen-api
+    restart: unless-stopped
+    ports:
+      - "3014:3014"
+    environment:
+      <<: *gpu-env
+      MUSICGEN_MODEL: ${MUSICGEN_MODEL:-medium}
+      MUSICGEN_MAX_DURATION_SEC: ${MUSICGEN_MAX_DURATION_SEC:-30}
+      MUSICGEN_IDLE_UNLOAD_SEC: ${MUSICGEN_IDLE_UNLOAD_SEC:-300}
+      HF_HOME: /cache/huggingface
+    volumes:
+      - hf-cache:/cache/huggingface
+
+  bark:
+    <<: *gpu-common
+    build: ./bark-api
+    container_name: bark-api
+    restart: unless-stopped
+    ports:
+      - "3015:3015"
+    environment:
+      <<: *gpu-env
+      BARK_IDLE_UNLOAD_SEC: ${BARK_IDLE_UNLOAD_SEC:-300}
+      HF_HOME: /cache/huggingface
+      XDG_CACHE_HOME: /cache
+    volumes:
+      - hf-cache:/cache/huggingface
+      - bark-cache:/cache/suno
+
+  rvc:
+    <<: *gpu-common
+    build: ./rvc-api
+    container_name: rvc-api
+    restart: unless-stopped
+    ports:
+      - "3016:3016"
+    environment:
+      <<: *gpu-env
+      RVC_MODELS_DIR: /models
+      RVC_IDLE_UNLOAD_SEC: ${RVC_IDLE_UNLOAD_SEC:-300}
+    volumes:
+      - ./models/rvc:/models
+
+  coqui-tts:
+    <<: *gpu-common
+    build: ./coqui-tts-api
+    container_name: coqui-tts-api
+    restart: unless-stopped
+    ports:
+      - "3017:3017"
+    environment:
+      <<: *gpu-env
+      COQUI_IDLE_UNLOAD_SEC: ${COQUI_IDLE_UNLOAD_SEC:-300}
+      HF_HOME: /cache/huggingface
+    volumes:
+      - hf-cache:/cache/huggingface
+      - ./models/speakers:/speakers
+
+  stt:
+    <<: *gpu-common
+    build: ./stt-api
+    container_name: stt-api
+    restart: unless-stopped
+    ports:
+      - "7865:7865"
+    environment:
+      <<: *gpu-env
+      STT_MODEL_SIZE: ${STT_MODEL_SIZE:-large-v3}
+      STT_AVAILABLE_MODELS: ${STT_AVAILABLE_MODELS:-large-v3,large-v3-turbo}
+      STT_COMPUTE_TYPE: ${STT_COMPUTE_TYPE:-float16}
+      STT_IDLE_UNLOAD_SEC: ${STT_IDLE_UNLOAD_SEC:-300}
+      STT_MAX_FILE_SIZE_MB: ${STT_MAX_FILE_SIZE_MB:-500}
+      HF_HOME: /cache/huggingface
+    volumes:
+      - hf-cache:/cache/huggingface
+
+  # LTX-Video (text/image → video, LTX-2.3 22B DiT model)
+  # Requires model files pre-downloaded to ./models/ltx-video/ and ./models/gemma/
+  #   huggingface-cli download Lightricks/LTX-2.3 --include "*.safetensors" --local-dir ./models/ltx-video
+  #   huggingface-cli download google/gemma-3-12b-it-qat-q4_0-unquantized --local-dir ./models/gemma
+  ltx-video:
+    <<: *gpu-common
+    build: ./ltx-video-api
+    container_name: ltx-video-api
+    restart: unless-stopped
+    shm_size: "16g"
+    ports:
+      - "3018:3018"
+    environment:
+      <<: *gpu-env
+      LTX_PIPELINE_MODE: ${LTX_PIPELINE_MODE:-distilled}
+      LTX_QUANTIZATION: ${LTX_QUANTIZATION:-fp8-cast}
+      LTX_IDLE_UNLOAD_SEC: ${LTX_IDLE_UNLOAD_SEC:-600}
+      LTX_STREAMING_PREFETCH: ${LTX_STREAMING_PREFETCH:-0}
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+      LTX_CHECKPOINT_PATH: /models/ltx-video/${LTX_CHECKPOINT:-ltx-2.3-22b-distilled-1.1.safetensors}
+      LTX_UPSAMPLER_PATH: /models/ltx-video/${LTX_UPSAMPLER:-ltx-2.3-spatial-upscaler-x2-1.1.safetensors}
+      LTX_DISTILLED_LORA_PATH: /models/ltx-video/${LTX_DISTILLED_LORA:-ltx-2.3-22b-distilled-lora-384-1.1.safetensors}
+      LTX_GEMMA_ROOT: /models/gemma
+      HF_HOME: /cache/huggingface
+    volumes:
+      - hf-cache:/cache/huggingface
+      - ./models/ltx-video:/models/ltx-video
+      - ./models/gemma:/models/gemma
+
+  # Wan 2.2 Video (text/image → video, Wan2.2 TI2V-5B via diffusers)
+  # Models auto-download from HuggingFace on first run (Apache 2.0, no gating).
+  # Alternatively, pre-download:
+  #   huggingface-cli download Wan-AI/Wan2.2-TI2V-5B-Diffusers --local-dir ./models/wan-video
+  wan-video:
+    <<: *gpu-common
+    build: ./wan-video-api
+    container_name: wan-video-api
+    restart: unless-stopped
+    shm_size: "8g"
+    ports:
+      - "3019:3019"
+    environment:
+      <<: *gpu-env
+      WAN_MODEL: ${WAN_MODEL:-TI2V-5B}
+      WAN_MODEL_DIR: ${WAN_MODEL_DIR:-}
+      WAN_OFFLOAD: ${WAN_OFFLOAD:-auto}
+      WAN_IDLE_UNLOAD_SEC: ${WAN_IDLE_UNLOAD_SEC:-600}
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+      HF_HOME: /cache/huggingface
+    volumes:
+      - hf-cache:/cache/huggingface
+
+volumes:
+  hf-cache:
+    name: gpu-hf-cache
+  bark-cache:
+    name: gpu-bark-cache

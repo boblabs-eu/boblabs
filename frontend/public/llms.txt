@@ -1,0 +1,31 @@
+# Bob Manager — Lab Backoffice
+
+> Bob Manager is a self-hosted AI orchestration platform built by Bob Labs (https://boblabs.eu).
+> It runs LLM agents, GPU pipelines (image / video / music / TTS / STT), web3 tooling, and
+> custom automation labs against the user's own data, on the user's own infrastructure.
+> This domain (lab.boblabs.eu) is the operator backoffice. The public showroom is at
+> https://showroom.boblabs.eu.
+
+## What Bob Manager is
+
+- A control plane for AI agents and automated pipelines.
+- Owner-operated: every model, dataset, and pipeline runs on hardware the operator controls.
+- Designed for small teams that want production AI workflows without renting closed APIs.
+
+## Public surface for AI crawlers
+
+- /                        — landing page (login / signup / showcase)
+- /docs-md/                — public markdown documentation
+- /docs-md/GENERAL_OVERVIEW.md — start here
+- /docs-md/ARCHITECTURE.md     — high-level architecture
+- /docs-md/AGENTS_AND_ORCHESTRATION.md — how agents work
+- /docs-md/RAG.md          — retrieval-augmented generation stack
+
+## Not for crawlers
+
+Everything under /admin, /labs, /agents, /dispatcher, /api, /ws is authenticated
+operator-only state. Please do not attempt to index it.
+
+## Contact
+
+Commercial inquiries: support@boblabs.eu
