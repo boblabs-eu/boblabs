@@ -37,7 +37,7 @@ async def file_read(executor: ToolExecutor, args: dict) -> dict:
     for base in (executor.workspace, executor.workspace / "output"):
         try:
             candidate = (base / clean_path).resolve()
-            if str(candidate).startswith(str(executor.workspace.resolve())) and candidate.is_file():
+            if candidate.is_relative_to(executor.workspace.resolve()) and candidate.is_file():
                 target = candidate
                 break
         except Exception:
@@ -46,7 +46,7 @@ async def file_read(executor: ToolExecutor, args: dict) -> dict:
     if target is None:
         try:
             candidate = (executor.workspace / rel_path).resolve()
-            if str(candidate).startswith(str(executor.workspace.resolve())) and candidate.is_file():
+            if candidate.is_relative_to(executor.workspace.resolve()) and candidate.is_file():
                 target = candidate
         except Exception:
             pass
@@ -64,7 +64,7 @@ async def file_read(executor: ToolExecutor, args: dict) -> dict:
 
     try:
         resolved = target.resolve()
-        if not str(resolved).startswith(str(executor.workspace.resolve())):
+        if not resolved.is_relative_to(executor.workspace.resolve()):
             return {"success": False, "output": "Path traversal denied."}
     except Exception:
         return {"success": False, "output": "Invalid path."}
@@ -95,7 +95,7 @@ async def file_write(executor: ToolExecutor, args: dict) -> dict:
 
     try:
         target = (output_dir / rel_path).resolve()
-        if not str(target).startswith(str(output_dir.resolve())):
+        if not target.is_relative_to(output_dir.resolve()):
             return {"success": False, "output": "Path traversal denied. Files can only be written to output/."}
     except Exception:
         return {"success": False, "output": "Invalid path."}

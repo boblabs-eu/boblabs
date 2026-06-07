@@ -1,12 +1,19 @@
 """Bob Manager — Lab repository layer."""
 
-import re
 import uuid
 from datetime import datetime
 
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.repositories._paginate import DEFAULT_LIMIT, MAX_LIMIT, clamp_limit
+# D05 — shared sanitiser moved to app.repositories._sanitize so every
+# repo gets the same NULL-byte / lone-surrogate handling. Aliased back
+# to the old private names so existing call sites keep working.
+from app.repositories._sanitize import (
+    sanitize_json as _sanitize_json,
+    sanitize_text as _sanitize,
+)
 from app.services.authorization import filter_query_by_access, get_default_acl
 from app.models.orchestrator import (
     CronJob,
@@ -21,28 +28,6 @@ from app.models.orchestrator import (
     PromptTemplate,
     ToolSet,
 )
-
-# Characters that asyncpg / PostgreSQL rejects: NULL bytes, lone surrogates
-_BAD_CHARS = re.compile(r"[\x00\ud800-\udfff]")
-
-
-def _sanitize(text: str | None) -> str | None:
-    """Strip characters that PostgreSQL / asyncpg cannot store."""
-    if text is None:
-        return None
-    return _BAD_CHARS.sub("\ufffd", text)
-
-
-def _sanitize_json(obj):
-    """Recursively sanitize strings inside a JSON-serializable object."""
-    if isinstance(obj, str):
-        return _BAD_CHARS.sub("\ufffd", obj)
-    if isinstance(obj, dict):
-        return {k: _sanitize_json(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_sanitize_json(v) for v in obj]
-    return obj
-
 
 class LibraryAgentRepository:
     def __init__(self, db: AsyncSession):
@@ -140,15 +125,29 @@ class CronJobRepository:
         await self.db.flush()
 
     async def get_labs_using(self, cj_id: uuid.UUID) -> list[dict]:
-        """Return labs that reference this cron job in their cron_job_ids."""
-        result = await self.db.execute(select(Lab))
-        labs = result.scalars().all()
-        using = []
-        for lab in labs:
-            ids = lab.cron_job_ids or []
-            if str(cj_id) in [str(i) for i in ids]:
-                using.append({"id": str(lab.id), "name": lab.name, "status": lab.status})
-        return using
+        """Return labs that reference this cron job in their cron_job_ids.
+
+        P01 — previously loaded every Lab row and filtered in Python
+        (linear in lab count). Now uses a JSONB containment query
+        (``cron_job_ids @> [cj_id]``) so Postgres does the filter
+        server-side and a GIN index on ``cron_job_ids`` (if added)
+        makes it sub-millisecond.
+        """
+        # Bind the cron-job UUID as a JSONB string element. The cron_job_ids
+        # column stores entries as strings (the model defaults to a JSONB
+        # list of stringified UUIDs); use the @> containment operator so
+        # the query plan can use a GIN index if one is created.
+        from sqlalchemy import cast
+        from sqlalchemy.dialects.postgresql import JSONB
+        result = await self.db.execute(
+            select(Lab.id, Lab.name, Lab.status).where(
+                Lab.cron_job_ids.op("@>")(cast([str(cj_id)], JSONB))
+            )
+        )
+        return [
+            {"id": str(row.id), "name": row.name, "status": row.status}
+            for row in result.all()
+        ]
 
 
 class ToolSetRepository:
@@ -187,10 +186,16 @@ class LabRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_all(self, user: dict | None = None) -> list[Lab]:
+    async def get_all(
+        self, user: dict | None = None,
+        limit: int = MAX_LIMIT, offset: int = 0,
+    ) -> list[Lab]:
+        # P01/P04 — bound the unfiltered scan; the Labs UI typically
+        # paginates client-side, so MAX_LIMIT is generous enough.
         query = select(Lab).order_by(Lab.updated_at.desc())
         if user:
             query = filter_query_by_access(query, Lab, user)
+        query = query.limit(clamp_limit(limit)).offset(max(0, offset))
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
@@ -230,11 +235,32 @@ class LabAgentRepository:
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_all(self) -> list[LabAgent]:
-        """Return all agents across all labs (for agent library)."""
-        result = await self.db.execute(
-            select(LabAgent).order_by(LabAgent.name)
-        )
+    async def get_all(
+        self, user: dict | None = None,
+        limit: int = MAX_LIMIT, offset: int = 0,
+    ) -> list[LabAgent]:
+        """Return all agents across all labs (for the agent library UI).
+
+        P06 — accepts an optional ``user`` and filters to agents whose
+        parent lab is ACL-visible to that user. Admin / no-user gets
+        every agent (legacy behavior preserved for the existing
+        unauth'd /labs/agents/library route, which is tracked in
+        ``KNOWN_OPEN_ROUTES`` until Session 5 adds auth). Once the
+        route is gated, callers should pass ``user=user`` to enforce
+        ACL filtering at the SQL layer.
+        """
+        stmt = select(LabAgent).order_by(LabAgent.name)
+        if user is not None and user.get("role") != "admin":
+            # Restrict to agents whose lab the caller can VIEW.
+            visible_lab_ids = await self.db.execute(
+                filter_query_by_access(select(Lab.id), Lab, user)
+            )
+            ids = [row[0] for row in visible_lab_ids.all()]
+            if not ids:
+                return []
+            stmt = stmt.where(LabAgent.lab_id.in_(ids))
+        stmt = stmt.limit(clamp_limit(limit)).offset(max(0, offset))
+        result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
     async def get_by_id(self, agent_id: uuid.UUID) -> LabAgent | None:
@@ -322,7 +348,9 @@ class LabMessageRepository:
                 )
             else:
                 stmt = stmt.where(LabMessage.sender_agent_id == sender_agent_id)
-        stmt = stmt.order_by(LabMessage.created_at.desc()).limit(limit)
+        # P05 — clamp caller-supplied limit so a malformed UI request
+        # can't ask for the whole message table at once.
+        stmt = stmt.order_by(LabMessage.created_at.desc()).limit(clamp_limit(limit))
         result = await self.db.execute(stmt)
         return list(reversed(result.scalars().all()))
 
@@ -331,7 +359,7 @@ class LabMessageRepository:
             select(LabMessage)
             .where(LabMessage.lab_id == lab_id)
             .order_by(LabMessage.created_at.desc())
-            .limit(limit)
+            .limit(clamp_limit(limit))
         )
         result = await self.db.execute(stmt)
         return list(reversed(result.scalars().all()))
@@ -348,14 +376,21 @@ class LabMessageRepository:
         await self.db.refresh(msg)
         return msg
 
-    async def get_injections(self, lab_id: uuid.UUID, since: datetime | None = None) -> list[LabMessage]:
+    async def get_injections(
+        self, lab_id: uuid.UUID, since: datetime | None = None,
+        limit: int = MAX_LIMIT,
+    ) -> list[LabMessage]:
+        # P03 — was unbounded; an adversarial inject loop could materialise
+        # tens of thousands of rows into memory in one call. Cap at
+        # MAX_LIMIT and let the caller paginate via the `since` cursor if
+        # they need more.
         stmt = select(LabMessage).where(
             LabMessage.lab_id == lab_id,
             LabMessage.message_type == "inject",
         )
         if since:
             stmt = stmt.where(LabMessage.created_at > since)
-        stmt = stmt.order_by(LabMessage.created_at)
+        stmt = stmt.order_by(LabMessage.created_at).limit(clamp_limit(limit))
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
@@ -377,7 +412,9 @@ class LabMemoryRepository:
             stmt = stmt.where(LabMemory.scope == scope)
         if agent_id is not None:
             stmt = stmt.where(LabMemory.agent_id == agent_id)
-        stmt = stmt.order_by(LabMemory.importance.desc(), LabMemory.updated_at.desc()).limit(limit)
+        stmt = stmt.order_by(
+            LabMemory.importance.desc(), LabMemory.updated_at.desc(),
+        ).limit(clamp_limit(limit))
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
@@ -386,24 +423,58 @@ class LabMemoryRepository:
             select(LabMemory)
             .where(LabMemory.agent_id == agent_id, LabMemory.scope == "agent")
             .order_by(LabMemory.importance.desc(), LabMemory.updated_at.desc())
-            .limit(limit)
+            .limit(clamp_limit(limit))
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_all_memories(self, limit: int = 30) -> list[LabMemory]:
-        """Return memories across ALL labs (for shared memory agents)."""
+    async def get_all_memories(
+        self,
+        *,
+        caller_lab_id: uuid.UUID,
+        share_memory_confirmed: bool,
+        limit: int = 30,
+    ) -> list[LabMemory]:
+        """Return memories across ALL labs (for shared memory agents).
+
+        A03 — cross-lab memory leak path. The caller MUST:
+          1. Pass ``caller_lab_id`` so the operation is traceable in
+             logs / future audit (and a refactor that drops the arg
+             fails at call sites loudly).
+          2. Pass ``share_memory_confirmed=True`` to attest that the
+             calling agent has its ``share_memory=True`` flag set
+             (or the parent lab's ``share_memory_override`` is True).
+
+        Calls without ``share_memory_confirmed`` raise — bypassing the
+        check is a documented data-leak vector.
+
+        The keyword-only signature (``*,``) prevents the typical "drop
+        the second positional arg and lose the guard" refactor mistake.
+        """
+        if not share_memory_confirmed:
+            raise PermissionError(
+                f"get_all_memories called from lab={caller_lab_id} without "
+                "share_memory_confirmed=True. Either the calling agent must "
+                "have share_memory=True (or the lab's share_memory_override) "
+                "or the caller must use get_by_lab(lab_id) instead. "
+                "Cluster A03 — cross-lab leak path."
+            )
         stmt = (
             select(LabMemory)
             .order_by(LabMemory.importance.desc(), LabMemory.updated_at.desc())
-            .limit(limit)
+            .limit(clamp_limit(limit))
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
     async def create(self, **kwargs) -> LabMemory:
-        if "content" in kwargs:
-            kwargs["content"] = _sanitize(kwargs["content"]) or ""
+        # D05 — sanitise every text field the model exposes, matching
+        # what LabMessageRepository.create already does. The pre-fix
+        # version only stripped `content`, so an agent injecting a
+        # NULL byte into `key` would crash asyncpg at flush time.
+        for text_field in ("content", "key"):
+            if text_field in kwargs:
+                kwargs[text_field] = _sanitize(kwargs[text_field]) or ""
         mem = LabMemory(**kwargs)
         self.db.add(mem)
         await self.db.flush()

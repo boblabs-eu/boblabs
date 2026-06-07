@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 import torch
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from pydantic import BaseModel
 
 logging.basicConfig(
@@ -156,6 +156,7 @@ async def health():
 
 @app.post("/transcribe", response_model=TranscribeResponse)
 async def transcribe(
+    request: Request,
     file: UploadFile = File(...),
     language: Optional[str] = Form(None),
     task: Optional[str] = Form("transcribe"),
@@ -172,14 +173,44 @@ async def transcribe(
     if task not in ("transcribe", "translate"):
         raise HTTPException(400, "task must be 'transcribe' or 'translate'")
 
-    # Validate file size
-    content = await file.read()
-    size_mb = len(content) / (1024 * 1024)
-    if size_mb > MAX_FILE_SIZE_MB:
-        raise HTTPException(
-            413,
-            f"File too large ({size_mb:.1f}MB). Max: {MAX_FILE_SIZE_MB}MB",
-        )
+    # R20 — refuse oversized uploads BEFORE pulling the whole body into
+    # memory. Two layers:
+    #   1) Honour the client-declared Content-Length when present
+    #      (cheapest path, rejects multi-GB uploads before any byte
+    #      reaches the worker).
+    #   2) Stream the body in 1 MiB chunks; abort as soon as the
+    #      accumulated size exceeds the cap.
+    # Previously ``await file.read()`` slurped the entire body, so a
+    # client uploading 5 GB held 5 GB in worker RAM before the
+    # if-too-large branch fired.
+    max_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
+    declared_len = request.headers.get("content-length")
+    if declared_len:
+        try:
+            if int(declared_len) > max_bytes:
+                raise HTTPException(
+                    413,
+                    f"File too large (Content-Length={int(declared_len) / (1024 * 1024):.1f}MB). "
+                    f"Max: {MAX_FILE_SIZE_MB}MB",
+                )
+        except ValueError:
+            pass
+
+    chunks: list[bytes] = []
+    total = 0
+    chunk_size = 1024 * 1024
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                413,
+                f"File too large (>{total / (1024 * 1024):.1f}MB). Max: {MAX_FILE_SIZE_MB}MB",
+            )
+        chunks.append(chunk)
+    content = b"".join(chunks)
 
     model_name = model_size or MODEL_SIZE
     if model_name not in AVAILABLE_MODELS:

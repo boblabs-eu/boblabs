@@ -53,10 +53,21 @@ class AIProviderRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_all(self, active_only: bool = False) -> list[AIProvider]:
+    async def get_all(self, active_only: bool = False,
+                        include_pending: bool = True) -> list[AIProvider]:
+        """List providers.
+
+        Cluster I — by default ``active_only=False, include_pending=True``
+        returns every row including pending auto-discovered ones, so the
+        admin UI can display and approve them. Engine paths that route
+        actual dispatch use ``active_only=True, include_pending=False``
+        to skip un-approved rows.
+        """
         q = select(AIProvider).order_by(AIProvider.name)
         if active_only:
             q = q.where(AIProvider.is_active.is_(True))
+        if not include_pending:
+            q = q.where(AIProvider.pending_approval.is_(False))
         result = await self.db.execute(q)
         return list(result.scalars().all())
 

@@ -18,25 +18,52 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # ── GPU slot management (module-level, shared across all executors) ──────
-_gpu_slots: dict[str, asyncio.Semaphore] = {}
+#
+# P09 — semaphores are keyed by ``(host, port)`` so two GPU services on
+# the same machine but different ports (e.g. riffusion :3013 +
+# musicgen :3014) get independent queues. Previously the key was the
+# bare hostname, which meant a long-running musicgen call would block
+# all riffusion calls and vice versa even though they don't share the
+# same backing model / VRAM allocation.
+_gpu_slots: dict[tuple[str, int], asyncio.Semaphore] = {}
 _gpu_slots_lock = asyncio.Lock()
 
 
-async def _acquire_gpu_slot(host: str) -> asyncio.Semaphore:
-    """Get (or create) per-server GPU semaphore and acquire it."""
-    if host not in _gpu_slots:
+def _slot_key_from_url(url: str) -> tuple[str, int]:
+    """Extract the (host, port) tuple used to key the per-service GPU
+    semaphore. Falls back to the raw URL string + sentinel port 0 when
+    parsing fails so we never blow up on a malformed provider base_url.
+    """
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    host = parsed.hostname or url
+    # Default to scheme-default port when not specified so two providers
+    # on http://h and http://h:80 share a single semaphore (they're the
+    # same actual endpoint).
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    return (host, port)
+
+
+async def _acquire_gpu_slot(host_or_url: str | tuple[str, int]) -> asyncio.Semaphore:
+    """Get (or create) per-(host, port) GPU semaphore and acquire it.
+
+    Accepts either the raw base_url string (convenience for callers that
+    don't pre-parse) or an already-extracted ``(host, port)`` tuple.
+    """
+    key = host_or_url if isinstance(host_or_url, tuple) else _slot_key_from_url(host_or_url)
+    if key not in _gpu_slots:
         async with _gpu_slots_lock:
-            if host not in _gpu_slots:
-                _gpu_slots[host] = asyncio.Semaphore(1)
-    sem = _gpu_slots[host]
+            if key not in _gpu_slots:
+                _gpu_slots[key] = asyncio.Semaphore(1)
+    sem = _gpu_slots[key]
     await sem.acquire()
     return sem
 
 
-def _host_from_url(url: str) -> str:
-    """Extract host (without port) from a base_url like 'http://192.168.1.109:3014'."""
-    from urllib.parse import urlparse
-    return urlparse(url).hostname or url
+# Back-compat alias — some callers (and any external tooling) still pass
+# the URL directly; preserve the old name as a thin shim.
+def _host_from_url(url: str) -> tuple[str, int]:
+    return _slot_key_from_url(url)
 
 
 TOOLS = {
@@ -278,8 +305,10 @@ async def media_pipeline(executor: ToolExecutor, args: dict) -> dict:
         return {"success": False, "output": f"No active '{pipeline_name}' provider configured. Check Settings → AI Providers."}
 
     def _queue_depth(prov):
-        host = _host_from_url(prov.base_url)
-        sem = _gpu_slots.get(host)
+        # P09 — key by (host, port) so two services on the same machine
+        # different ports get independent semaphores.
+        slot_key = _slot_key_from_url(prov.base_url)
+        sem = _gpu_slots.get(slot_key)
         if sem is None:
             return 0
         return 0 if sem._value > 0 else 1
@@ -301,7 +330,7 @@ async def media_pipeline(executor: ToolExecutor, args: dict) -> dict:
     gen_result = None
     used_provider = None
     for provider in providers:
-        host = _host_from_url(provider.base_url)
+        slot_key = _slot_key_from_url(provider.base_url)
         pipeline = get_pipeline(pipeline_name, provider.base_url)
 
         params = pipeline.build_tool_params(prompt, extra)
@@ -310,11 +339,12 @@ async def media_pipeline(executor: ToolExecutor, args: dict) -> dict:
         except ValueError as e:
             return {"success": False, "output": f"Invalid parameters: {e}"}
 
+        # P09 — render the (host, port) tuple as 'host:port' in the log.
         logger.info(
-            "media_pipeline/%s: queuing on %s (host=%s)",
-            pipeline_name, provider.name, host,
+            "media_pipeline/%s: queuing on %s (slot=%s:%d)",
+            pipeline_name, provider.name, slot_key[0], slot_key[1],
         )
-        sem = await _acquire_gpu_slot(host)
+        sem = await _acquire_gpu_slot(slot_key)
         try:
             gen_result = await pipeline.generate(clean_params)
             if gen_result.success:
@@ -449,14 +479,14 @@ async def audio_mix(executor: ToolExecutor, args: dict) -> dict:
     resolved_inputs: list[str] = []
     for rel in input_files:
         p = (executor.workspace / rel).resolve()
-        if not str(p).startswith(str(ws)):
+        if not p.is_relative_to(ws):
             return {"success": False, "output": f"Input path escapes workspace: {rel}"}
         if not p.is_file():
             return {"success": False, "output": f"Input file not found: {rel}"}
         resolved_inputs.append(str(p))
 
     out_path = (executor.workspace / output_file).resolve()
-    if not str(out_path).startswith(str(ws)):
+    if not out_path.is_relative_to(ws):
         return {"success": False, "output": f"Output path escapes workspace: {output_file}"}
     out_path.parent.mkdir(parents=True, exist_ok=True)
 

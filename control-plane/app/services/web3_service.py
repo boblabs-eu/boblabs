@@ -21,6 +21,14 @@ logger = logging.getLogger(__name__)
 TIMEOUT = 15.0
 
 # ── Simple in-memory caches ──
+#
+# P10 — these process-local dicts are correct ONLY under the single-worker
+# invariant enforced at startup (cluster N: `assert WORKERS == 1` in
+# main.py). If we ever bump the worker count we must move at least
+# ``_portfolio_cache`` and ``_wallet_chain_cache`` to a shared store
+# (Redis) — otherwise two workers will serve stale, divergent snapshots
+# of the same wallet to two requests in the same second. Price cache is
+# tolerable to fork because the upstream rate limit dominates the TTL.
 _price_cache: dict = {"data": {}, "ts": 0}
 _PRICE_TTL = 60  # seconds
 _portfolio_cache: dict[str, dict] = {}

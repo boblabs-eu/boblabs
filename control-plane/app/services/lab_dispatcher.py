@@ -133,12 +133,20 @@ class LabDispatcher:
             if provider_id in _global_slots:
                 return _global_slots[provider_id]
 
+            # Cluster I — also gate on pending_approval=False so an
+            # un-approved auto-discovered provider can't receive dispatch.
             result = await self.db.execute(
-                select(AIProvider).where(AIProvider.id == provider_id, AIProvider.is_active == True)
+                select(AIProvider).where(
+                    AIProvider.id == provider_id,
+                    AIProvider.is_active == True,
+                    AIProvider.pending_approval == False,
+                )
             )
             prov = result.scalars().first()
             if prov is None:
-                raise RuntimeError(f"AI provider {provider_id} not found or inactive.")
+                raise RuntimeError(
+                    f"AI provider {provider_id} not found, inactive, or pending admin approval."
+                )
 
             # Detach from session so cached instance won't try lazy refreshes
             self.db.expunge(prov)

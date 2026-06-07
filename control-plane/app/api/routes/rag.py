@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import json
-import ipaddress
 import logging
 import re
-import socket
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
@@ -17,6 +15,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 
 from app.api.dependencies import DbSession, get_current_user
 from app.services.authorization import check_permission, Permission
+from app.services.ssrf_guard import (
+    PrivateHostError,
+    safe_get as _ssrf_safe_get,
+    validate_public_url as _ssrf_validate_public_url,
+)
 from app.schemas.rag import (
     RagAccessCreate,
     RagAccessResponse,
@@ -39,36 +42,17 @@ logger = logging.getLogger(__name__)
 
 
 def _validate_public_url(url: str) -> str:
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"}:
-        raise HTTPException(status_code=400, detail="Only http and https URLs are supported")
+    """Wrap ssrf_guard.validate_public_url with HTTP semantics.
 
-    hostname = parsed.hostname
-    if not hostname:
-        raise HTTPException(status_code=400, detail="URL must include a hostname")
-
-    lowered = hostname.lower()
-    if lowered in {"localhost", "0.0.0.0"} or lowered.endswith(".local"):
-        raise HTTPException(status_code=400, detail="Private or local URLs are not allowed")
-
+    Cluster M — the previous in-file helper was single-shot (validate the
+    original URL only) and the downstream httpx fetcher followed redirects
+    without re-validating. ssrf_guard.safe_get re-runs validate_public_url
+    on every 3xx Location.
+    """
     try:
-        parsed_ip = ipaddress.ip_address(lowered)
-        if parsed_ip.is_private or parsed_ip.is_loopback or parsed_ip.is_link_local or parsed_ip.is_multicast or parsed_ip.is_reserved:
-            raise HTTPException(status_code=400, detail="Private or local URLs are not allowed")
-    except ValueError:
-        pass
-
-    try:
-        infos = socket.getaddrinfo(hostname, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)
-    except socket.gaierror as exc:
-        raise HTTPException(status_code=400, detail=f"Failed to resolve hostname: {exc}")
-
-    for info in infos:
-        resolved_ip = ipaddress.ip_address(info[4][0])
-        if resolved_ip.is_private or resolved_ip.is_loopback or resolved_ip.is_link_local or resolved_ip.is_multicast or resolved_ip.is_reserved:
-            raise HTTPException(status_code=400, detail="Private or local URLs are not allowed")
-
-    return url
+        return _ssrf_validate_public_url(url)
+    except PrivateHostError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 def _slugify_filename(value: str, fallback: str = "webpage") -> str:
@@ -77,14 +61,17 @@ def _slugify_filename(value: str, fallback: str = "webpage") -> str:
 
 
 async def _fetch_webpage_text_http(url: str) -> tuple[str, str]:
-    async with httpx.AsyncClient(timeout=httpx.Timeout(20.0), follow_redirects=True) as client:
-        response = await client.get(
-            url,
-            headers={
+    # Cluster M — use ssrf_guard.safe_get so 3xx Location targets are
+    # re-validated against the private-host filter per hop, with a 10 MiB
+    # body cap.
+    async with httpx.AsyncClient(timeout=httpx.Timeout(20.0)) as client:
+        try:
+            response = await _ssrf_safe_get(client, url, headers={
                 "User-Agent": "BobManagerRagFetcher/1.0",
                 "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
-            },
-        )
+            })
+        except PrivateHostError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         response.raise_for_status()
 
     content_type = response.headers.get("content-type", "")
@@ -100,6 +87,23 @@ async def _fetch_webpage_text_http(url: str) -> tuple[str, str]:
 
     rendered = f"Title: {title}\nURL: {url}\n\n{body}".strip()
     return title, rendered
+
+
+async def _browser_ssrf_route(route, request) -> None:
+    # Cluster M — every URL Chromium tries to open (top-level navigation,
+    # 3xx redirects, sub-resource loads, JS-initiated fetch) is aborted
+    # if its host fails ssrf_guard.is_private_host. Wrapping at the
+    # context.route level catches the redirect destination too.
+    try:
+        from app.services.ssrf_guard import is_private_host as _is_private_host
+        host = urlparse(request.url).hostname or ""
+    except Exception:
+        await route.abort()
+        return
+    if _is_private_host(host):
+        await route.abort()
+        return
+    await route.continue_()
 
 
 async def _fetch_webpage_text_browser(url: str) -> tuple[str, str]:
@@ -125,6 +129,7 @@ async def _fetch_webpage_text_browser(url: str) -> tuple[str, str]:
             },
         )
         await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        await context.route("**/*", _browser_ssrf_route)
         page = await context.new_page()
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=45000)
@@ -251,7 +256,8 @@ async def delete_collection(collection_id: UUID, db: DbSession, user: dict = Dep
 
 
 @router.get("/rag/collections/{collection_id}/documents", response_model=list[RagDocumentResponse])
-async def list_documents(collection_id: UUID, db: DbSession):
+async def list_documents(collection_id: UUID, db: DbSession,
+                          user: dict = Depends(get_current_user)):
     svc = RagService(db)
     collection = await svc.get_collection(collection_id)
     if not collection:
@@ -270,6 +276,7 @@ async def upload_document(
     chunk_overlap: int | None = Form(default=None),
     splitter: str | None = Form(default=None),
     metadata: str | None = Form(default=None),
+    user: dict = Depends(get_current_user),
 ):
     svc = RagService(db)
     collection = await svc.get_collection(collection_id)
@@ -320,6 +327,7 @@ async def upload_document_from_url(
     data: RagUrlDocumentCreate,
     background_tasks: BackgroundTasks,
     db: DbSession,
+    user: dict = Depends(get_current_user),
 ):
     svc = RagService(db)
     collection = await svc.get_collection(collection_id)
@@ -371,7 +379,8 @@ async def upload_document_from_url(
 
 
 @router.delete("/rag/collections/{collection_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_document(collection_id: UUID, document_id: UUID, db: DbSession):
+async def delete_document(collection_id: UUID, document_id: UUID, db: DbSession,
+                           user: dict = Depends(get_current_user)):
     deleted = await RagService(db).delete_document(collection_id, document_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -384,6 +393,7 @@ async def reingest_document(
     background_tasks: BackgroundTasks,
     db: DbSession,
     data: RagDocumentReingestRequest | None = None,
+    user: dict = Depends(get_current_user),
 ):
     svc = RagService(db)
     collection = await svc.get_collection(collection_id)
@@ -428,6 +438,7 @@ async def reingest_all_documents(
     background_tasks: BackgroundTasks,
     db: DbSession,
     data: RagDocumentReingestRequest | None = None,
+    user: dict = Depends(get_current_user),
 ):
     svc = RagService(db)
     collection = await svc.get_collection(collection_id)
@@ -464,12 +475,14 @@ async def reingest_all_documents(
 
 
 @router.get("/labs/{lab_id}/rag-access", response_model=list[RagAccessResponse])
-async def list_lab_rag_access(lab_id: UUID, db: DbSession):
+async def list_lab_rag_access(lab_id: UUID, db: DbSession,
+                                user: dict = Depends(get_current_user)):
     return await RagService(db).list_lab_access(lab_id)
 
 
 @router.post("/labs/{lab_id}/rag-access", response_model=RagAccessResponse, status_code=status.HTTP_201_CREATED)
-async def grant_lab_rag_access(lab_id: UUID, data: RagAccessCreate, db: DbSession):
+async def grant_lab_rag_access(lab_id: UUID, data: RagAccessCreate, db: DbSession,
+                                user: dict = Depends(get_current_user)):
     try:
         return await RagService(db).grant_lab_access(
             lab_id=lab_id,
@@ -487,6 +500,7 @@ async def update_lab_rag_access(
     collection_id: UUID,
     data: RagAccessUpdate,
     db: DbSession,
+    user: dict = Depends(get_current_user),
 ):
     try:
         updated = await RagService(db).update_lab_access(
@@ -503,14 +517,16 @@ async def update_lab_rag_access(
 
 
 @router.delete("/labs/{lab_id}/rag-access/{collection_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def revoke_lab_rag_access(lab_id: UUID, collection_id: UUID, db: DbSession):
+async def revoke_lab_rag_access(lab_id: UUID, collection_id: UUID, db: DbSession,
+                                  user: dict = Depends(get_current_user)):
     deleted = await RagService(db).revoke_lab_access(lab_id, collection_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Access entry not found")
 
 
 @router.post("/rag/search", response_model=RagSearchResponse)
-async def search_rag(data: RagSearchRequest, db: DbSession):
+async def search_rag(data: RagSearchRequest, db: DbSession,
+                       user: dict = Depends(get_current_user)):
     try:
         results = await RagService(db).search(
             collection_name=data.collection,

@@ -12,6 +12,7 @@ Runs on GPU servers. Models are loaded per-request from /models directory.
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import logging
 import os
@@ -36,7 +37,52 @@ HOST = os.getenv("RVC_HOST", "0.0.0.0")
 PORT = int(os.getenv("RVC_PORT", "3016"))
 MODELS_DIR = Path(os.getenv("RVC_MODELS_DIR", "/models"))
 IDLE_UNLOAD_SEC = int(os.getenv("RVC_IDLE_UNLOAD_SEC", "300"))
-TARGET_SR = 44100
+# D09 — TARGET_SR is no longer assumed; the model's `tgt_sr` (40k or 48k
+# depending on the training config) is surfaced via the response so the
+# caller can play / mix the audio with the correct sample rate. This
+# constant is kept only as a fallback when the model dict lacks tgt_sr.
+DEFAULT_FALLBACK_SR = 44100
+
+
+# ── A10: optional model checksum gate ─────────────────────────────────
+#
+# torch.load() on a .pth uses pickle, which can execute arbitrary code at
+# load time. If the operator commits the SHA-256 of each model to a
+# sidecar file (``<model>.pth.sha256``), we refuse to load on mismatch.
+# Absence of the sidecar disables the check (back-compat); enabling
+# strict mode via ``RVC_REQUIRE_CHECKSUM=1`` instead refuses load when
+# the sidecar is missing entirely.
+
+RVC_REQUIRE_CHECKSUM = os.getenv("RVC_REQUIRE_CHECKSUM", "").lower() in ("1", "true", "yes")
+
+
+def _sha256_of_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _verify_model_checksum(model_path: Path) -> None:
+    sidecar = model_path.with_suffix(model_path.suffix + ".sha256")
+    if not sidecar.exists():
+        if RVC_REQUIRE_CHECKSUM:
+            raise RuntimeError(
+                f"A10: model {model_path.name} has no .sha256 sidecar and "
+                f"RVC_REQUIRE_CHECKSUM=1. Refusing to load untrusted pickle."
+            )
+        return
+    expected = sidecar.read_text().split()[0].strip().lower() if sidecar.stat().st_size else ""
+    if not expected:
+        return
+    actual = _sha256_of_file(model_path).lower()
+    if actual != expected:
+        raise RuntimeError(
+            f"A10: checksum mismatch for {model_path.name} — expected "
+            f"{expected[:16]}..., got {actual[:16]}.... Refusing to load."
+        )
+    logger.info("A10: model %s checksum verified", model_path.name)
 
 # ── Global model state ───────────────────────────────
 
@@ -63,6 +109,10 @@ def _get_model(model_name: str):
         model_path = MODELS_DIR / f"{model_name}.pth"
         if not model_path.exists():
             raise FileNotFoundError(f"Model not found: {model_name}")
+
+        # A10 — verify SHA-256 before handing the path to torch.load
+        # (which unpickles arbitrary objects).
+        _verify_model_checksum(model_path)
 
         index_path = MODELS_DIR / f"{model_name}.index"
 
@@ -195,19 +245,25 @@ async def infer(req: InferRequest):
             protect=req.protect,
         )
 
-        duration_s = len(output_audio) / TARGET_SR
+        # D09 — use the model's native target sample rate (typically
+        # 40000 or 48000 depending on the training config). Previously
+        # this hardcoded 44100 which produced wrong pitch/duration on
+        # any model that wasn't sampled at exactly 44.1 kHz.
+        tgt_sr = int(model_data.get("tgt_sr") or DEFAULT_FALLBACK_SR)
+
+        duration_s = len(output_audio) / tgt_sr
 
         # Encode output to WAV base64
-        audio_b64 = _encode_wav(output_audio, TARGET_SR)
+        audio_b64 = _encode_wav(output_audio, tgt_sr)
 
         elapsed = time.time() - t0
-        logger.info("Converted %.1fs audio in %.1fs (model=%s, pitch=%+d, f0=%s)",
-                     duration_s, elapsed, req.model_name, req.pitch_shift, req.f0_method)
+        logger.info("Converted %.1fs audio in %.1fs (model=%s, pitch=%+d, f0=%s, sr=%d)",
+                     duration_s, elapsed, req.model_name, req.pitch_shift, req.f0_method, tgt_sr)
 
         return InferResponse(
             audio=audio_b64,
             duration_s=round(duration_s, 2),
-            sample_rate=TARGET_SR,
+            sample_rate=tgt_sr,
             model_name=req.model_name,
         )
 

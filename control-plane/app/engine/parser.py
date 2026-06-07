@@ -38,6 +38,60 @@ def parse_workflow_file(file_path: str) -> dict[str, Any]:
     return _validate_workflow(data)
 
 
+class _NoAliasSafeLoader(yaml.SafeLoader):
+    """D13 — block YAML anchors / aliases at parse time.
+
+    ``yaml.safe_load`` is safe against arbitrary code execution but
+    NOT against the billion-laughs / alias-bomb attack: a tiny
+    document with deeply nested ``*`` references expands to gigabytes
+    of in-memory dict on load. Workflow definitions never need
+    anchors (steps are flat ordered lists), so we refuse them at
+    load time and surface a clear error to the operator.
+    """
+
+
+def _reject_anchor(loader, node):
+    raise yaml.constructor.ConstructorError(
+        None, None,
+        "YAML anchors and aliases are not allowed in workflow definitions "
+        "(D13 — alias-bomb / billion-laughs guard).",
+        node.start_mark,
+    )
+
+
+# Wire the rejector for every node kind ``*`` could reference.
+_NoAliasSafeLoader.add_constructor("!", _reject_anchor)
+_NoAliasSafeLoader.add_constructor(None, _reject_anchor)
+
+
+def _safe_load_no_anchors(content: str):
+    # PyYAML resolves `*alias` references during compose-step, so the
+    # constructor hooks above can't see them by themselves. Subclass
+    # the composer to refuse aliases at compose-time.
+    loader = _NoAliasSafeLoader(content)
+    try:
+        # Walk the event stream and reject AliasEvent before composition.
+        # PyYAML's compose() returns the root node; if there's an alias
+        # in the stream, compose_node raises.
+        original_compose_node = loader.compose_node
+
+        def guarded_compose_node(parent, index):
+            if loader.check_event(yaml.AliasEvent):
+                event = loader.peek_event()
+                raise yaml.constructor.ConstructorError(
+                    None, None,
+                    "YAML aliases (*ref) are not allowed in workflow "
+                    "definitions (D13 — alias-bomb guard).",
+                    event.start_mark,
+                )
+            return original_compose_node(parent, index)
+
+        loader.compose_node = guarded_compose_node  # type: ignore[assignment]
+        return loader.get_single_data()
+    finally:
+        loader.dispose()
+
+
 def parse_workflow_string(content: str, fmt: str = "yaml") -> dict[str, Any]:
     """Parse a workflow definition from a string.
 
@@ -49,7 +103,8 @@ def parse_workflow_string(content: str, fmt: str = "yaml") -> dict[str, Any]:
         Validated workflow dict.
     """
     if fmt == "yaml":
-        data = yaml.safe_load(content)
+        # D13 — refuse alias-bomb payloads.
+        data = _safe_load_no_anchors(content)
     else:
         data = json.loads(content)
 

@@ -562,68 +562,132 @@ async def _execute_lab_cron_cmd(
     cron_name: str,
     command: str,
 ) -> None:
-    """Execute a direct command in the lab's sandbox container."""
+    """Execute a direct cron command inside the lab's sandbox container.
+
+    Cluster P — previously this used ``docker.from_env()`` + ``cntr.exec_run``
+    which the docker-socket-proxy blocks (``EXEC=0`` in docker-compose.yml).
+    The result was silent failure: the [CRON-JOB:...] inject row landed in
+    the feed but no result ever appeared. The proxy posture was intentional
+    — widening it to allow exec would let bob-api shell into any container
+    on the host, not just lab sandboxes — so we keep ``EXEC=0`` and route
+    the command through the same sandbox HTTP API the agent's ``shell_exec``
+    tool already uses. That endpoint runs inside the per-lab container,
+    enforces a first-token whitelist, applies output truncation, and
+    surfaces a uniform success/output envelope back to the scheduler.
+
+    Operator-facing trade-off: the command's first token must be in
+    ``sandbox/main.py:SHELL_WHITELIST`` (curl, wget, python3, cat, grep,
+    awk, sed, ffmpeg, yt-dlp, …). Arbitrary scripts must be wrapped via
+    ``python3 -c "import subprocess; subprocess.run(['/path/to/script.sh'])"``
+    or routed through ``method='orchestrator_inject'`` with an agent that
+    has the shell_exec tool granted.
+    """
+    import httpx
     from app.services.container_manager import ensure_sandbox
 
     async with session_factory() as db:
-        try:
-            lab_repo = LabRepository(db)
-            msg_repo = LabMessageRepository(db)
+        lab_repo = LabRepository(db)
+        msg_repo = LabMessageRepository(db)
 
-            lab = await lab_repo.get_by_id(lab_id)
-            if not lab:
-                return
+        lab = await lab_repo.get_by_id(lab_id)
+        if not lab:
+            return
 
-            # Ensure sandbox exists (retry for race with parallel commands)
-            import docker
-            container_name = f"bob-lab-{str(lab.id)[:12]}"
-            client = docker.from_env()
+        # Use the lab's existing tool-call budget for the cron command so
+        # operators have a single knob (lab.tool_timeout_sec) that bounds
+        # every sandbox-shelled invocation.
+        timeout_sec = int(lab.tool_timeout_sec or 30)
+        max_output_kb = int(lab.tool_max_output_kb or 256)
 
-            for attempt in range(3):
-                try:
-                    await ensure_sandbox(lab.id, memory_mb=lab.tool_container_memory_mb)
-                    cntr = client.containers.get(container_name)
-                    break
-                except Exception:
-                    if attempt < 2:
-                        await asyncio.sleep(2)
-                    else:
-                        raise
-
-            exec_result = cntr.exec_run(
-                ["sh", "-c", command],
-                workdir="/",
-                demux=True,
-            )
-            stdout = (exec_result.output[0] or b"").decode("utf-8", errors="replace")[:8000]
-            stderr = (exec_result.output[1] or b"").decode("utf-8", errors="replace")[:4000]
-            exit_code = exec_result.exit_code
-
-            output = stdout
-            if stderr:
-                output += f"\n[stderr]\n{stderr}"
-
+        async def _record(content: str, message_type: str = "result") -> None:
             await msg_repo.create(
                 lab_id=lab.id,
                 iteration=lab.current_iteration,
                 sender_type="system",
                 sender_name="cron-scheduler",
-                content=f"[CRON-JOB:{cron_name}] Command result (exit {exit_code}):\n```\n{output}\n```",
-                message_type="result",
+                content=content,
+                message_type=message_type,
             )
             await db.commit()
 
-            await _broadcast_lab_event(lab.id, "lab.cron_job.result", {
-                "cron_name": cron_name,
-                "exit_code": exit_code,
-            })
+        # Bring up the sandbox container (retry to absorb concurrency with
+        # the runner). R6 — use the base URL returned by ensure_sandbox so
+        # the URL convention lives in container_manager and any future
+        # rename only has to happen once.
+        base_url: str | None = None
+        for attempt in range(3):
+            try:
+                base_url = await ensure_sandbox(lab.id, memory_mb=lab.tool_container_memory_mb)
+                break
+            except Exception:
+                if attempt < 2:
+                    await asyncio.sleep(2)
+                else:
+                    logger.exception(
+                        "Lab CRON cmd '%s' in lab %s: ensure_sandbox failed",
+                        cron_name, lab_id,
+                    )
+                    await _record(
+                        f"[CRON-JOB:{cron_name}] direct_cmd_exec failed: "
+                        f"sandbox container could not be started."
+                    )
+                    return
+        assert base_url is not None  # loop above either returned or set this
+        payload = {
+            "lab_id": str(lab.id),
+            "command": command,
+            "timeout_sec": timeout_sec,
+            "max_output_kb": max_output_kb,
+        }
 
-            logger.info(
-                "Lab CRON cmd '%s' in lab '%s' completed (exit %d)",
-                cron_name, lab.name, exit_code,
+        # HTTP timeout = sandbox-side timeout + 5s grace, mirroring the
+        # convention used by tool_exec.shell_exec (cluster E reference).
+        http_timeout = timeout_sec + 5
+
+        try:
+            async with httpx.AsyncClient(timeout=http_timeout) as client:
+                resp = await client.post(f"{base_url}/shell_exec", json=payload)
+                resp.raise_for_status()
+                result = resp.json()
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "Lab CRON cmd '%s' in lab %s: sandbox HTTP error: %s",
+                cron_name, lab_id, exc,
             )
-        except Exception as e:
-            logger.exception("Lab CRON cmd exec failed for '%s' in lab %s: %s", cron_name, lab_id, e)
+            await _record(
+                f"[CRON-JOB:{cron_name}] direct_cmd_exec failed: sandbox "
+                f"unreachable ({exc.__class__.__name__})."
+            )
+            return
+        except Exception:
+            logger.exception(
+                "Lab CRON cmd '%s' in lab %s: unexpected error contacting sandbox",
+                cron_name, lab_id,
+            )
+            await _record(
+                f"[CRON-JOB:{cron_name}] direct_cmd_exec failed: unexpected "
+                f"error contacting sandbox."
+            )
+            return
+
+        success = bool(result.get("success"))
+        output = str(result.get("output") or "")
+        if len(output) > max_output_kb * 1024:
+            output = output[: max_output_kb * 1024] + "\n... [truncated]"
+        status_tag = "success" if success else "failed"
+        await _record(
+            f"[CRON-JOB:{cron_name}] result ({status_tag}):\n```\n{output}\n```"
+        )
+
+        await _broadcast_lab_event(lab.id, "lab.cron_job.result", {
+            "cron_name": cron_name,
+            "success": success,
+        })
+
+        logger.info(
+            "Lab CRON cmd '%s' in lab '%s' completed (%s)",
+            cron_name, lab.name, status_tag,
+        )
 
 
 async def _recover_stuck_labs(db: AsyncSession, session_factory: async_sessionmaker) -> None:
@@ -646,7 +710,9 @@ async def _recover_stuck_labs(db: AsyncSession, session_factory: async_sessionma
             )
             has_cron = agent_result.scalars().first() is not None
             if has_cron:
-                await lab_repo.update(lab.id, status="paused")
+                # O06 — set paused_at so the UI shows when the lab was last
+                # touched (the previous "stuck running" timestamp is gone).
+                await lab_repo.update(lab.id, status="paused", paused_at=now)
                 logger.info("Recovered stuck lab '%s' → paused (has CRON agents)", lab.name)
             else:
                 await lab_repo.update(lab.id, status="failed")

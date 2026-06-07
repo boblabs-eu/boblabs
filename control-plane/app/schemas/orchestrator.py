@@ -1,9 +1,28 @@
 """Bob Manager — AI Orchestrator Pydantic schemas."""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+
+# O05 — Single source of truth for the loop_type column. Mirrored by the
+# DB CHECK constraint added in migration 0010 and by the strategy registry
+# in ``app.services.loop_strategies.__init__``. If you add a new strategy:
+# (1) register it there, (2) widen this Literal, (3) widen the CHECK.
+LoopTypeStr = Literal[
+    "plan_execute",
+    "critique_refine",
+    "round_robin",
+    "debate",
+    "map_reduce",
+    "parallel_broadcast",
+    "tree_of_thought",
+    "react",
+    "supervisor",
+    "solo_agent",
+]
 
 
 # ── Settings ──────────────────────────────────────
@@ -60,6 +79,9 @@ class AIProviderResponse(BaseModel):
     server_id: UUID | None = None
     server_name: str | None = None
     is_active: bool
+    # Cluster I — surface so the admin UI can render an "Approve" button
+    # for auto-discovered rows.
+    pending_approval: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -240,7 +262,7 @@ class ActivityItem(BaseModel):
 class LabCreate(BaseModel):
     name: str
     description: str = ""
-    loop_type: str = "plan_execute"
+    loop_type: LoopTypeStr = "plan_execute"
     loop_config: dict = {}
     orchestrator_model_id: UUID | None = None
     orchestrator_prompt: str = ""
@@ -268,7 +290,7 @@ class LabCreate(BaseModel):
 class LabUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
-    loop_type: str | None = None
+    loop_type: LoopTypeStr | None = None
     loop_config: dict | None = None
     orchestrator_model_id: UUID | None = None
     orchestrator_prompt: str | None = None
@@ -736,7 +758,7 @@ class RagAccessRef(BaseModel):
 class LabBlueprintLab(BaseModel):
     name: str
     description: str = ""
-    loop_type: str = "plan_execute"
+    loop_type: LoopTypeStr = "plan_execute"
     loop_config: dict = {}
     strategy_prompt_override: str | None = None
     context_files: list[dict] = []

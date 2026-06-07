@@ -24,6 +24,16 @@ class Workflow(Base):
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
     )
+    # Cluster F — per-resource ACL. Owner can do everything, editors can
+    # view/edit/execute, viewers read-only. Same JSONB shape as projects/
+    # labs/rag_collections. workflows.project_id SET NULL on project
+    # delete means workflows survive their parent — without this column
+    # an orphaned workflow's ACL would be empty.
+    acl: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=lambda: {"owner": "admin", "editors": [], "viewers": []},
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

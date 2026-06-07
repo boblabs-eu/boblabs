@@ -60,9 +60,9 @@ If you've ever tried to give an LLM access to your stack and walked away cold, t
       <img src="docs/screenshots/dashboard-rag.png" alt="RAG" width="100%"/>
     </td>
     <td width="50%" align="center">
-      <b>Logs &amp; Admin</b><br/>
-      <sub>Every request logged. Time-limited tokens, infra ACLs, audit trail.</sub><br/>
-      <img src="docs/screenshots/dashboard-logs.png" alt="Logs" width="100%"/>
+      <b>Inside a Lab</b><br/>
+      <sub>Orchestrator + N agents, shared timeline, live message bus, per-agent state.</sub><br/>
+      <img src="docs/screenshots/dashboard-lab.png" alt="Lab" width="100%"/>
     </td>
   </tr>
 </table>

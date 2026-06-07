@@ -5,6 +5,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { getBlogPosts, getBlogPost, getBlogPostBySlug } from '../services/api';
 import ShareButtons from '../components/common/ShareButtons';
 
@@ -133,7 +135,7 @@ export default function BlogPage() {
           <Link to="/docs">Docs</Link>
           <Link to="/blog">Blog</Link>
           <a
-            href="https://github.com/bob-labs/bob-manager"
+            href="https://github.com/boblabs-eu/boblabs"
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -165,9 +167,24 @@ export default function BlogPage() {
               )}
             </div>
             <div className="lp-blog-article-content">
-              {selectedPost.content.split('\n').map((paragraph, i) => (
-                <p key={i}>{paragraph}</p>
-              ))}
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  table: ({ children }) => (
+                    <div className="lp-blog-table-wrap">
+                      <table>{children}</table>
+                    </div>
+                  ),
+                  pre: ({ children }) => (
+                    <pre className="lp-blog-code-block">{children}</pre>
+                  ),
+                  a: ({ href, children }) => (
+                    <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+                  ),
+                }}
+              >
+                {selectedPost.content}
+              </ReactMarkdown>
             </div>
             <ShareButtons
               url={typeof window !== 'undefined'

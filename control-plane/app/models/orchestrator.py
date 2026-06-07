@@ -66,6 +66,12 @@ class AIProvider(Base):
         nullable=True,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Cluster I — auto-discovery from agent metrics ticks creates rows
+    # with pending_approval=True so an attacker who learned AGENT_SECRET
+    # cannot register a provider that immediately serves dispatch
+    # traffic. Existing rows were grandfathered to False by migration
+    # 0005. Engine resolvers filter on pending_approval=False.
+    pending_approval: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

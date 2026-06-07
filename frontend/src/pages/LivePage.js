@@ -24,6 +24,20 @@ import './LivePage.css';
 
 /* ─── tiny helpers ─────────────────────────────── */
 
+/**
+ * U07 — Single source of truth for "is this lab a consumer-app / showroom
+ * template that should be hidden from the public Live page?". Pre-fix
+ * the same lowercased-name prefix check lived in two places (the
+ * initial loader at L864 and the right-sidebar renderer at L1162); a
+ * drift between the two would have leaked app rows into the sidebar.
+ */
+function isHiddenAppLab(lab) {
+  const n = (lab.name || '').toLowerCase();
+  return n.startsWith('app:')
+      || n.startsWith('showroom:')
+      || n.startsWith('showroom_template_');
+}
+
 function formatBytes(b) {
   if (!b) return '0 B';
   if (b < 1024) return b + ' B';
@@ -861,13 +875,7 @@ export default function LivePage() {
     try {
       const r = await getLiveLabs();
       setLabs(r.data);
-      const visible = r.data.filter(l => {
-        const n = (l.name || '').toLowerCase();
-        // Hide consumer-app labs (Phase 1.2 prefix `app:`, plus legacy tag prefixes).
-        return !n.startsWith('app:')
-            && !n.startsWith('showroom:')
-            && !n.startsWith('showroom_template_');
-      });
+      const visible = r.data.filter(l => !isHiddenAppLab(l));
       setSelectedLabId(prev => {
         if (prev) return prev;
         const running = visible.find(l => l.status === 'running');
@@ -1159,13 +1167,7 @@ export default function LivePage() {
 
         {/* ── RIGHT SIDEBAR: Labs ────────── */}
         {(() => {
-          const visibleLabs = labs.filter(l => {
-            const n = (l.name || '').toLowerCase();
-            // Hide consumer-app labs (Phase 1.2 prefix `app:`, plus legacy tag prefixes).
-        return !n.startsWith('app:')
-            && !n.startsWith('showroom:')
-            && !n.startsWith('showroom_template_');
-          });
+          const visibleLabs = labs.filter(l => !isHiddenAppLab(l));
           return (
             <div className="lp-live-sidebar right">
               <div className="lp-live-sidebartitle">Labs</div>

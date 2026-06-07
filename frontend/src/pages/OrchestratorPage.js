@@ -8,6 +8,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
 import {
   getConversations,
   createConversation,
@@ -39,22 +40,34 @@ import LabsView from '../components/labs/LabsView';
 import AgentsView from '../components/agents/AgentsView';
 import OutreachView from '../components/outreach/OutreachView';
 
-/* ── Markdown-lite renderer ─────────────────────── */
-function renderMarkdown(text) {
-  if (!text) return '';
-  let html = text
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre class="orch-code"><code>$2</code></pre>')
-    .replace(/`([^`]+)`/g, '<code class="orch-inline-code">$1</code>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/^### (.+)$/gm, '<h4>$1</h4>')
-    .replace(/^## (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^# (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
-    .replace(/\n/g, '<br/>');
-  return html;
+/**
+ * U04 — render markdown via react-markdown instead of a hand-rolled
+ * regex-replace pipeline. The previous `renderMarkdown` did naive
+ * `&` / `<` / `>` escaping then re-injected HTML via
+ * `dangerouslySetInnerHTML`; nesting bugs (think `**a<b**`) could
+ * leak structure into the DOM. react-markdown parses to an AST and
+ * renders as React elements — no HTML string concatenation, so no
+ * `dangerouslySetInnerHTML` path at all.
+ *
+ * Classes match what the old renderer emitted so the existing CSS
+ * (orch-code, orch-inline-code) keeps working without a sweep.
+ */
+const MARKDOWN_COMPONENTS = {
+  pre: ({ node, ...props }) => <pre className="orch-code" {...props} />,
+  code: ({ node, inline, className, children, ...props }) => (
+    inline
+      ? <code className="orch-inline-code" {...props}>{children}</code>
+      : <code className={className} {...props}>{children}</code>
+  ),
+};
+
+function MessageMarkdown({ children }) {
+  if (!children) return null;
+  return (
+    <ReactMarkdown components={MARKDOWN_COMPONENTS}>
+      {children}
+    </ReactMarkdown>
+  );
 }
 
 /* ── Icons ──────────────────────────────────────── */
@@ -1794,10 +1807,9 @@ export default function OrchestratorPage() {
                     </span>
                   )}
                 </div>
-                <div
-                  className="orch-msg-content"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) }}
-                />
+                <div className="orch-msg-content">
+                  <MessageMarkdown>{m.content}</MessageMarkdown>
+                </div>
                 {/* Show attached images in user messages */}
                 {m.extra?.images?.length > 0 && (
                   <div className="orch-msg-images">
@@ -1869,10 +1881,9 @@ export default function OrchestratorPage() {
                     ))}
                   </div>
                 )}
-                <div
-                  className="orch-msg-content"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(streamingText || '▊') }}
-                />
+                <div className="orch-msg-content">
+                  <MessageMarkdown>{streamingText || '▊'}</MessageMarkdown>
+                </div>
                 {/* Streaming audio player (riffusion) */}
                 {streamingAudio?.audio && (
                   <div className="orch-msg-audio">

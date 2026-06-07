@@ -434,13 +434,27 @@ async def _upload_media(
     from app.services.tool_executor import LAB_RESOURCES_ROOT
 
     workspace = LAB_RESOURCES_ROOT / str(executor.lab_id)
-    full_path = (workspace / file_path).resolve()
+    raw_path = workspace / file_path
 
-    # Security: ensure path stays within workspace
-    if not str(full_path).startswith(str(workspace.resolve())):
+    # Cluster L — reject symlinks before resolve() so a workspace-internal
+    # link pointing at, e.g., another lab's resources can't be coerced
+    # into "this is just a file inside my workspace". resolve() collapses
+    # the link to its target; the startswith() check would then evaluate
+    # the TARGET. Rejecting up-front keeps the trust boundary at the link
+    # itself rather than its destination.
+    try:
+        if raw_path.is_symlink():
+            return _fail("Symlinks are not allowed for upload_media.")
+    except OSError:
+        return _fail(f"File not found: {file_path}")
+
+    full_path = raw_path.resolve()
+
+    # Security: ensure path stays within workspace (segment-aware — A09)
+    if not full_path.is_relative_to(workspace.resolve()):
         return _fail("File path must be within the lab workspace.")
 
-    if not full_path.is_file():
+    if not full_path.is_file() or full_path.is_symlink():
         return _fail(f"File not found: {file_path}")
 
     mime_type, _ = mimetypes.guess_type(str(full_path))

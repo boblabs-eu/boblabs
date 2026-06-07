@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 
 from app.api.dependencies import DbSession, get_current_user
 from app.services.authorization import check_permission, Permission
-from app.models.orchestrator import LabMessage
+from app.models.orchestrator import LabAgent, LabMessage
 from app.repositories.lab_repo import (
     LabAgentRepository,
     LabRepository,
@@ -111,19 +111,24 @@ async def list_labs(
         lab for lab in labs
         if not (isinstance(lab.acl, dict) and lab.acl.get("tag") == "agent_instance")
     ]
-    agent_repo = LabAgentRepository(db)
-    message_counts = await _get_message_counts(db, [lab.id for lab in labs])
-    results = []
-    for lab in labs:
-        agents = await agent_repo.get_by_lab(lab.id)
-        results.append(_lab_to_response(lab, len(agents), message_counts.get(lab.id, 0)))
-    return results
+    lab_ids = [lab.id for lab in labs]
+    message_counts = await _get_message_counts(db, lab_ids)
+    agent_counts = await _get_agent_counts(db, lab_ids)
+    return [
+        _lab_to_response(lab, agent_counts.get(lab.id, 0), message_counts.get(lab.id, 0))
+        for lab in labs
+    ]
 
 
 @router.post("", response_model=LabResponse, status_code=status.HTTP_201_CREATED)
 async def create_lab(data: LabCreate, db: DbSession, user: dict = Depends(get_current_user)):
     repo = LabRepository(db)
     lab = await repo.create(user=user, **data.model_dump(exclude_unset=True))
+    # See note in labs_blueprint.import_lab — materialize context_files now so they
+    # appear in WORKSPACE FILES before the first run.
+    if lab.context_files:
+        from app.services.lab_runner import _materialize_context_files
+        _materialize_context_files(lab)
     return _lab_to_response(lab, 0, 0)
 
 
@@ -265,6 +270,11 @@ async def duplicate_lab(lab_id: UUID, db: DbSession, user: dict = Depends(get_cu
                 description=res.description,
             )
 
+    # Same materialization as create/import — make sure context_files exist on disk.
+    if new_lab.context_files:
+        from app.services.lab_runner import _materialize_context_files
+        _materialize_context_files(new_lab)
+
     new_agents = await agent_repo.get_by_lab(new_lab.id)
     return _lab_to_response(new_lab, len(new_agents), 0)
 
@@ -362,6 +372,23 @@ async def _get_message_counts(db: DbSession, lab_ids: list[UUID]) -> dict[UUID, 
         select(LabMessage.lab_id, func.count(LabMessage.id))
         .where(LabMessage.lab_id.in_(lab_ids))
         .group_by(LabMessage.lab_id)
+    )
+    return {lab_id: int(count or 0) for lab_id, count in result.all()}
+
+
+async def _get_agent_counts(db: DbSession, lab_ids: list[UUID]) -> dict[UUID, int]:
+    """P02 — single GROUP BY query for agent counts across many labs.
+
+    Pre-fix: ``list_labs`` looped over labs and called
+    ``LabAgentRepository.get_by_lab(lab.id)`` per lab (N+1 over the lab
+    count). With 50 labs that was 51 SELECTs for one HTTP request.
+    """
+    if not lab_ids:
+        return {}
+    result = await db.execute(
+        select(LabAgent.lab_id, func.count(LabAgent.id))
+        .where(LabAgent.lab_id.in_(lab_ids))
+        .group_by(LabAgent.lab_id)
     )
     return {lab_id: int(count or 0) for lab_id, count in result.all()}
 

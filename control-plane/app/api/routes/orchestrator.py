@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from app.api.dependencies import DbSession, get_current_user
+from app.api.dependencies import DbSession, get_current_user, require_admin
 from app.models.orchestrator import AIAgent, AIProvider, Conversation
 from app.repositories.orchestrator_repo import (
     AIAgentRepository,
@@ -184,6 +184,27 @@ async def test_provider(provider_id: UUID, db: DbSession):
         return await svc.test_provider(provider_id)
     except ValueError as e:
         raise HTTPException(404, str(e))
+
+
+@router.post("/providers/{provider_id}/approve", response_model=AIProviderResponse)
+async def approve_provider(provider_id: UUID, db: DbSession,
+                             user: dict = Depends(require_admin)):
+    """Approve an auto-discovered AI provider (cluster I).
+
+    Auto-discovered providers from agent metrics ticks are inserted with
+    ``pending_approval=True, is_active=False`` so an attacker who learned
+    AGENT_SECRET cannot register a provider that immediately serves
+    dispatch traffic. Admin approval flips both flags so the engine
+    will route to it.
+    """
+    repo = AIProviderRepository(db)
+    provider = await repo.get_by_id(provider_id)
+    if not provider:
+        raise HTTPException(404, "Provider not found")
+    updated = await repo.update(
+        provider_id, pending_approval=False, is_active=True,
+    )
+    return updated
 
 
 # ── AI Models ─────────────────────────────────────

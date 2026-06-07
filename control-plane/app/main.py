@@ -1,8 +1,10 @@
 """Bob Manager Control Plane — FastAPI application entry point."""
 
 import asyncio
+import fcntl
 import logging
 import os
+import sys
 import warnings
 
 # Pydantic v2 reserves the ``model_`` prefix for its own attributes and emits
@@ -15,6 +17,64 @@ warnings.filterwarnings(
     message=r'Field "model_.*" has conflict with protected namespace "model_"\.',
     category=UserWarning,
 )
+
+
+# ── Cluster N — enforce single-worker uvicorn ─────────────────────────
+#
+# A lot of bob-api state is per-process: the WebSocket hub (_agents,
+# _clients, _pending, _metrics_cache, _terminal_sessions), the lab runner
+# registry (_active_runners), the loop-detection manager (_buffers), the
+# GPU semaphores in tool_media (_gpu_slots), and trading_service's hot
+# wallet dict. Multi-worker uvicorn silently partitions every one of
+# those, so an agent socket lands on worker A while a UI client on
+# worker B waits for events it will never receive.
+#
+# The Dockerfile already pins ``--workers 1`` but an operator editing
+# docker-compose to override that command could break the invariant
+# without realising. Two defences fire at import time:
+#   1) WEB_CONCURRENCY / UVICORN_WORKERS > 1 → exit non-zero immediately.
+#   2) A non-blocking flock on /tmp/bob-api.lock — a second worker in the
+#      same container can't acquire it and exits cleanly.
+# Operators who genuinely need to externalise state to Redis/SQL must
+# set BOB_API_ALLOW_MULTI_WORKER=1 *after* doing that work; the env is
+# undocumented on purpose so it can't be set accidentally.
+
+def _enforce_single_worker() -> None:
+    if os.environ.get("BOB_API_ALLOW_MULTI_WORKER", "").lower() in {"1", "true", "yes"}:
+        return
+    for env in ("WEB_CONCURRENCY", "UVICORN_WORKERS", "GUNICORN_WORKERS"):
+        raw = os.environ.get(env, "").strip()
+        if not raw:
+            continue
+        try:
+            if int(raw) > 1:
+                sys.stderr.write(
+                    f"FATAL: bob-api requires a single worker process but "
+                    f"{env}={raw}. The control-plane keeps WebSocket, lab-"
+                    f"runner and trading state in-process; multi-worker "
+                    f"deployments silently partition that state. Externalise "
+                    f"the affected stores (Redis / SQL) and set "
+                    f"BOB_API_ALLOW_MULTI_WORKER=1 to override.\n"
+                )
+                sys.exit(1)
+        except ValueError:
+            pass
+    lock_path = os.environ.get("BOB_API_LOCK_PATH", "/tmp/bob-api.lock")
+    try:
+        fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, BlockingIOError):
+        sys.stderr.write(
+            f"FATAL: another bob-api worker is already running (holds "
+            f"{lock_path}). Single-worker invariant violated.\n"
+        )
+        sys.exit(1)
+    # Keep ``fd`` open for the process lifetime — Python closes the fd
+    # when the interpreter exits, releasing the lock.
+    globals()["_BOB_API_LOCK_FD"] = fd
+
+
+_enforce_single_worker()
 
 from fastapi import FastAPI, WebSocket  # noqa: E402  (after warnings filter)
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
@@ -345,6 +405,18 @@ async def cleanup_sandbox_containers():
             logger.info("Cleaned up %d orphaned sandbox containers on startup", removed)
     except Exception as e:
         logger.warning("Failed to cleanup sandbox containers: %s", e)
+
+
+@app.on_event("startup")
+async def sweep_lightrag_orphans():
+    """OP04 — drop on-disk LightRAG dirs whose rag_collections row vanished."""
+    try:
+        from app.services.lightrag_service import LightRagService
+        removed = await LightRagService.sweep_orphans()
+        if removed:
+            logger.info("OP04: swept %d orphan LightRAG dirs on startup", removed)
+    except Exception as e:
+        logger.warning("OP04: LightRAG orphan sweep failed: %s", e)
 
 
 @app.on_event("startup")

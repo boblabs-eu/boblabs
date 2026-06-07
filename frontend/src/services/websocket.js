@@ -21,7 +21,21 @@ class WebSocketService {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
 
     const wsUrl = getWsUrl();
-    this.ws = new WebSocket(`${wsUrl}/ws/client`);
+    // Cluster A — /ws/client now requires a valid JWT. The token is
+    // attached via subprotocol so it never lands in the URL access log.
+    // Falls back to a query param when subprotocols are unavailable.
+    const token = localStorage.getItem('bob_token') || '';
+    if (!token) {
+      console.warn('[WS] No bob_token in localStorage; not connecting');
+      this._emit('connection', { status: 'unauthorized' });
+      return;
+    }
+    try {
+      this.ws = new WebSocket(`${wsUrl}/ws/client`, [`bob.jwt.${token}`]);
+    } catch (e) {
+      // Subprotocol path failed (older browser) — fall back to query.
+      this.ws = new WebSocket(`${wsUrl}/ws/client?token=${encodeURIComponent(token)}`);
+    }
 
     this.ws.onopen = () => {
       console.log('[WS] Connected to control plane');

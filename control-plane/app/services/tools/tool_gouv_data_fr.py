@@ -33,6 +33,12 @@ logger = logging.getLogger(__name__)
 _MAIN_BASE = "https://www.data.gouv.fr/api"
 _METRICS_BASE = "https://metric-api.data.gouv.fr/api"
 _TABULAR_BASE = "https://tabular-api.data.gouv.fr/api"
+# Recherche d'entreprises — the canonical company-name search API for France
+# (Annuaire des Entreprises). Public, no auth, listed on data.gouv.fr as a
+# dataservice. This is what an agent should call to map "rezomes" → SIREN +
+# NAF + headcount + address + dirigeants, not the raw SIRENE Tabular (which
+# is impractical for name-based lookup on millions of rows).
+_ENTREPRISES_BASE = "https://recherche-entreprises.api.gouv.fr"
 _UA = "bob-api/gouv_data_fr (+https://boblabs.eu)"
 _TIMEOUT = 15.0
 
@@ -68,8 +74,10 @@ TOOLS = {
             "action": {
                 "type": "string",
                 "description": (
-                    "One of: search_datasets, get_dataset, search_organizations, "
-                    "get_organization, get_dataset_metrics, query_tabular, get_resource"
+                    "One of: search_entreprises (find French companies by name/filters — USE THIS "
+                    "for company prospecting, not query_tabular), get_entreprise (by SIREN), "
+                    "search_datasets, get_dataset, search_organizations, get_organization, "
+                    "get_dataset_metrics, query_tabular, get_resource"
                 ),
                 "required": True,
             },
@@ -77,6 +85,11 @@ TOOLS = {
                 "type": "object",
                 "description": (
                     "Action-specific parameters. Common shapes: "
+                    "search_entreprises {query, page=1, per_page=10, activite_principale (NAF code "
+                    "e.g. '62.01Z'), code_postal, departement (e.g. '75' or '75,92,93'), "
+                    "tranche_effectif_salarie (INSEE code e.g. '12' for 20-49), "
+                    "categorie_juridique, etat_administratif='A'}; "
+                    "get_entreprise {siren}; "
                     "search_datasets {query, page=1, page_size=20, sort, organization, format}; "
                     "get_dataset {id}; "
                     "search_organizations {query, page=1, page_size=20}; "
@@ -108,6 +121,8 @@ async def gouv_data_fr(executor: "ToolExecutor", args: dict) -> dict:
         return {"success": False, "output": "gouv_data_fr: 'params' must be an object"}
 
     handlers = {
+        "search_entreprises": _search_entreprises,
+        "get_entreprise": _get_entreprise,
         "search_datasets": _search_datasets,
         "get_dataset": _get_dataset,
         "search_organizations": _search_organizations,
@@ -421,6 +436,139 @@ async def _query_tabular(params: dict) -> dict:
     if status != 200:
         return _err(status, body)
     return {"success": True, "output": body}
+
+
+# ── Action handlers — Recherche d'entreprises (Annuaire) ───────────────────
+
+
+def _normalize_company_record(item: dict) -> dict:
+    """Trim the rich recherche-entreprises payload to the fields agents actually
+    need for prospecting. Keeps SIREN, name, NAF code, headcount band, address,
+    and the list of directors so the Copywriter can address them by name.
+    """
+    siege = item.get("siege") or {}
+    dirigeants = []
+    for d in (item.get("dirigeants") or []):
+        if not isinstance(d, dict):
+            continue
+        dirigeants.append({
+            "nom": d.get("nom") or d.get("nom_complet"),
+            "prenoms": d.get("prenoms") or d.get("prenom"),
+            "qualite": d.get("qualite"),
+            "type_dirigeant": d.get("type_dirigeant"),
+        })
+    return {
+        "siren": item.get("siren"),
+        "nom_complet": item.get("nom_complet"),
+        "nom_raison_sociale": item.get("nom_raison_sociale"),
+        "sigle": item.get("sigle"),
+        "activite_principale": item.get("activite_principale"),  # NAF/APE code
+        "section_activite_principale": item.get("section_activite_principale"),
+        "tranche_effectif_salarie": item.get("tranche_effectif_salarie"),
+        "annee_tranche_effectif_salarie": item.get("annee_tranche_effectif_salarie"),
+        "categorie_juridique": item.get("nature_juridique") or item.get("categorie_juridique"),
+        "etat_administratif": item.get("etat_administratif"),
+        "date_creation": item.get("date_creation"),
+        "siege": {
+            "siret": siege.get("siret"),
+            "code_postal": siege.get("code_postal"),
+            "commune": siege.get("libelle_commune") or siege.get("commune"),
+            "departement": siege.get("departement"),
+            "region": siege.get("region"),
+            "adresse": siege.get("adresse") or siege.get("geo_adresse"),
+            "activite_principale": siege.get("activite_principale"),
+            "tranche_effectif_salarie": siege.get("tranche_effectif_salarie"),
+        },
+        "dirigeants": dirigeants,
+        "public_page": f"https://annuaire-entreprises.data.gouv.fr/entreprise/{item.get('siren')}" if item.get("siren") else None,
+    }
+
+
+async def _search_entreprises(params: dict) -> dict:
+    """Search French companies by name and/or filters.
+
+    Wraps https://recherche-entreprises.api.gouv.fr/search. Free, no auth, no
+    pagination tricks — pass `q` and any combination of:
+      - activite_principale: NAF/APE code (e.g. '62.01Z')
+      - code_postal: postal code
+      - departement: department code (or comma-list)
+      - tranche_effectif_salarie: INSEE headcount band code (e.g. '12' for 20-49)
+      - categorie_juridique: legal-form code
+      - etat_administratif: 'A' (active, default) or 'C' (cessée)
+    """
+    query = str(params.get("query") or params.get("q") or "").strip()
+    page = int(params.get("page") or 1)
+    per_page = min(int(params.get("per_page") or params.get("page_size") or 10), 25)
+
+    qp: dict = {"page": page, "per_page": per_page}
+    if query:
+        qp["q"] = query
+    for k in (
+        "activite_principale",
+        "code_postal",
+        "departement",
+        "tranche_effectif_salarie",
+        "categorie_juridique",
+        "etat_administratif",
+        "code_commune",
+        "nature_juridique",
+        "section_activite_principale",
+    ):
+        v = params.get(k)
+        if v is None or v == "":
+            continue
+        # API accepts comma-separated lists for multi-value filters
+        if isinstance(v, list):
+            qp[k] = ",".join(str(x) for x in v)
+        else:
+            qp[k] = str(v)
+
+    # Default to active companies if the caller didn't say otherwise.
+    qp.setdefault("etat_administratif", "A")
+
+    cache_key = f"search_entreprises:{sorted(qp.items())}"
+    cached = _get_cached(cache_key, _CATALOG_TTL)
+    if cached is not None:
+        return {"success": True, "output": cached}
+
+    async with _client() as client:
+        status, body = await _get_json(client, f"{_ENTREPRISES_BASE}/search", qp)
+    if status != 200 or not isinstance(body, dict):
+        return _err(status, body)
+
+    output = {
+        "total_results": body.get("total_results"),
+        "page": body.get("page") or page,
+        "per_page": body.get("per_page") or per_page,
+        "total_pages": body.get("total_pages"),
+        "results": [_normalize_company_record(r) for r in (body.get("results") or [])],
+    }
+    _set_cached(cache_key, output)
+    return {"success": True, "output": output}
+
+
+async def _get_entreprise(params: dict) -> dict:
+    """Fetch a single French company by SIREN (9 digits) via the Annuaire search."""
+    siren = str(params.get("siren") or params.get("id") or "").strip().replace(" ", "")
+    if not siren or not siren.isdigit() or len(siren) != 9:
+        return {"success": False, "output": "get_entreprise: 'siren' must be a 9-digit string"}
+
+    cache_key = f"get_entreprise:{siren}"
+    cached = _get_cached(cache_key, _CATALOG_TTL)
+    if cached is not None:
+        return {"success": True, "output": cached}
+
+    qp = {"q": siren, "per_page": 1, "etat_administratif": "A,C"}
+    async with _client() as client:
+        status, body = await _get_json(client, f"{_ENTREPRISES_BASE}/search", qp)
+    if status != 200 or not isinstance(body, dict):
+        return _err(status, body)
+    results = body.get("results") or []
+    if not results:
+        return {"success": False, "output": f"get_entreprise: SIREN {siren} not found"}
+    output = _normalize_company_record(results[0])
+    _set_cached(cache_key, output)
+    return {"success": True, "output": output}
 
 
 HANDLERS = {

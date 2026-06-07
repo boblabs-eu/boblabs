@@ -20,7 +20,7 @@ from app.repositories.lab_repo import (
 )
 from app.schemas.orchestrator import LabInject
 from app.services.authorization import check_permission, Permission
-from app.services.lab_runner import LabRunner, get_runner
+from app.services.lab_runner import LabRunner, get_runner, is_runner_reserved, reserve_runner
 from app.api.routes.labs import LAB_RESOURCES_ROOT
 
 router = APIRouter(tags=["labs"])
@@ -41,7 +41,10 @@ async def run_lab(
     check_permission(user, lab.acl, Permission.EDIT)
     if lab.status == "running":
         raise HTTPException(409, "Lab is already running")
-    if get_runner(lab_id):
+    # Cluster B — reject duplicates against both the live registry AND
+    # any pending reservation (a concurrent /run that's already inside
+    # the BackgroundTasks queue).
+    if is_runner_reserved(lab_id):
         raise HTTPException(409, "Lab runner already active")
 
     if not lab.orchestrator_model_id:
@@ -96,7 +99,12 @@ async def run_lab(
     from app.services.container_manager import ensure_sandbox
     await ensure_sandbox(lab_id, memory_mb=lab.tool_container_memory_mb)
 
-    runner = LabRunner(lab_id, async_session)
+    # Cluster B — atomic reserve. If another request slipped in after the
+    # earlier is_runner_reserved check, reserve_runner returns None and
+    # we surface a 409.
+    runner = await reserve_runner(lab_id, async_session)
+    if runner is None:
+        raise HTTPException(409, "Lab runner already active")
     background_tasks.add_task(runner.run)
     return {"status": "started", "lab_id": str(lab_id), "reset": reset}
 
@@ -111,7 +119,7 @@ async def reset_lab(lab_id: UUID, db: DbSession, user: dict = Depends(get_curren
     check_permission(user, lab.acl, Permission.EDIT)
     if lab.status == "running":
         raise HTTPException(409, "Cannot reset a running lab — stop it first")
-    if get_runner(lab_id):
+    if is_runner_reserved(lab_id):
         raise HTTPException(409, "Lab runner still active")
 
     msg_repo = LabMessageRepository(db)
@@ -148,8 +156,19 @@ async def pause_lab(lab_id: UUID, db: DbSession, user: dict = Depends(get_curren
     if runner:
         await runner.pause()
         return {"status": "paused"}
-    # No runner in memory — just update DB status
-    await repo.update(lab_id, status="paused")
+    # Cluster B — the cold path used to overwrite status to "paused" even
+    # for terminal states (completed/failed/stopped). A subsequent /resume
+    # then saw "paused" and span up a new runner. Refuse the transition
+    # so terminal states stay terminal.
+    if lab.status in ("completed", "failed", "stopped"):
+        raise HTTPException(409, f"Cannot pause lab with status '{lab.status}'")
+    if lab.status == "paused":
+        # Idempotent — nothing to do.
+        return {"status": "paused"}
+    # O06 — every status="paused" transition must also set paused_at so the
+    # UI duration column and the CRON wake-up dedup never see stale values.
+    from datetime import datetime, timezone
+    await repo.update(lab_id, status="paused", paused_at=datetime.now(timezone.utc))
     await db.commit()
     return {"status": "paused"}
 
@@ -170,12 +189,18 @@ async def resume_lab(
     if runner:
         await runner.resume()
         return {"status": "resumed"}
+    # Cluster B — guard against duplicates from concurrent /resume calls
+    # arriving while we're still in the BackgroundTasks queue.
+    if is_runner_reserved(lab_id):
+        raise HTTPException(409, "Lab runner already active")
     # No runner in memory (e.g. after server restart) — start a fresh runner
     if lab.status not in ("paused", "created"):
         raise HTTPException(409, f"Cannot resume lab with status '{lab.status}'")
     await repo.update(lab_id, status="created", paused_at=None)
     await db.commit()
-    new_runner = LabRunner(lab_id, async_session)
+    new_runner = await reserve_runner(lab_id, async_session)
+    if new_runner is None:
+        raise HTTPException(409, "Lab runner already active")
     background_tasks.add_task(new_runner.run)
     return {"status": "resumed"}
 
@@ -224,6 +249,12 @@ async def inject_message(
     if runner:
         await runner.inject(data.content)
         return {"status": "injected", "started_runner": False}
+
+    # Cluster B — refuse if a reservation is in flight; the in-flight
+    # runner will pick up the inject row on first iteration after it
+    # transitions from reservation -> _active_runners.
+    if is_runner_reserved(lab_id):
+        raise HTTPException(409, "Lab runner spawning; retry shortly")
 
     # No active runner — persist + auto-spawn.
     msg_repo = LabMessageRepository(db)
@@ -285,6 +316,10 @@ async def inject_message(
 
     await ensure_sandbox(lab_id, memory_mb=lab.tool_container_memory_mb)
 
-    new_runner = LabRunner(lab_id, async_session)
+    new_runner = await reserve_runner(lab_id, async_session)
+    if new_runner is None:
+        # Another caller raced in between persist and spawn; the inject
+        # row will still be picked up by their runner.
+        return {"status": "injected", "started_runner": False}
     background_tasks.add_task(new_runner.run)
     return {"status": "injected", "started_runner": True}

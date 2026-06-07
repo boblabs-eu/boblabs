@@ -319,7 +319,7 @@ async def download_output_file(lab_id: UUID, path: str, db: DbSession):
     # Security: prevent path traversal
     try:
         target = (ws_dir / path).resolve()
-        if not str(target).startswith(str(ws_dir.resolve())):
+        if not target.is_relative_to(ws_dir.resolve()):
             raise HTTPException(400, "Path traversal denied.")
     except Exception:
         raise HTTPException(400, "Invalid path.")
@@ -345,7 +345,7 @@ async def read_output_file_content(lab_id: UUID, path: str, db: DbSession):
     ws_dir = LAB_RESOURCES_ROOT / str(lab_id)
     try:
         target = (ws_dir / path).resolve()
-        if not str(target).startswith(str(ws_dir.resolve())):
+        if not target.is_relative_to(ws_dir.resolve()):
             raise HTTPException(400, "Path traversal denied.")
     except Exception:
         raise HTTPException(400, "Invalid path.")

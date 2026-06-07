@@ -146,16 +146,24 @@ def split_text(text: str, splitter: str, chunk_size: int, chunk_overlap: int) ->
     return _recursive_split(text, target_chars, overlap_chars)
 
 
-def _flatten_json(value, prefix: str, lines: list[str]) -> None:
+_FLATTEN_JSON_MAX_DEPTH = 32
+
+
+def _flatten_json(value, prefix: str, lines: list[str], _depth: int = 0) -> None:
+    # Cluster M — bound recursion so an adversarial deeply-nested JSON
+    # ingest can't trip Python's RecursionLimit before our own checks.
+    if _depth >= _FLATTEN_JSON_MAX_DEPTH:
+        lines.append(f"{prefix}: [truncated: depth>{_FLATTEN_JSON_MAX_DEPTH}]")
+        return
     if isinstance(value, dict):
         for key, item in value.items():
             next_prefix = f"{prefix}.{key}" if prefix else str(key)
-            _flatten_json(item, next_prefix, lines)
+            _flatten_json(item, next_prefix, lines, _depth + 1)
         return
     if isinstance(value, list):
         for index, item in enumerate(value):
             next_prefix = f"{prefix}[{index}]"
-            _flatten_json(item, next_prefix, lines)
+            _flatten_json(item, next_prefix, lines, _depth + 1)
         return
     lines.append(f"{prefix}: {value}")
 

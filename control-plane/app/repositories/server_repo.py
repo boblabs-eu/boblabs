@@ -6,6 +6,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.server import Server
+from app.repositories._paginate import MAX_LIMIT, clamp_limit
 
 
 class ServerRepository:
@@ -14,9 +15,14 @@ class ServerRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_all(self) -> list[Server]:
-        """Return all registered servers."""
-        result = await self.db.execute(select(Server).order_by(Server.name))
+    async def get_all(self, limit: int = MAX_LIMIT, offset: int = 0) -> list[Server]:
+        """Return all registered servers. P04 — clamped at MAX_LIMIT."""
+        result = await self.db.execute(
+            select(Server)
+            .order_by(Server.name)
+            .limit(clamp_limit(limit))
+            .offset(max(0, offset))
+        )
         return list(result.scalars().all())
 
     async def get_by_id(self, server_id: UUID) -> Server | None:

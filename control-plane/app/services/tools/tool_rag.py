@@ -137,11 +137,11 @@ async def rag_ingest(executor: ToolExecutor, args: dict) -> dict:
 
     if source_file:
         fpath = (executor.workspace / source_file).resolve()
-        if not str(fpath).startswith(str(executor.workspace.resolve())):
+        if not fpath.is_relative_to(executor.workspace.resolve()):
             return {"success": False, "output": "Path traversal denied."}
         if not fpath.is_file():
             fpath = (executor.workspace / "output" / source_file).resolve()
-            if not str(fpath).startswith(str(executor.workspace.resolve())) or not fpath.is_file():
+            if not fpath.is_relative_to(executor.workspace.resolve()) or not fpath.is_file():
                 return {"success": False, "output": f"File not found: {source_file}"}
         try:
             content = fpath.read_text(errors="replace")

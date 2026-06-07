@@ -257,20 +257,32 @@ If you don't have a static IP, use a Dynamic DNS service (e.g. DuckDNS, No-IP, C
 sudo apt install -y certbot python3-certbot-nginx
 sudo mkdir -p /var/www/certbot
 
-# Get certificate (nginx plugin auto-configures SSL)
 sudo certbot --nginx -d your-domain.com
 ```
 
-Certbot will modify your nginx config automatically. After it runs, edit the config to finalize:
+**`certbot --nginx` edits your site file in place** — you don't need to manually
+rewrite it afterwards. It does three things:
+
+1. Adds a new `server { listen 443 ssl ... }` block with the right
+   `ssl_certificate` paths.
+2. Injects a `return 301 https://$host$request_uri;` into the existing
+   port-80 block so plain HTTP gets redirected.
+3. Reloads nginx.
+
+You'll see `# managed by Certbot` annotations on the lines it touched.
+Confirm with:
 
 ```bash
-sudo nano /etc/nginx/sites-available/bob-manager
+sudo cat /etc/nginx/sites-available/bob-manager
+sudo nginx -t
 ```
 
-Replace the full file with the final HTTPS config:
+Then refine the generated HTTPS block — add security headers, the
+`/api/` location, the `/ws/client` WebSocket location — until it
+matches the production-ready shape below:
 
 ```nginx
-# HTTP → HTTPS redirect
+# HTTP → HTTPS redirect (certbot injected the `return 301` into this block)
 server {
     listen 80;
     server_name your-domain.com;
@@ -284,7 +296,8 @@ server {
     }
 }
 
-# HTTPS — main config
+# HTTPS — main config (certbot created this block; flesh out with security
+# headers + API/WebSocket locations as needed)
 server {
     listen 443 ssl http2;
     server_name your-domain.com;
@@ -340,11 +353,198 @@ server {
 >
 > The agent WebSocket (port 8888) is **NOT** exposed through the public nginx — agents connect on the LAN directly.
 
+### 4.6 Adding additional domains
+
+The same host can serve multiple domains (e.g. the bob-manager admin UI at
+`lab.boblabs.eu`, the public showroom at `showroom.boblabs.eu`, the marketing
+landing at `boblabs.eu`, vanity domains like `cryptobob.fr` that surface a
+single showroom app at root). Every public domain follows the same pattern.
+
+**Convention: one file per domain in `/etc/nginx/sites-available/<domain>`.**
+Don't mix multiple `server_name`s into a single file — it makes certbot's
+edits harder to track and complicates per-domain proxy targets.
+
+#### Container port reference
+
+| Container         | Host port | What it serves                                    |
+|-------------------|-----------|---------------------------------------------------|
+| `bob-ui`          | 3000      | bob-manager admin UI + bob-api                    |
+| `showroom-ui`     | 4000      | Public showroom SPA + showroom-api (`/api/`, `/og/`, `/static/`) |
+| `boblabs_landing` | 8081      | boblabs.eu marketing landing                      |
+
+#### Step-by-step
+
+1. **DNS** — point `<domain>` to your public IP with an **A record**, not your
+   registrar's "redirect" feature. Registrar-level redirects terminate at the
+   registrar's edge, which means certbot on your server can't issue a
+   certificate for that hostname and HTTPS will never work.
+
+2. **Create the site config — HTTP block only at first.** Do not reference
+   the cert paths yet — they don't exist, and `nginx -t` would refuse to
+   reload. Include both the certbot challenge location and a temporary
+   `proxy_pass` so the domain actually serves something during the cert
+   issuance window:
+
+   ```nginx
+   # /etc/nginx/sites-available/<domain>
+   server {
+       listen 80;
+       server_name <domain> www.<domain>;
+
+       location /.well-known/acme-challenge/ {
+           root /var/www/certbot;
+       }
+
+       location / {
+           proxy_pass http://127.0.0.1:<container-port>;
+           proxy_http_version 1.1;
+           proxy_set_header Host              $host;
+           proxy_set_header X-Real-IP         $remote_addr;
+           proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+           proxy_read_timeout 120s;
+       }
+   }
+   ```
+
+3. **Enable + reload:**
+
+   ```bash
+   sudo ln -s /etc/nginx/sites-available/<domain> /etc/nginx/sites-enabled/
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+
+4. **Issue the cert — certbot edits the file in place:**
+
+   ```bash
+   sudo certbot --nginx -d <domain> -d www.<domain>
+   ```
+
+   You'll see new `# managed by Certbot` annotations: a fresh HTTPS `server`
+   block with the right `ssl_certificate` paths, and a `301 https://...`
+   redirect injected into the original port-80 block. Don't manually
+   rewrite the file — let certbot own its edits.
+
+5. **Verify:**
+
+   ```bash
+   curl -I https://<domain>/      # HTTP/2 200, no cert error
+   curl -I http://<domain>/       # 301 → https
+   ```
+
+#### Vanity domain (one app at root path)
+
+When the new domain should serve a *specific* showroom app at its root
+(e.g. `cryptobob.fr/` shows the crypto-predictions tracker, no Bob Labs
+catalog), the nginx-side work is identical to the steps above
+(`proxy_pass http://127.0.0.1:4000`). The remaining changes are
+SPA + SEO renderer side:
+
+- Make the React SPA hostname-aware so `/` renders the target app under the
+  vanity hostname. See the `IS_CRYPTOBOB` pattern in
+  `showroom-ui/src/App.js`.
+- Make the share-URL builders drop the `/app/<slug>` prefix when running
+  under the vanity host (see `ChannelCardModal.js` /
+  `LeaderboardTab.js` for the pattern).
+- Thread the `Host` header into the SEO renderer so crawler-facing
+  `og:url` / `<link rel="canonical">` advertise the vanity domain
+  (`showroom-api/app/api/routes/seo.py` reads `Host` and passes it to
+  `render_for_path`, which forwards it to the per-app renderers).
+
+### 4.4 Defense-in-depth: rate limits + body caps (OP02)
+
+The `/api/v1/internal/apps/*` surface accepts HMAC-signed consumer-app
+traffic. The HMAC verifier rejects bad requests on the application
+side, but the cheap denial-of-service is to spam the route with junk
+payloads or unsigned bodies that still consume CPU during signature
+verification.
+
+Add the following to the **inside** of the `server { listen 443 … }`
+block before any `location` directives, then put a per-location
+`limit_req` on `/api/v1/internal/apps/`:
+
+```nginx
+# Rate-limit pool for the consumer-app surface. 10 req/s with a 20-burst.
+# Pre-fix this was undocumented and operators were relying on the FastAPI
+# layer to absorb everything.
+limit_req_zone $binary_remote_addr zone=consumer_apps:10m rate=10r/s;
+
+# (inside server block) ──
+
+# Tight body cap for the HMAC envelope — bigger payloads are always wrong.
+location /api/v1/internal/apps/ {
+    limit_req zone=consumer_apps burst=20 nodelay;
+    client_max_body_size 2m;          # HMAC payload + envelope, never larger
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+# Same idea for /api/v1/public/blog — it accepts inbound blog POSTs and
+# the cluster K + D06 fixes make identity binding tight, but a body cap
+# is still cheap insurance.
+location /api/v1/public/blog {
+    limit_req zone=consumer_apps burst=5 nodelay;
+    client_max_body_size 1m;
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Adjust the rate to match your real consumer-app fan-in.
+
 Test and reload:
 
 ```bash
 sudo nginx -t
 sudo systemctl reload nginx
+```
+
+### 4.5 Showroom env-var hygiene (OP05)
+
+`showroom-api` lives in its own compose stack and reads two `.env`
+files: the top-level `.env` (shared `JWT_SECRET`, DB URL, etc.) and
+`showroom-api/.env` (showroom-specific OAuth / SMTP / app keys). The
+drift hazard is that operators rotate `JWT_SECRET` in the top-level
+`.env` and forget the showroom copy still has the old value — JWTs
+issued by bob-api start failing in showroom-api with a generic 401.
+
+Recommended layout:
+
+```text
+bob-manager/
+  .env                  # JWT_SECRET, AGENT_SECRET, DB creds — single source of truth
+  showroom-api/
+    .env                # ONLY showroom-specific vars (OAuth, SMTP, Cloudflare key, etc.)
+                        # NEVER copy JWT_SECRET here — load it via the compose file
+```
+
+In `showroom-api`'s compose service, inject the shared secrets from
+the top-level `.env` via `env_file:`:
+
+```yaml
+# docker-compose.yml (top-level)
+services:
+  showroom-api:
+    env_file:
+      - ./.env                  # shared secrets (JWT_SECRET, DB_URL, …)
+      - ./showroom-api/.env     # showroom-only vars
+    # ↑ second file's keys win on conflict; keep them disjoint to avoid
+    #   surprises.
+```
+
+This way `JWT_SECRET` exists in exactly one place on disk and the
+showroom-api process reads the same value as bob-api / bob-ui.
+Audit periodically with:
+
+```bash
+grep -H '^JWT_SECRET=' .env showroom-api/.env
+# Should print exactly ONE line (the top-level .env).
 ```
 
 ### 4.4 Auto-renewal

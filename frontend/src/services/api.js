@@ -5,6 +5,8 @@
 
 import axios from 'axios';
 
+import { handleUnauthorized } from '../context/AuthContext';
+
 const API_BASE = process.env.REACT_APP_API_URL || '';
 
 const api = axios.create({
@@ -20,6 +22,23 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// U03 — global 401 interceptor. Pre-fix, an expired token surfaced as
+// a page-level "Failed to load" error and the user had to manually
+// hit the logout button before the login redirect kicked in. Now a
+// 401 from anywhere triggers the auth context's logout, which clears
+// the JWT and lets the route guards bounce to the login screen. The
+// 401 still propagates back to the caller so per-page error UIs can
+// render their own message if they want.
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      handleUnauthorized();
+    }
+    return Promise.reject(error);
+  },
+);
 
 // ─── Auth ──────────────────────────────────────────
 export const getToken = (secret) => api.post('/auth/token', { secret });
@@ -525,5 +544,77 @@ export const sendOutreachDraft = (labId, filename) =>
   api.post(`/outreach/drafts/${labId}/${encodeURIComponent(filename)}/send`);
 export const rejectOutreachDraft = (labId, filename) =>
   api.post(`/outreach/drafts/${labId}/${encodeURIComponent(filename)}/reject`);
+
+
+// ── Admin-API client (A07) ─────────────────────────────
+// AdminPage authenticates with ADMIN_SECRET separately from the regular
+// bob_token JWT. Pre-fix, AdminPage swapped localStorage's bob_token in
+// and out around every admin call (`withAdminJwt`):
+//   1) destructive if another concurrent request fired during the swap
+//      window (Promise.all([loadX(), loadY()]) trampled the global);
+//   2) confusing for users — the swap briefly put "admin" claims into
+//      the LiveLab tab too if they had it open.
+// The fix routes admin calls through a dedicated axios instance whose
+// Authorization header is set at construction time and never touches
+// localStorage. AdminPage calls `createAdminApiClient(jwt)` once after
+// admin login and uses the returned methods for every admin request.
+export function createAdminApiClient(jwt) {
+  if (!jwt) throw new Error('createAdminApiClient requires a JWT');
+  const adminAxios = axios.create({
+    baseURL: `${API_BASE}/api/v1`,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${jwt}`,
+    },
+  });
+  // Mirror the global 401 interceptor so a revoked admin JWT also
+  // triggers handleUnauthorized().
+  adminAxios.interceptors.response.use(
+    (r) => r,
+    (e) => {
+      if (e?.response?.status === 401) handleUnauthorized();
+      return Promise.reject(e);
+    },
+  );
+  return {
+    // Access tokens + requests
+    getTrialRequests: () => adminAxios.get('/access-tokens/trial-requests'),
+    updateTrialRequestStatus: (id, status) =>
+      adminAxios.patch(`/access-tokens/trial-requests/${id}`, { status }),
+    getAccessTokens: () => adminAxios.get('/access-tokens'),
+    createAccessToken: (data) => adminAxios.post('/access-tokens', data),
+    revokeAccessToken: (id) => adminAxios.delete(`/access-tokens/${id}`),
+    // Quote requests
+    getQuoteRequests: () => adminAxios.get('/access-tokens/quote-requests'),
+    updateQuoteRequestStatus: (id, status) =>
+      adminAxios.patch(`/access-tokens/quote-requests/${id}`, { status }),
+    // Infra access whitelist
+    getInfraWhitelist: () => adminAxios.get('/access-tokens/platform/infra-access'),
+    updateInfraWhitelist: (emails) =>
+      adminAxios.put('/access-tokens/platform/infra-access', { emails }),
+    // Blog tokens + posts
+    getBlogTokens: () => adminAxios.get('/access-tokens/blog-tokens'),
+    createBlogToken: (label) => adminAxios.post('/access-tokens/blog-tokens', { label }),
+    revokeBlogToken: (id) => adminAxios.delete(`/access-tokens/blog-tokens/${id}`),
+    getBlogPostsAdmin: () => adminAxios.get('/access-tokens/blog-posts'),
+    deleteBlogPost: (id) => adminAxios.delete(`/access-tokens/blog-posts/${id}`),
+    // Consumer apps (HMAC)
+    getConsumerApps: () => adminAxios.get('/admin/consumer-apps'),
+    createConsumerApp: (data) => adminAxios.post('/admin/consumer-apps', data),
+    revokeConsumerApp: (id) => adminAxios.delete(`/admin/consumer-apps/${id}`),
+    deleteConsumerApp: (id) => adminAxios.delete(`/admin/consumer-apps/${id}/permanent`),
+    // Lab visibility
+    adminListLabs: () => adminAxios.get('/admin/labs'),
+    adminSetLabVisibility: (labId, isPublic) =>
+      adminAxios.patch(`/admin/labs/${labId}/visibility`, { is_public: isPublic }),
+    // Admin logs (observability dashboard)
+    getAdminLogRequests: (params = {}) => adminAxios.get('/admin/logs/requests', { params }),
+    getAdminLogFacets: (params = {}) => adminAxios.get('/admin/logs/facets', { params }),
+    getAdminLogMetrics: (params = {}) => adminAxios.get('/admin/logs/metrics', { params }),
+    getAdminLogLabLoops: (params = {}) => adminAxios.get('/admin/logs/lab-loops', { params }),
+    getAdminLogTasks: (params = {}) => adminAxios.get('/admin/logs/tasks', { params }),
+    getAdminLogLlmEvents: (params = {}) => adminAxios.get('/orchestrator/llm-events', { params }),
+  };
+}
 
 export default api;

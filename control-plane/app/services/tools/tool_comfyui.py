@@ -160,7 +160,7 @@ async def _upload_input(executor: ToolExecutor, base: str, args: dict) -> dict:
     file_path = None
     for c in candidates:
         resolved = c.resolve()
-        if str(resolved).startswith(str(workspace.resolve())) and resolved.is_file():
+        if resolved.is_relative_to(workspace.resolve()) and resolved.is_file():
             file_path = resolved
             break
     # Symlinks resolve to their target — also accept symlinks in workspace

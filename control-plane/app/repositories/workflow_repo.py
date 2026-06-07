@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.workflow import Workflow, WorkflowStep
+from app.repositories._paginate import MAX_LIMIT, clamp_limit
 
 
 class WorkflowRepository:
@@ -15,10 +16,14 @@ class WorkflowRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_all(self) -> list[Workflow]:
-        """Return all workflows with steps loaded."""
+    async def get_all(self, limit: int = MAX_LIMIT, offset: int = 0) -> list[Workflow]:
+        """Return all workflows with steps loaded. P04 — clamped at MAX_LIMIT."""
         result = await self.db.execute(
-            select(Workflow).options(selectinload(Workflow.steps)).order_by(Workflow.name)
+            select(Workflow)
+            .options(selectinload(Workflow.steps))
+            .order_by(Workflow.name)
+            .limit(clamp_limit(limit))
+            .offset(max(0, offset))
         )
         return list(result.scalars().all())
 

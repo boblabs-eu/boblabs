@@ -81,8 +81,12 @@ class WorkflowExecutor:
             })
 
             # Send command to agent
+            # R01 + R04 — track the pending future against the target
+            # agent so a mid-flight disconnect drops it immediately, and
+            # explicitly cancel it on caller-side timeout / send failure
+            # so `_pending` doesn't accumulate across many workflow runs.
             command_id = str(uuid.uuid4())
-            future = manager.create_pending(command_id)
+            future = manager.create_pending(command_id, agent_name=server_name)
 
             sent = await manager.send_to_agent(server_name, {
                 "type": "workflow.step.execute",
@@ -95,6 +99,7 @@ class WorkflowExecutor:
             })
 
             if not sent:
+                manager.cancel_pending(command_id, reason="send_failed")
                 await self.exec_repo.update_log(
                     log.id,
                     status="failed",
@@ -110,6 +115,7 @@ class WorkflowExecutor:
             try:
                 result = await asyncio.wait_for(future, timeout=step.timeout_seconds)
             except asyncio.TimeoutError:
+                manager.cancel_pending(command_id, reason="step_timeout")
                 result = {"exit_code": -1, "stdout": "", "stderr": "Step timed out"}
 
             step_status = "success" if result.get("exit_code") == 0 else "failed"

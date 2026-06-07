@@ -209,6 +209,81 @@ The optional Script Runner service (`script-runner/`) extends the agent with cus
 
 See `script-runner/README.md` for details.
 
+## Security Posture (operator-facing)
+
+### A04 — Agent runs as `bob-agent` in the `docker` group
+
+`install.sh` creates the `bob-agent` system user and adds it to both
+`video` (for nvidia-uvm access) and `docker`. **Membership in `docker`
+is root-equivalent**: anyone (or anything) running as `bob-agent` can
+`docker run --privileged -v /:/host alpine chroot /host bash` and own
+the entire box.
+
+This is an intentional trade-off — the agent reports container metrics
+via `docker stats` and lists containers via the Docker socket, both of
+which need this privilege. Pretending it's not root would be worse than
+documenting it loudly:
+
+* **Threat model**: trust the operator's GPU server posture. Anyone
+  with shell access to the GPU box already has root via `docker`; the
+  agent doesn't widen the attack surface beyond what a logged-in admin
+  already had.
+* **Lateral-movement gate**: the agent never executes user-supplied
+  shell directly. The only remote command channel is the control-plane
+  WebSocket, gated by `AGENT_SECRET`. Rotate `AGENT_SECRET` on suspected
+  control-plane compromise.
+* **Hardening alternatives if you need to drop `docker` group access**:
+  - Run the agent under a **rootless docker** install — owns its own
+    daemon socket, no host access.
+  - Skip the Docker collector (`AGENT_DISABLE_DOCKER_COLLECTOR=1`) and
+    remove the user from the group; you lose the container view in the
+    dashboard but the host stays segregated.
+  - Run the agent inside a sidecar container that mounts a
+    docker-socket-proxy with `CONTAINERS=1` but every write verb off
+    (mirrors the `docker-socket-proxy` posture the control-plane uses
+    in compose).
+
+### OP03 — Transport for the agent WebSocket
+
+The default `CONTROL_PLANE_URL=ws://…` is **plaintext**. That is fine
+for a private LAN behind the same firewall as the control plane (the
+typical home-lab deployment). It is **not** fine the moment the agent
+talks to the control plane over an untrusted network — coffee shop
+WiFi, a residential ISP backhaul, a separate data center. `AGENT_SECRET`
+is sent in the `Authorization` header on connect and can be sniffed
+verbatim from a plaintext socket.
+
+For any non-loopback / non-LAN deployment:
+
+1. Terminate TLS in front of the control plane (nginx already does this
+   in `INSTALL_PROD.md`'s example, just add `location /ws/agent { … }`
+   to the existing TLS server block).
+2. Point the agent at the public hostname:
+   ```env
+   CONTROL_PLANE_URL=wss://your-control-plane.example.com/ws/agent
+   ```
+3. Set a long random `AGENT_SECRET` (≥40 bytes) and rotate it any time
+   you suspect the previous one leaked.
+
+The agent will refuse to upgrade `ws://` ↔ `wss://` silently — it
+connects to exactly the scheme you ask for. If you mistype `ws://` to a
+TLS-terminated endpoint, the handshake fails closed.
+
+### A10 — GPU-service model integrity
+
+`gpu-services/bark-api` and `gpu-services/rvc-api` `torch.load()` user-
+provided `.pth` files. Pickle is RCE on load. Both services now support
+operator-pinned SHA-256 checksums:
+
+* **RVC**: drop a sibling `<model>.pth.sha256` file with the expected
+  hex digest. Set `RVC_REQUIRE_CHECKSUM=1` to refuse load when the
+  sidecar is missing.
+* **Bark**: set `BARK_CHECKPOINT_DIR=/path/to/bark/cache` and commit a
+  `manifest.sha256` (one `<hash>  <filename>` per line) inside it. Set
+  `BARK_REQUIRE_MANIFEST=1` for hard-fail on missing manifest.
+
+Generate digests with `sha256sum model.pth > model.pth.sha256`.
+
 ## Related Documents
 
 - [GPU_SERVICES.md](GPU_SERVICES.md) — GPU pipeline services

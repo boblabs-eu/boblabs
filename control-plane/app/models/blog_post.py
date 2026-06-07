@@ -41,6 +41,9 @@ class BlogToken(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     token: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    # Cluster K — SHA-256 hex of the plaintext token. Same dual-read
+    # deprecation pattern as access_tokens.
+    token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     label: Mapped[str] = mapped_column(String(255), default="")
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(

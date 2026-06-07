@@ -166,13 +166,24 @@ class AdminLoginOut(BaseModel):
 
 @router.post("/admin-login", response_model=AdminLoginOut)
 async def admin_login(payload: AdminLoginIn):
-    """Authenticate the platform admin using ADMIN_SECRET."""
+    """Authenticate the platform admin using ADMIN_SECRET.
+
+    Cluster K — compare with ``hmac.compare_digest`` (constant time) so
+    repeated wrong-password attempts can't be used to infer prefix
+    matches from response timing. Both sides are encoded to bytes first
+    because compare_digest insists on matching types and refuses to do a
+    short-circuiting str/str compare.
+    """
+    import hmac
+
     if not settings.admin_secret:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Admin access is not configured.",
         )
-    if payload.password != settings.admin_secret:
+    presented = (payload.password or "").encode("utf-8")
+    expected = settings.admin_secret.encode("utf-8")
+    if not hmac.compare_digest(presented, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid admin credentials.",
@@ -255,13 +266,30 @@ async def get_blog_post(post_id: UUID, db: DbSession):
 
 @router.post("/blog", response_model=BlogPostOut, status_code=201)
 async def create_blog_post(payload: BlogPostCreateIn, response: Response, db: DbSession):
-    """Create a new blog post. Requires admin_secret or a valid blog token."""
-    authorized = False
+    """Create a new blog post. Requires admin_secret or a valid blog token.
 
-    # Check admin_secret
+    D06 — the row's ``identity`` field is set from the authenticated
+    principal, not from ``payload.identity``. Pre-fix any caller could
+    write a post claiming to be anyone (e.g., a third-party blog token
+    holder publishing under "admin"). Now: admin_secret writers always
+    land as ``identity='admin'``; blog-token writers land as
+    ``identity=<token.label>`` so the row carries which token wrote
+    it. ``payload.identity`` is ignored.
+    """
+    import hmac
+
+    authorized = False
+    # D06 — derived identity, not caller-supplied.
+    identity: str | None = None
+
+    # Check admin_secret (cluster K — constant-time compare).
     if payload.admin_secret and settings.admin_secret:
-        if payload.admin_secret == settings.admin_secret:
+        if hmac.compare_digest(
+            payload.admin_secret.encode("utf-8"),
+            settings.admin_secret.encode("utf-8"),
+        ):
             authorized = True
+            identity = "admin"
 
     # Check blog token
     if not authorized and payload.token:
@@ -269,6 +297,7 @@ async def create_blog_post(payload: BlogPostCreateIn, response: Response, db: Db
         record = await token_repo.validate(payload.token)
         if record:
             authorized = True
+            identity = record.label or "blog-token"
 
     if not authorized:
         raise HTTPException(
@@ -287,7 +316,9 @@ async def create_blog_post(payload: BlogPostCreateIn, response: Response, db: Db
         title=payload.title.strip(),
         content=payload.content.strip(),
         summary=payload.summary.strip(),
-        identity=payload.identity.strip(),
+        # D06 — ignore payload.identity entirely; the authentication path
+        # determines who the row records as the writer.
+        identity=identity or "admin",
         tags=payload.tags,
         slug=payload.slug.strip() if payload.slug else None,
     )
@@ -533,8 +564,18 @@ async def live_models(db: DbSession):
 
 @router.get("/live/labs/{lab_id}/resources/{resource_id}/content")
 async def live_resource_content(lab_id: UUID, resource_id: UUID, db: DbSession):
-    """Read content/metadata of an uploaded resource (public, no sensitive data)."""
-    from app.repositories.lab_repo import LabResourceRepository
+    """Read content/metadata of an uploaded resource (public, no sensitive data).
+
+    Cluster G — previously only checked ``resource.lab_id == lab_id``, so any
+    holder of both UUIDs could read uploaded resources for non-public labs.
+    Now mirrors the gate the sibling ``output-files`` endpoint already
+    applied: ``lab.is_public`` must be true.
+    """
+    from app.repositories.lab_repo import LabRepository, LabResourceRepository
+
+    lab = await LabRepository(db).get_by_id(lab_id)
+    if not lab or not lab.is_public:
+        raise HTTPException(404, "Resource not found")
 
     resource = await LabResourceRepository(db).get_by_id(resource_id)
     if not resource or resource.lab_id != lab_id:
@@ -581,8 +622,13 @@ async def live_resource_content(lab_id: UUID, resource_id: UUID, db: DbSession):
 
 @router.get("/live/labs/{lab_id}/resources/{resource_id}/download")
 async def live_resource_download(lab_id: UUID, resource_id: UUID, db: DbSession):
-    """Download an uploaded resource (public)."""
-    from app.repositories.lab_repo import LabResourceRepository
+    """Download an uploaded resource (public). Cluster G — gate on
+    ``lab.is_public`` to match the sibling ``output-files`` download path."""
+    from app.repositories.lab_repo import LabRepository, LabResourceRepository
+
+    lab = await LabRepository(db).get_by_id(lab_id)
+    if not lab or not lab.is_public:
+        raise HTTPException(404, "Resource not found")
 
     resource = await LabResourceRepository(db).get_by_id(resource_id)
     if not resource or resource.lab_id != lab_id:
@@ -611,7 +657,7 @@ async def live_output_file_content(lab_id: UUID, path: str, db: DbSession):
     ws_dir = LAB_RESOURCES_ROOT / str(lab_id)
     try:
         target = (ws_dir / path).resolve()
-        if not str(target).startswith(str(ws_dir.resolve())):
+        if not target.is_relative_to(ws_dir.resolve()):
             raise HTTPException(400, "Path traversal denied.")
     except Exception:
         raise HTTPException(400, "Invalid path.")
@@ -669,7 +715,7 @@ async def live_output_file_download(lab_id: UUID, path: str, db: DbSession):
     ws_dir = LAB_RESOURCES_ROOT / str(lab_id)
     try:
         target = (ws_dir / path).resolve()
-        if not str(target).startswith(str(ws_dir.resolve())):
+        if not target.is_relative_to(ws_dir.resolve()):
             raise HTTPException(400, "Path traversal denied.")
     except Exception:
         raise HTTPException(400, "Invalid path.")

@@ -59,8 +59,8 @@ On the host you want to run the platform from:
 
 ```bash
 # 1. Clone
-git clone https://github.com/bob-labs/bob-manager.git
-cd bob-manager
+git clone https://github.com/boblabs-eu/boblabs.git
+cd boblabs
 
 # 2. Configure (copy the example file and adapt secrets)
 cp .env.example .env
@@ -119,8 +119,8 @@ On the GPU host:
 
 ```bash
 # 1. Clone the repo (only the agent + gpu-services folders are needed)
-git clone https://github.com/bob-labs/bob-manager.git
-cd bob-manager
+git clone https://github.com/boblabs-eu/boblabs.git
+cd boblabs
 
 # 2. Tell the host where the control plane lives
 export CONTROL_PLANE_URL=http://<control-plane-host>:8000

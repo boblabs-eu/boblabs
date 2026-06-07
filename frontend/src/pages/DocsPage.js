@@ -217,7 +217,7 @@ export default function DocsPage() {
         <div className="docs-topbar-spacer" />
         <LanguageToggle />
         <a
-          href="https://github.com/bob-labs/bob-manager"
+          href="https://github.com/boblabs-eu/boblabs"
           target="_blank"
           rel="noreferrer"
           className="docs-topbar-link"
@@ -290,9 +290,14 @@ export default function DocsPage() {
                     <table>{children}</table>
                   </div>
                 ),
-                code: ({ inline, className, children }) => {
-                  if (inline) return <code className="docs-inline-code">{children}</code>;
-                  return <CodeBlock className={className}>{children}</CodeBlock>;
+                pre: ({ children }) => {
+                  // react-markdown v10 no longer passes an `inline` flag to `code`.
+                  // Route block code structurally via `pre` (children is the default-
+                  // rendered <code class="language-…">), preserving the copy button +
+                  // language label. Inline code stays a plain <code>, styled by CSS.
+                  const codeEl = Array.isArray(children) ? children[0] : children;
+                  const props = (codeEl && codeEl.props) || {};
+                  return <CodeBlock className={props.className}>{props.children}</CodeBlock>;
                 },
               }}
             >

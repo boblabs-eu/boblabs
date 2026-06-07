@@ -285,11 +285,17 @@ class AgentWebSocketClient:
                 break
 
     async def _metrics_loop(self) -> None:
-        """Send periodic metrics to control plane."""
+        """Send periodic metrics to control plane.
+
+        P07 — every collector here is synchronous (psutil + a handful of
+        sync HTTP probes) and ``psutil.cpu_percent(interval=1)`` blocks
+        for a full second per tick. Run the whole bundle off the event
+        loop so the agent's WS heartbeat and stdin reader stay responsive.
+        """
         while self._running:
             await asyncio.sleep(config.metrics_interval)
             try:
-                metrics = _collect_all_metrics()
+                metrics = await asyncio.to_thread(_collect_all_metrics)
                 await self.ws.send(json.dumps({
                     "type": "agent.metrics",
                     "payload": metrics,

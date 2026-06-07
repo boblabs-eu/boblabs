@@ -24,6 +24,19 @@ logger = logging.getLogger(__name__)
 
 LAB_RESOURCES_ROOT = Path(os.environ.get("LAB_RESOURCES_PATH", "/data/lab_resources"))
 
+# R13 — cap multi-round strategies' accumulated TaskResult buffer. The four
+# debate/round_robin/supervisor/tree_of_thought strategies each slice a
+# trailing window (≤30 results) into the system prompt, so anything beyond
+# this cap is dead memory that grows for the lifetime of a long-running lab.
+MAX_ACCUMULATED_RESULTS = 200
+
+
+def trim_results(buf: list, max_len: int = MAX_ACCUMULATED_RESULTS) -> list:
+    """Trim ``buf`` in place to its last ``max_len`` items and return it."""
+    if len(buf) > max_len:
+        del buf[: len(buf) - max_len]
+    return buf
+
 
 # ── Actions returned by strategies ────────────────
 

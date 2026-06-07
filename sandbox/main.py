@@ -5,12 +5,15 @@ Only has access to the lab_resources volume.
 """
 
 import asyncio
+import ipaddress
 import json
 import logging
 import os
 import re
 import shlex
+import socket
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -65,9 +68,16 @@ class DbSqlRequest(DbRequest):
 
 
 def _workspace(lab_id: str) -> Path:
-    """Resolve and validate workspace path for a lab."""
+    """Resolve and validate workspace path for a lab.
+
+    A09 — segment-aware containment via ``Path.is_relative_to``. The
+    previous ``str(ws).startswith(str(root))`` was technically vulnerable
+    to a sibling-prefix collision (``/data/lab_resources`` vs
+    ``/data/lab_resources_evil``); UUIDs make this practically
+    impossible but the safer primitive costs nothing.
+    """
     ws = (LAB_RESOURCES_ROOT / lab_id).resolve()
-    if not str(ws).startswith(str(LAB_RESOURCES_ROOT.resolve())):
+    if not ws.is_relative_to(LAB_RESOURCES_ROOT.resolve()):
         raise HTTPException(400, "Invalid lab_id")
     ws.mkdir(parents=True, exist_ok=True)
     (ws / "output").mkdir(exist_ok=True)
@@ -89,9 +99,18 @@ async def health():
 @app.post("/python_exec")
 async def python_exec(req: PythonExecRequest):
     ws = _workspace(req.lab_id)
-    script_path = ws / "_exec_tmp.py"
+    # R07 — fixed `_exec_tmp.py` raced when two python_exec calls hit the
+    # same lab concurrently (e.g. an agent firing parallel tool calls).
+    # Use a per-request UUID-suffix file so the two runs cannot clobber
+    # each other's script source. `tempfile.NamedTemporaryFile` would
+    # work too but keeping the file inside the workspace preserves the
+    # behaviour that `import` from sibling files (via PYTHONPATH=ws)
+    # continues to resolve.
+    import uuid as _uuid
+    script_path = ws / f"_exec_tmp_{_uuid.uuid4().hex}.py"
     script_path.write_text(req.code)
 
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             "python3", str(script_path),
@@ -120,10 +139,14 @@ async def python_exec(req: PythonExecRequest):
             "output": _truncate(output, req.max_output_kb),
         }
     except asyncio.TimeoutError:
-        try:
-            proc.kill()
-        except Exception:
-            pass
+        # R07 — actually await the killed process so it doesn't linger
+        # as a zombie under the asyncio child watcher.
+        if proc is not None:
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
         return {"success": False, "output": f"Python execution timed out after {req.timeout_sec}s"}
     except Exception as e:
         logger.exception("python_exec failed for lab %s", req.lab_id)
@@ -155,6 +178,7 @@ async def shell_exec(req: ShellExecRequest):
             "output": f"Command '{base_cmd}' not allowed. Whitelisted: {', '.join(sorted(SHELL_WHITELIST))}",
         }
 
+    proc = None
     try:
         proc = await asyncio.create_subprocess_shell(
             req.command,
@@ -181,10 +205,14 @@ async def shell_exec(req: ShellExecRequest):
             "output": _truncate(output, req.max_output_kb),
         }
     except asyncio.TimeoutError:
-        try:
-            proc.kill()
-        except Exception:
-            pass
+        # R07 — await the killed process so it doesn't linger as a
+        # zombie. Same pattern as python_exec.
+        if proc is not None:
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
         return {"success": False, "output": f"Shell execution timed out after {req.timeout_sec}s"}
     except Exception as e:
         logger.exception("shell_exec failed for lab %s", req.lab_id)
@@ -294,6 +322,7 @@ async def youtube_download(req: YouTubeDownloadRequest):
         req.url,
     ]
 
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -309,10 +338,12 @@ async def youtube_download(req: YouTubeDownloadRequest):
             proc.communicate(), timeout=req.timeout_sec
         )
     except asyncio.TimeoutError:
-        try:
-            proc.kill()
-        except Exception:
-            pass
+        if proc is not None:
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
         return {"success": False, "output": f"Download timed out after {req.timeout_sec}s"}
     except FileNotFoundError:
         return {"success": False, "output": "yt-dlp not found. Is it installed?"}
@@ -409,11 +440,20 @@ async def youtube_channel_list(req: YouTubeChannelListRequest):
         channel_url,
     ]
 
+    # R11 — pin yt-dlp's cwd to the lab workspace so cookies, cache,
+    # debug dumps, and other side-effect files land under
+    # LAB_RESOURCES_ROOT/<lab_id>/ rather than the container's /app or
+    # the bob-sandbox user's $HOME. youtube_download already does this
+    # implicitly via cwd=str(ws); youtube_channel_list omitted it.
+    ws = _workspace(req.lab_id)
+
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=str(ws),
             env={
                 "HOME": os.environ.get("HOME", "/home/sandbox"),
                 "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
@@ -423,10 +463,12 @@ async def youtube_channel_list(req: YouTubeChannelListRequest):
             proc.communicate(), timeout=req.timeout_sec
         )
     except asyncio.TimeoutError:
-        try:
-            proc.kill()
-        except Exception:
-            pass
+        if proc is not None:
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
         return {"success": False, "output": f"Channel listing timed out after {req.timeout_sec}s"}
     except FileNotFoundError:
         return {"success": False, "output": "yt-dlp not found. Is it installed?"}
@@ -507,6 +549,36 @@ def _check_blocked(sql: str) -> str | None:
     return None
 
 
+def _sqlite_open(db_file: Path, timeout_sec: int) -> sqlite3.Connection:
+    """Open a SQLite connection with both lock-wait + wall-clock query
+    timeouts.
+
+    R09 + R10 — ``sqlite3.connect(timeout=...)`` is the *lock-acquisition*
+    timeout (busy-wait while another writer holds the file lock); it does
+    NOT bound the execution time of a single SELECT. A pathological query
+    against a large table previously could block the asyncio event loop
+    for minutes. ``set_progress_handler`` is SQLite's documented way to
+    enforce a wall-clock deadline: when the callback returns non-zero
+    SQLite aborts with ``OperationalError("interrupted")``.
+
+    Callers MUST use ``try/finally`` to close the returned connection;
+    the helper does not provide a context-manager wrapper because the
+    cursor-iterating code paths in this file want plain ``try/finally``
+    for symmetry across three different db_* endpoints.
+    """
+    conn = sqlite3.connect(str(db_file), timeout=timeout_sec)
+    deadline = time.monotonic() + timeout_sec
+
+    def _progress() -> int:
+        # Returning non-zero aborts the in-flight statement.
+        return 1 if time.monotonic() > deadline else 0
+
+    # Check every 1000 VM instructions — frequent enough to react quickly,
+    # rare enough that the overhead is negligible.
+    conn.set_progress_handler(_progress, 1000)
+    return conn
+
+
 @app.post("/db_query")
 async def db_query(req: DbSqlRequest):
     """Execute a read-only SQL query and return rows with column names."""
@@ -526,8 +598,9 @@ async def db_query(req: DbSqlRequest):
     if not db_file.exists():
         return {"success": False, "output": "No database exists yet. Use db_execute to create tables first."}
 
+    conn = None
     try:
-        conn = sqlite3.connect(str(db_file), timeout=req.timeout_sec)
+        conn = _sqlite_open(db_file, req.timeout_sec)
         conn.execute("PRAGMA query_only = ON")
         cursor = conn.execute(req.sql, req.params or [])
         columns = [desc[0] for desc in cursor.description] if cursor.description else []
@@ -537,8 +610,6 @@ async def db_query(req: DbSqlRequest):
         # Check if there are more rows
         extra = cursor.fetchone()
         truncated = extra is not None
-
-        conn.close()
 
         result = json.dumps({
             "columns": columns,
@@ -553,6 +624,13 @@ async def db_query(req: DbSqlRequest):
     except Exception as e:
         logger.exception("db_query failed for lab %s", req.lab_id)
         return {"success": False, "output": f"Database error: {e}"}
+    finally:
+        # R09 — close on every exit, including exception paths.
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 @app.post("/db_execute")
@@ -566,12 +644,12 @@ async def db_execute(req: DbSqlRequest):
 
     db_file = _db_path(ws)
 
+    conn = None
     try:
-        conn = sqlite3.connect(str(db_file), timeout=req.timeout_sec)
+        conn = _sqlite_open(db_file, req.timeout_sec)
         cursor = conn.execute(req.sql, req.params or [])
         affected = cursor.rowcount
         conn.commit()
-        conn.close()
 
         return {
             "success": True,
@@ -585,6 +663,12 @@ async def db_execute(req: DbSqlRequest):
     except Exception as e:
         logger.exception("db_execute failed for lab %s", req.lab_id)
         return {"success": False, "output": f"Database error: {e}"}
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 @app.post("/db_schema")
@@ -596,8 +680,9 @@ async def db_schema(req: DbRequest):
     if not db_file.exists():
         return {"success": True, "output": json.dumps({"tables": [], "message": "No database exists yet."})}
 
+    conn = None
     try:
-        conn = sqlite3.connect(str(db_file), timeout=req.timeout_sec)
+        conn = _sqlite_open(db_file, req.timeout_sec)
         conn.execute("PRAGMA query_only = ON")
 
         # Get all tables
@@ -606,7 +691,7 @@ async def db_schema(req: DbRequest):
         )
         tables = []
         for (table_name,) in cursor.fetchall():
-            col_cursor = conn.execute(f"PRAGMA table_info({table_name})")  # noqa: S608
+            col_cursor = conn.execute(f"PRAGMA table_info([{table_name}])")  # noqa: S608
             columns = []
             for col in col_cursor.fetchall():
                 columns.append({
@@ -624,14 +709,18 @@ async def db_schema(req: DbRequest):
                 "row_count": row_count,
             })
 
-        conn.close()
-
         return {"success": True, "output": json.dumps({"tables": tables}, default=str)}
     except sqlite3.Error as e:
         return {"success": False, "output": f"SQL error: {e}"}
     except Exception as e:
         logger.exception("db_schema failed for lab %s", req.lab_id)
         return {"success": False, "output": f"Database error: {e}"}
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 # ── Headless browser (Playwright) ─────────────────────────
@@ -730,6 +819,10 @@ async def _ensure_page():
     await ctx.add_init_script(
         "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
     )
+    # Cluster E — re-check every URL Chromium opens (top-level + redirects
+    # + sub-resources) against ``_is_private_host`` so a 302 to an internal
+    # address cannot bypass the pre-navigation guard.
+    await ctx.route("**/*", _browser_route_handler)
     page = await ctx.new_page()
     _browser_state["pw"] = pw
     _browser_state["browser"] = browser
@@ -743,26 +836,75 @@ async def _ensure_page():
     return page
 
 
+def _classify_ip(addr) -> bool:
+    return (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local
+        or addr.is_reserved
+        or addr.is_multicast
+        or addr.is_unspecified
+    )
+
+
 def _is_private_host(hostname: str) -> bool:
-    """Block access to private/internal hosts to prevent SSRF from inside sandbox."""
+    """Block access to private/internal hosts to prevent SSRF from inside sandbox.
+
+    Cluster E — uses the ``ipaddress`` stdlib so the full 127.0.0.0/8 range,
+    IPv6 loopback (``::1``), link-local (``fe80::/10``), unique-local
+    (``fc00::/7``), and multicast are all blocked. Resolves the host via
+    the system resolver and rejects if any A/AAAA record lands in a private
+    range. Fail-closed on resolver errors.
+    """
     if not hostname:
         return True
-    h = hostname.lower()
-    if h in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+    h = hostname.strip().strip("[]").lower()
+    if not h:
         return True
-    if h.startswith("169.254.") or h.startswith("10.") or h.startswith("192.168."):
+    if h == "localhost" or h.endswith(".local") or h.endswith(".internal"):
         return True
-    if h.startswith("172."):
-        try:
-            second = int(h.split(".")[1])
-            if 16 <= second <= 31:
-                return True
-        except (ValueError, IndexError):
-            pass
-    # Block neighbours inside the docker network (no dots = container hostnames)
+    # Literal IP form?
+    try:
+        addr = ipaddress.ip_address(h)
+        return _classify_ip(addr)
+    except ValueError:
+        pass
+    # Container hostnames (no dots, e.g. bob-db, bob-qdrant, bob-api)
     if "." not in h:
         return True
+    try:
+        infos = socket.getaddrinfo(h, None)
+    except (socket.gaierror, UnicodeError, OSError):
+        return True
+    for _fam, _kind, _proto, _canon, sockaddr in infos:
+        ip_str = sockaddr[0]
+        try:
+            addr = ipaddress.ip_address(ip_str)
+        except ValueError:
+            return True
+        if _classify_ip(addr):
+            return True
     return False
+
+
+async def _browser_route_handler(route, request) -> None:
+    """Playwright route interceptor that aborts any request whose host
+    fails ``_is_private_host``. Installed on the browser context so it
+    applies to top-level navigations, redirects, sub-resource loads, and
+    any JS-initiated fetch.
+
+    Cluster E — Chromium follows 3xx redirects natively without consulting
+    the Python guard; this handler re-runs the check on every URL.
+    """
+    try:
+        host = urlparse(request.url).hostname or ""
+    except Exception:
+        await route.abort()
+        return
+    if _is_private_host(host):
+        await route.abort()
+        return
+    await route.continue_()
 
 
 class BrowserNavigateRequest(BaseModel):
@@ -857,17 +999,27 @@ async def browser_close():
     async with _browser_lock:
         await _browser_close_locked()
         task = _browser_state.get("reaper_task")
-        if task is not None:
-            task.cancel()
-            _browser_state["reaper_task"] = None
+        _browser_state["reaper_task"] = None
+    # R08 — await cancellation OUTSIDE the lock so the reaper coroutine
+    # (which itself takes the lock on its next iteration) can actually
+    # unwind. ``await task`` raises CancelledError; suppress it.
+    if task is not None and not task.done():
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
     return {"success": True, "output": "Browser closed."}
 
 
 def _validate_workspace_path(lab_id: str, abs_path: str) -> Path:
-    """Ensure `abs_path` lives under this lab's workspace; raise HTTPException otherwise."""
+    """Ensure `abs_path` lives under this lab's workspace; raise HTTPException otherwise.
+
+    A09 — same segment-aware containment as ``_workspace``.
+    """
     ws = _workspace(lab_id).resolve()
     p = Path(abs_path).resolve()
-    if not str(p).startswith(str(ws)):
+    if not p.is_relative_to(ws):
         raise HTTPException(400, f"Path escapes lab workspace: {abs_path}")
     return p
 
@@ -967,3 +1119,14 @@ async def browser_eval_selector(req: BrowserEvalSelectorRequest):
 async def _on_shutdown():
     async with _browser_lock:
         await _browser_close_locked()
+        task = _browser_state.get("reaper_task")
+        _browser_state["reaper_task"] = None
+    # R08 — same cleanup pattern as /browser_close: cancel + await
+    # outside the lock so the reaper unwinds cleanly on graceful uvicorn
+    # shutdown instead of being abandoned mid-iteration.
+    if task is not None and not task.done():
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass

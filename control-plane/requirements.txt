@@ -19,10 +19,14 @@ croniter==2.0.5
 aiosmtplib==3.0.1
 docker>=7.0
 web3>=7.0
-eth-account>=0.13.0
+eth-account>=0.13.0,<0.15
 qdrant-client>=1.12.0,<1.14  # pin close to server v1.12.6 (docker-compose.yml)
 sentence-transformers>=3.0.0
 pypdf>=5.4.0
 lightrag-hku>=0.1.0
 tweepy>=4.14.0
 Pillow>=10.0.0
+
+# ── Test harness (Phase 5 Session 1.5 — not loaded in prod images by default) ─
+# Install with: pip install -r requirements.txt -r requirements-test.txt
+# Or use the make targets in the repo root.

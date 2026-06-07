@@ -38,6 +38,7 @@ export const messages = {
     'nav.docs': 'Docs',
     'nav.blog': 'Blog',
     'nav.live': 'Live',
+    'nav.showroom': 'Showroom',
     'nav.signin': 'Sign In',
     'nav.requestTrial': 'Request Trial',
 
@@ -49,7 +50,7 @@ export const messages = {
     'hero.sub': 'Bob Labs runs multi-agent labs, private RAG, GPU pipelines and a sandboxed tool runtime — on your own servers, in two commands. Configure everything visually, or ship your lab as a JSON file.',
     'hero.cta.start': 'Get Started',
     'hero.cta.preview': 'Dashboard preview',
-    'hero.cta.live': 'See it in action',
+    'hero.cta.github': 'View on GitHub',
     'hero.proof.private': 'Private by default',
     'hero.proof.noMarkup': 'No per-token markup',
     'hero.proof.unlimited': 'Unlimited labs & agents',
@@ -282,6 +283,7 @@ export const messages = {
     'nav.docs': 'Docs',
     'nav.blog': 'Blog',
     'nav.live': 'Live',
+    'nav.showroom': 'Showroom',
     'nav.signin': 'Connexion',
     'nav.requestTrial': 'Demander un essai',
 
@@ -293,7 +295,7 @@ export const messages = {
     'hero.sub': "Bob Labs exécute des labs multi-agents, du RAG privé, des pipelines GPU et un runtime d'outils sandboxé — sur vos propres serveurs, en deux commandes. Configurez tout visuellement, ou livrez votre lab sous forme de fichier JSON.",
     'hero.cta.start': 'Commencer',
     'hero.cta.preview': 'Aperçu du dashboard',
-    'hero.cta.live': 'Voir en action',
+    'hero.cta.github': 'Voir sur GitHub',
     'hero.proof.private': 'Privé par défaut',
     'hero.proof.noMarkup': 'Pas de marge par token',
     'hero.proof.unlimited': 'Labs & agents illimités',

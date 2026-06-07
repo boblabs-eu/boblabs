@@ -364,16 +364,25 @@ async def _sync_ollama_models(
                 await provider_repo.update(provider.id, name=provider_name)
 
         if provider is None:
-            # Auto-create provider for this agent's Ollama
+            # Cluster I — auto-created providers default to pending+inactive.
+            # The agent self-reports its host and any peer who learned
+            # AGENT_SECRET could publish an arbitrary base_url; require an
+            # admin to approve the row (sets pending_approval=False,
+            # is_active=True) via /api/v1/admin/providers/<id>/approve
+            # before the engine routes dispatch to it.
             provider = AIProvider(
                 name=provider_name,
                 provider_type="ollama",
                 base_url=f"http://{server.host}:11434",
                 server_id=server.id,
-                is_active=True,
+                is_active=False,
+                pending_approval=True,
             )
             provider = await provider_repo.create(provider)
-            logger.info("Auto-created Ollama provider: %s -> %s", provider_name, server.host)
+            logger.info(
+                "Auto-discovered Ollama provider (pending admin approval): %s -> %s",
+                provider_name, server.host,
+            )
 
         # Upsert models
         model_repo = AIModelRepository(db)
@@ -434,15 +443,20 @@ async def _sync_riffusion_models(
         provider = await provider_repo.get_by_name(provider_name)
 
         if provider is None:
+            # Cluster I — pending+inactive on first sight.
             provider = AIProvider(
                 name=provider_name,
                 provider_type="riffusion",
                 base_url=f"http://{server.host}:3013",
                 server_id=server.id,
-                is_active=True,
+                is_active=False,
+                pending_approval=True,
             )
             provider = await provider_repo.create(provider)
-            logger.info("Auto-created Riffusion provider: %s -> %s", provider_name, server.host)
+            logger.info(
+                "Auto-discovered Riffusion provider (pending admin approval): %s -> %s",
+                provider_name, server.host,
+            )
 
         # Upsert models
         model_repo = AIModelRepository(db)
@@ -491,15 +505,20 @@ async def _sync_gpu_service_models(
         provider = await provider_repo.get_by_name(provider_name)
 
         if provider is None:
+            # Cluster I — pending+inactive on first sight.
             provider = AIProvider(
                 name=provider_name,
                 provider_type=provider_type,
                 base_url=f"http://{server.host}:{default_port}",
                 server_id=server.id,
-                is_active=True,
+                is_active=False,
+                pending_approval=True,
             )
             provider = await provider_repo.create(provider)
-            logger.info("Auto-created %s provider: %s -> %s:%d", provider_type, provider_name, server.host, default_port)
+            logger.info(
+                "Auto-discovered %s provider (pending admin approval): %s -> %s:%d",
+                provider_type, provider_name, server.host, default_port,
+            )
 
         model_repo = AIModelRepository(db)
         seen_ids = []
@@ -581,20 +600,28 @@ async def _sync_vllm_containers(
 
             provider = await provider_repo.get_by_name(provider_name)
             if provider is None:
+                # Cluster I — pending+inactive on first sight.
                 provider = AIProvider(
                     name=provider_name,
                     provider_type="huggingface",
                     base_url=base_url,
                     server_id=server.id,
-                    is_active=True,
+                    is_active=False,
+                    pending_approval=True,
                 )
                 provider = await provider_repo.create(provider)
-                logger.info("Auto-created HuggingFace provider: %s -> %s", provider_name, base_url)
+                logger.info(
+                    "Auto-discovered HuggingFace provider (pending admin approval): %s -> %s",
+                    provider_name, base_url,
+                )
             elif provider.base_url != base_url:
                 # Update base_url if port changed
                 await provider_repo.update(provider.id, base_url=base_url)
 
-            # Upsert models
+            # Upsert models. Cluster I — drop the blanket vision=True claim;
+            # admins set capabilities per model explicitly after they
+            # approve the provider. ``source: vllm`` survives as a
+            # provenance breadcrumb.
             seen_ids = []
             for m in served_models:
                 mid = m.get("id", "")
@@ -604,7 +631,7 @@ async def _sync_vllm_containers(
                     provider_id=provider.id,
                     model_identifier=mid,
                     name=mid,
-                    capabilities={"vision": True, "source": "vllm"},
+                    capabilities={"source": "vllm"},
                     parameters={},
                 )
                 seen_ids.append(result.id)
@@ -668,30 +695,30 @@ async def _sync_comfyui_from_probe(
             provider = result.scalar_one_or_none()
 
         if provider is None:
+            # Cluster I — pending+inactive on first sight.
             provider = AIProvider(
                 name=canonical_name,
                 provider_type="comfyui",
                 base_url=base_url,
                 server_id=server.id,
-                is_active=True,
+                is_active=False,
+                pending_approval=True,
             )
             await provider_repo.create(provider)
             logger.info(
-                "Auto-created ComfyUI provider via probe: %s -> %s",
+                "Auto-discovered ComfyUI provider via probe (pending admin approval): %s -> %s",
                 canonical_name, base_url,
             )
         else:
+            # Cluster I — never flip is_active=True on an existing row from
+            # the sync path; admins do that via /admin/providers/<id>/approve.
+            # base_url/server_id may move (port change, agent migration); keep
+            # those in sync.
             updates: dict = {}
             if provider.base_url != base_url:
                 updates["base_url"] = base_url
             if provider.server_id != server.id:
                 updates["server_id"] = server.id
-            if not provider.is_active:
-                updates["is_active"] = True
-                logger.info(
-                    "Auto-reactivated ComfyUI provider %s via probe on agent %s",
-                    provider.name, agent_name,
-                )
             if updates:
                 await provider_repo.update(provider.id, **updates)
 
@@ -751,32 +778,28 @@ async def _sync_comfyui_containers(
                 provider = result.scalar_one_or_none()
 
             if provider is None:
+                # Cluster I — pending+inactive on first sight.
                 provider = AIProvider(
                     name=canonical_name,
                     provider_type="comfyui",
                     base_url=base_url,
                     server_id=server.id,
-                    is_active=True,
+                    is_active=False,
+                    pending_approval=True,
                 )
                 await provider_repo.create(provider)
                 logger.info(
-                    "Auto-created ComfyUI provider: %s -> %s",
+                    "Auto-discovered ComfyUI provider (pending admin approval): %s -> %s",
                     canonical_name, base_url,
                 )
                 continue
 
+            # Cluster I — never auto-flip is_active=True on an existing row.
             updates: dict = {}
             if provider.base_url != base_url:
                 updates["base_url"] = base_url
             if provider.server_id != server.id:
                 updates["server_id"] = server.id
-            if not provider.is_active:
-                updates["is_active"] = True
-                logger.info(
-                    "Auto-reactivated ComfyUI provider %s (running container "
-                    "detected on agent %s, base_url=%s)",
-                    provider.name, agent_name, base_url,
-                )
             if updates:
                 await provider_repo.update(provider.id, **updates)
 

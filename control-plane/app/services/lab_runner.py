@@ -80,7 +80,14 @@ def _extract_and_save_images(
         b64data = match.group(2)
         try:
             raw = base64.b64decode(b64data)
-        except Exception:
+        except Exception as exc:
+            # O04 — surface decode failures so corrupted agent output is
+            # debuggable instead of silently dropped.
+            logger.warning(
+                "Skipping malformed base64 image #%d in lab %s iter %s: %s "
+                "(len=%d, head=%r)",
+                i, lab_id, iteration, exc, len(b64data), b64data[:40],
+            )
             continue
 
         lab_dir = LAB_RESOURCES_ROOT / str(lab_id)
@@ -138,12 +145,51 @@ def _materialize_context_files(lab) -> None:
             logger.exception("Could not write context_file %s to %s", name, target)
 
 
-# Active lab runners keyed by lab_id — used for pause/inject
+# Active lab runners keyed by lab_id — used for pause/inject.
+#
+# Cluster B — the registry is now backed by two complementary structures:
+#  * ``_active_runners`` (dict[UUID, LabRunner]) still holds the runner
+#    object so existing get_runner() callers and pause/inject paths see
+#    the same data.
+#  * ``_runner_reservations`` (set[UUID]) tracks reservations made by
+#    the API layer BEFORE the BackgroundTask invokes runner.run(). The
+#    previous design inserted the runner inside run(), so two concurrent
+#    /run requests could both pass the get_runner() guard at the route
+#    layer and both schedule a BackgroundTask — double-spawn race.
+# ``reserve_runner`` is the synchronization point: it atomically checks
+# both structures under ``_runner_lock`` and inserts the reservation.
 _active_runners: dict[UUID, "LabRunner"] = {}
+_runner_reservations: set[UUID] = set()
+_runner_lock = asyncio.Lock()
 
 
-def get_runner(lab_id: UUID) -> LabRunner | None:
+def get_runner(lab_id: UUID) -> "LabRunner | None":
     return _active_runners.get(lab_id)
+
+
+def is_runner_reserved(lab_id: UUID) -> bool:
+    """Return True if a runner exists OR a reservation is pending.
+
+    Use this from request handlers that want to refuse a duplicate
+    run/resume/inject before scheduling a BackgroundTask.
+    """
+    return lab_id in _active_runners or lab_id in _runner_reservations
+
+
+async def reserve_runner(lab_id: UUID, session_factory) -> "LabRunner | None":
+    """Atomically reserve a runner slot for ``lab_id``.
+
+    Returns the new LabRunner instance on successful reservation, or None
+    if another reservation/runner already exists. The caller schedules
+    runner.run() on a BackgroundTask; reservation is released in run()'s
+    finally clause.
+    """
+    async with _runner_lock:
+        if lab_id in _active_runners or lab_id in _runner_reservations:
+            return None
+        runner = LabRunner(lab_id, session_factory)
+        _runner_reservations.add(lab_id)
+        return runner
 
 
 class LabRunner:
@@ -155,12 +201,23 @@ class LabRunner:
         self._paused = asyncio.Event()
         self._paused.set()  # starts unpaused
         self._stop_requested = False
+        # R03 — `stop()` sets _stop_requested then blocks on _stopped so
+        # the route handler that called `await runner.stop()` doesn't
+        # return until the loop has actually exited. Pre-fix the handler
+        # returned immediately and a follow-up `delete_lab` raced against
+        # a still-iterating loop.
+        self._stopped = asyncio.Event()
 
     # ── Public lifecycle ─────────────────────────
 
     async def run(self) -> None:
         """Main entry point — run the lab loop until done, paused, or limits hit."""
+        # Cluster B — promote the reservation to a live entry. The
+        # reservation guarantees no other coroutine can scheduled a
+        # parallel BackgroundTask for this lab between
+        # reserve_runner() returning and run() starting.
         _active_runners[self.lab_id] = self
+        _runner_reservations.discard(self.lab_id)
         try:
             await self._run_loop()
         except Exception as e:
@@ -179,6 +236,9 @@ class LabRunner:
                 logger.error("Failed to mark lab %s as failed after crash", self.lab_id)
         finally:
             _active_runners.pop(self.lab_id, None)
+            # Cluster B — also clear the reservation in case the runner
+            # never reached `run()`'s success path. Defence-in-depth.
+            _runner_reservations.discard(self.lab_id)
             try:
                 get_loop_manager().reset_lab(self.lab_id)
             except Exception:
@@ -192,6 +252,8 @@ class LabRunner:
                 await stop_sandbox(self.lab_id)
             except Exception:
                 pass
+            # R03 — unblock any caller that is awaiting stop().
+            self._stopped.set()
 
     async def pause(self) -> None:
         self._paused.clear()
@@ -209,9 +271,29 @@ class LabRunner:
             await db.commit()
         await _broadcast_lab_event(self.lab_id, "lab.resumed", {})
 
-    async def stop(self) -> None:
+    async def stop(self, *, wait_timeout: float = 30.0) -> None:
+        """Signal the loop to exit, then wait up to ``wait_timeout`` seconds
+        for it to actually return.
+
+        R03 — pre-fix this returned immediately after setting the flag
+        and the caller (`/labs/{id}/stop`, `delete_lab`) raced against a
+        loop still mid-iteration. Now we block on a stop event the
+        runner sets in its `finally`. If the loop is genuinely wedged
+        (an http call hanging past every internal timeout) the wait
+        times out cleanly so the route handler doesn't hang forever.
+        """
         self._stop_requested = True
         self._paused.set()  # unblock if paused so loop can exit
+        if self._stopped.is_set():
+            return  # already exited
+        try:
+            await asyncio.wait_for(self._stopped.wait(), timeout=wait_timeout)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "LabRunner.stop(lab=%s) timed out after %ss waiting for "
+                "loop to exit; returning to caller",
+                self.lab_id, wait_timeout,
+            )
 
     async def inject(self, message: str) -> None:
         """Inject a user message into the running lab."""
@@ -803,8 +885,13 @@ class LabRunner:
 
                 agent_memories = []
                 if should_share:
-                    # Fetch memories from ALL labs
-                    agent_memories = await mem_repo.get_all_memories(limit=30)
+                    # A03 — explicit confirmation that share_memory is set;
+                    # the repo refuses the call without it.
+                    agent_memories = await mem_repo.get_all_memories(
+                        caller_lab_id=lab.id,
+                        share_memory_confirmed=True,
+                        limit=30,
+                    )
                 else:
                     # Only this lab's memories
                     agent_memories = await mem_repo.get_by_lab(lab.id, limit=30)
@@ -855,6 +942,33 @@ class LabRunner:
                     max_calls = lab.tool_max_calls
 
                     while total_tool_calls < max_calls:
+                        # A02 — re-resolve the agent's allowed tool set at the
+                        # top of each LLM round. Mid-iteration changes (the
+                        # operator removes the `mail` tool from the agent in
+                        # the UI while the loop is running, for example)
+                        # take effect on the very next tool call instead of
+                        # being silently ignored until the next iteration.
+                        # The refresh is a single repo lookup + tool-set
+                        # join; cheaper than the LLM call we just made.
+                        try:
+                            await db.refresh(agent)
+                            agent_tools = await self._resolve_tools(
+                                ts_repo, agent.tools, agent.tool_set_id,
+                                getattr(agent, "tool_set_ids", None),
+                            )
+                            agent_tools = await augment_tool_names_with_rag_access(db, lab.id, agent_tools)
+                            agent_tools = await augment_tool_names_with_web3_access(db, lab.id, agent_tools)
+                            agent_tools = await augment_tool_names_with_server_access(db, lab.id, agent_tools)
+                            agent_normalized_tools = set(normalize_tool_names(agent_tools))
+                            tool_executor.allowed_pipelines = extract_pipeline_names(agent_tools)
+                            tool_executor.subtool_permissions = extract_subtool_permissions(agent_tools)
+                        except Exception:
+                            logger.exception(
+                                "A02 — tool-set re-resolve failed for agent=%s; "
+                                "falling back to the snapshot from iteration start",
+                                agent.name,
+                            )
+
                         # Hybrid parsing: try native tool_calls first, then text fallback
                         native_tc = result.get("tool_calls")
                         if native_tc:
@@ -1347,7 +1461,12 @@ class LabRunner:
             if lab.share_memory_override is not None:
                 should_share = lab.share_memory_override
             if should_share:
-                target_memories = await mem_repo.get_all_memories(limit=30)
+                # A03 — explicit confirmation; repo refuses without it.
+                target_memories = await mem_repo.get_all_memories(
+                    caller_lab_id=lab.id,
+                    share_memory_confirmed=True,
+                    limit=30,
+                )
             else:
                 target_memories = await mem_repo.get_by_lab(lab.id, limit=30)
 

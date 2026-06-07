@@ -61,10 +61,15 @@ TOOLS = {
 }
 
 
-def _is_private_host(hostname: str) -> bool:
-    """Check if hostname points to a private/internal address (SSRF protection)."""
-    return hostname in ("localhost", "127.0.0.1", "0.0.0.0") or \
-        hostname.startswith("192.168.") or hostname.startswith("10.") or hostname.startswith("172.")
+from app.services.ssrf_guard import (
+    is_private_host as _is_private_host,
+    safe_get as _ssrf_safe_get,
+    PrivateHostError as _PrivateHostError,
+)
+# Cluster E — the previous in-file helper missed IPv6, the full 127.0.0.0/8
+# range, and treated 172.x.x.x as fully private even outside 172.16/12.
+# Delegated to ssrf_guard.is_private_host which uses the ipaddress stdlib
+# and re-validates redirect destinations via ssrf_guard.safe_get.
 
 
 async def web_search(executor: ToolExecutor, args: dict) -> dict:
@@ -112,9 +117,12 @@ async def web_extract(executor: ToolExecutor, args: dict) -> dict:
 
     from bs4 import BeautifulSoup
 
+    # Cluster E — manual redirect loop with per-hop private-host re-check.
+    # ssrf_guard.safe_get refuses any Location header pointing into RFC1918,
+    # IPv6 link-local / ULA, loopback, or docker container hostnames.
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0), follow_redirects=True) as client:
-            resp = await client.get(url, headers={
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0)) as client:
+            resp = await _ssrf_safe_get(client, url, headers={
                 "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.9",
@@ -128,6 +136,8 @@ async def web_extract(executor: ToolExecutor, args: dict) -> dict:
                 "Sec-Fetch-User": "?1",
             })
             resp.raise_for_status()
+    except _PrivateHostError as e:
+        return {"success": False, "output": f"Refused fetch: {e}"}
     except Exception as e:
         return {"success": False, "output": f"Failed to fetch URL: {e}"}
 
@@ -222,7 +232,7 @@ async def mermaid_to_img(executor: ToolExecutor, args: dict) -> dict:
     for base in (executor.workspace, executor.workspace / "output"):
         try:
             candidate = (base / clean_path).resolve()
-            if str(candidate).startswith(str(executor.workspace.resolve())) and candidate.is_file():
+            if candidate.is_relative_to(executor.workspace.resolve()) and candidate.is_file():
                 target = candidate
                 break
         except Exception:

@@ -23,6 +23,7 @@ from app.services.loop_strategies.base import (
     build_messages_from_history,
     build_strategy_system,
     format_agents,
+    trim_results,
 )
 
 if TYPE_CHECKING:
@@ -135,6 +136,7 @@ class SupervisorStrategy(LoopStrategy):
     async def on_results(self, context: LoopContext, results: list[TaskResult]) -> None:
         self._last_results = results
         self._all_results.extend(results)
+        trim_results(self._all_results)
 
     async def on_inject(self, context: LoopContext, message: str) -> None:
         self._injections.append(message)

@@ -3,32 +3,15 @@
  * Admin authenticates with ADMIN_SECRET, then manages trial requests and tokens.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  getTrialRequests,
-  getAccessTokens,
-  createAccessToken,
-  revokeAccessToken,
-  updateTrialRequestStatus,
-  adminLogin,
-  getInfraWhitelist,
-  updateInfraWhitelist,
-  getQuoteRequests,
-  updateQuoteRequestStatus,
-  getBlogTokens,
-  createBlogToken,
-  revokeBlogToken,
-  getBlogPostsAdmin,
-  deleteBlogPost,
-  getConsumerApps,
-  createConsumerApp,
-  revokeConsumerApp,
-  deleteConsumerApp,
-  adminListLabs,
-  adminSetLabVisibility,
-} from '../services/api';
+import { adminLogin, createAdminApiClient } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import AdminLogs from '../components/admin/AdminLogs';
+// A07 — every admin call goes through the per-instance client returned
+// by createAdminApiClient(jwt) instead of the global axios + localStorage
+// swap. See services/api.js for the rationale (concurrent-call race +
+// cross-tab visibility).
 
 /* ─── Admin Login ──────────────────────────────────── */
 function AdminLogin({ onAuth }) {
@@ -77,7 +60,9 @@ function AdminLogin({ onAuth }) {
 }
 
 /* ─── Generate Token Modal ─────────────────────────── */
-function GenerateTokenModal({ request, onClose, onCreated }) {
+// A07 — `adminApi` is passed in by the parent so this modal uses the
+// per-instance admin axios client instead of the global one.
+function GenerateTokenModal({ adminApi, request, onClose, onCreated }) {
   const [days, setDays] = useState(30);
   const [label, setLabel] = useState(request ? `Trial — ${request.name}` : '');
   const [sendEmail, setSendEmail] = useState(true);
@@ -89,7 +74,7 @@ function GenerateTokenModal({ request, onClose, onCreated }) {
     try {
       const expires = new Date();
       expires.setDate(expires.getDate() + days);
-      const res = await createAccessToken({
+      const res = await adminApi.createAccessToken({
         label,
         email: request?.email || '',
         expires_at: expires.toISOString(),
@@ -97,7 +82,7 @@ function GenerateTokenModal({ request, onClose, onCreated }) {
       });
       setResult(res.data);
       if (request) {
-        await updateTrialRequestStatus(request.id, 'approved');
+        await adminApi.updateTrialRequestStatus(request.id, 'approved');
       }
       onCreated();
     } catch {
@@ -197,55 +182,51 @@ function AdminDashboard({ jwt, onLogout }) {
     try { await navigator.clipboard.writeText(token); setCopiedToken(id); setTimeout(() => setCopiedToken(null), 2000); } catch { /* ignore */ }
   };
 
-  // Temporarily set JWT for admin API calls
-  const withAdminJwt = useCallback((fn) => {
-    const prev = localStorage.getItem('bob_token');
-    localStorage.setItem('bob_token', jwt);
-    return fn().finally(() => {
-      if (prev) localStorage.setItem('bob_token', prev);
-      else localStorage.removeItem('bob_token');
-    });
-  }, [jwt]);
+  // A07 — per-instance admin axios with JWT baked into the
+  // Authorization header. Never touches localStorage. useMemo so the
+  // client is stable across re-renders (axios instances are cheap but
+  // a stable identity simplifies the useCallback dep arrays below).
+  const adminApi = useMemo(() => createAdminApiClient(jwt), [jwt]);
 
-  const loadRequests = useCallback(() => withAdminJwt(() =>
-    getTrialRequests().then((r) => setRequests(r.data))
-  ), [withAdminJwt]);
+  const loadRequests = useCallback(() =>
+    adminApi.getTrialRequests().then((r) => setRequests(r.data)),
+  [adminApi]);
 
-  const loadTokens = useCallback(() => withAdminJwt(() =>
-    getAccessTokens().then((r) => setTokens(r.data))
-  ), [withAdminJwt]);
+  const loadTokens = useCallback(() =>
+    adminApi.getAccessTokens().then((r) => setTokens(r.data)),
+  [adminApi]);
 
-  const loadInfra = useCallback(() => withAdminJwt(() =>
-    getInfraWhitelist().then((r) => {
+  const loadInfra = useCallback(() =>
+    adminApi.getInfraWhitelist().then((r) => {
       const emails = r.data.emails || [];
       setInfraEmails(emails);
       setInfraInput(emails.join(', '));
-    })
-  ), [withAdminJwt]);
+    }),
+  [adminApi]);
 
-  const loadQuotes = useCallback(() => withAdminJwt(() =>
-    getQuoteRequests().then((r) => setQuotes(r.data))
-  ), [withAdminJwt]);
+  const loadQuotes = useCallback(() =>
+    adminApi.getQuoteRequests().then((r) => setQuotes(r.data)),
+  [adminApi]);
 
-  const loadBlogTokens = useCallback(() => withAdminJwt(() =>
-    getBlogTokens().then((r) => setBlogTokens(r.data))
-  ), [withAdminJwt]);
+  const loadBlogTokens = useCallback(() =>
+    adminApi.getBlogTokens().then((r) => setBlogTokens(r.data)),
+  [adminApi]);
 
-  const loadBlogPosts = useCallback(() => withAdminJwt(() =>
-    getBlogPostsAdmin().then((r) => setBlogPosts(r.data))
-  ), [withAdminJwt]);
+  const loadBlogPosts = useCallback(() =>
+    adminApi.getBlogPostsAdmin().then((r) => setBlogPosts(r.data)),
+  [adminApi]);
 
-  const loadConsumerApps = useCallback(() => withAdminJwt(() =>
-    getConsumerApps()
+  const loadConsumerApps = useCallback(() =>
+    adminApi.getConsumerApps()
       .then((r) => { setConsumerApps(r.data || []); setConsumerAppError(''); })
-      .catch((e) => setConsumerAppError(e?.response?.data?.detail || e.message || 'Failed to load consumer apps'))
-  ), [withAdminJwt]);
+      .catch((e) => setConsumerAppError(e?.response?.data?.detail || e.message || 'Failed to load consumer apps')),
+  [adminApi]);
 
-  const loadLabs = useCallback(() => withAdminJwt(() =>
-    adminListLabs()
+  const loadLabs = useCallback(() =>
+    adminApi.adminListLabs()
       .then((r) => { setLabs(r.data || []); setLabsError(''); })
-      .catch((e) => setLabsError(e?.response?.data?.detail || e.message || 'Failed to load labs'))
-  ), [withAdminJwt]);
+      .catch((e) => setLabsError(e?.response?.data?.detail || e.message || 'Failed to load labs')),
+  [adminApi]);
 
   const toggleLabVisibility = useCallback(async (labId, nextValue) => {
     setLabsBusy((b) => ({ ...b, [labId]: true }));
@@ -253,7 +234,7 @@ function AdminDashboard({ jwt, onLogout }) {
     const prev = labs;
     setLabs((all) => all.map((l) => (l.id === labId ? { ...l, is_public: nextValue } : l)));
     try {
-      await withAdminJwt(() => adminSetLabVisibility(labId, nextValue));
+      await adminApi.adminSetLabVisibility(labId, nextValue);
     } catch (e) {
       setLabs(prev);
       setLabsError(e?.response?.data?.detail || e.message || 'Failed to toggle visibility');
@@ -263,7 +244,7 @@ function AdminDashboard({ jwt, onLogout }) {
         return rest;
       });
     }
-  }, [labs, withAdminJwt]);
+  }, [labs, adminApi]);
 
   useEffect(() => {
     loadRequests();
@@ -285,7 +266,7 @@ function AdminDashboard({ jwt, onLogout }) {
     };
     if (!payload.app_id) return;
     try {
-      const res = await withAdminJwt(() => createConsumerApp(payload));
+      const res = await adminApi.createConsumerApp(payload);
       setCreatedConsumerApp(res.data);
       setNewConsumerApp({ app_id: '', name: '', notes: '' });
       setConsumerAppError('');
@@ -298,7 +279,7 @@ function AdminDashboard({ jwt, onLogout }) {
   const handleRevokeConsumerApp = async (id) => {
     if (!window.confirm('Revoke this consumer app? Any deployment using its secret will get 401s.')) return;
     try {
-      await withAdminJwt(() => revokeConsumerApp(id));
+      await adminApi.revokeConsumerApp(id);
       await loadConsumerApps();
     } catch (err) {
       setConsumerAppError(err?.response?.data?.detail || err.message || 'Failed to revoke');
@@ -311,7 +292,7 @@ function AdminDashboard({ jwt, onLogout }) {
       `Any deployment still holding its secret will get 401s.`
     )) return;
     try {
-      await withAdminJwt(() => deleteConsumerApp(id));
+      await adminApi.deleteConsumerApp(id);
       await loadConsumerApps();
     } catch (err) {
       setConsumerAppError(err?.response?.data?.detail || err.message || 'Failed to delete');
@@ -322,7 +303,7 @@ function AdminDashboard({ jwt, onLogout }) {
     setInfraSaving(true);
     try {
       const emails = infraInput.split(/[,\n]/).map((e) => e.trim()).filter(Boolean);
-      await withAdminJwt(() => updateInfraWhitelist(emails));
+      await adminApi.updateInfraWhitelist(emails);
       setInfraEmails(emails);
     } catch {
       // ignore
@@ -332,29 +313,29 @@ function AdminDashboard({ jwt, onLogout }) {
   };
 
   const handleRevoke = async (id) => {
-    await withAdminJwt(() => revokeAccessToken(id));
+    await adminApi.revokeAccessToken(id);
     loadTokens();
   };
 
   const handleCreateBlogToken = async () => {
     if (!newBlogLabel.trim()) return;
-    await withAdminJwt(() => createBlogToken(newBlogLabel.trim()));
+    await adminApi.createBlogToken(newBlogLabel.trim());
     setNewBlogLabel('');
     loadBlogTokens();
   };
 
   const handleRevokeBlogToken = async (id) => {
-    await withAdminJwt(() => revokeBlogToken(id));
+    await adminApi.revokeBlogToken(id);
     loadBlogTokens();
   };
 
   const handleDeleteBlogPost = async (id) => {
-    await withAdminJwt(() => deleteBlogPost(id));
+    await adminApi.deleteBlogPost(id);
     loadBlogPosts();
   };
 
   const handleReject = async (id) => {
-    await withAdminJwt(() => updateTrialRequestStatus(id, 'rejected'));
+    await adminApi.updateTrialRequestStatus(id, 'rejected');
     loadRequests();
   };
 
@@ -468,18 +449,18 @@ function AdminDashboard({ jwt, onLogout }) {
                         {q.status === 'pending' && (
                           <>
                             <button className="admin-btn-approve" onClick={async () => {
-                              await withAdminJwt(() => updateQuoteRequestStatus(q.id, 'contacted'));
+                              await adminApi.updateQuoteRequestStatus(q.id, 'contacted');
                               loadQuotes();
                             }}>Contacted</button>
                             <button className="admin-btn-reject" onClick={async () => {
-                              await withAdminJwt(() => updateQuoteRequestStatus(q.id, 'closed'));
+                              await adminApi.updateQuoteRequestStatus(q.id, 'closed');
                               loadQuotes();
                             }}>Close</button>
                           </>
                         )}
                         {q.status === 'contacted' && (
                           <button className="admin-btn-reject" onClick={async () => {
-                            await withAdminJwt(() => updateQuoteRequestStatus(q.id, 'closed'));
+                            await adminApi.updateQuoteRequestStatus(q.id, 'closed');
                             loadQuotes();
                           }}>Close</button>
                         )}
@@ -906,12 +887,13 @@ function AdminDashboard({ jwt, onLogout }) {
         )}
 
         {tab === 'logs' && (
-          <AdminLogs withAdminJwt={withAdminJwt} />
+          <AdminLogs adminApi={adminApi} />
         )}
       </div>
 
       {modalRequest && (
         <GenerateTokenModal
+          adminApi={adminApi}
           request={modalRequest}
           onClose={() => { setModalRequest(null); loadRequests(); loadTokens(); }}
           onCreated={() => { loadRequests(); loadTokens(); }}
@@ -919,6 +901,7 @@ function AdminDashboard({ jwt, onLogout }) {
       )}
       {showNewToken && (
         <GenerateTokenModal
+          adminApi={adminApi}
           request={null}
           onClose={() => { setShowNewToken(false); loadTokens(); }}
           onCreated={loadTokens}
@@ -931,15 +914,56 @@ function AdminDashboard({ jwt, onLogout }) {
 /* ─── Wrapper: login gate + dashboard ──────────────── */
 export default function AdminPage() {
   const [jwt, setJwt] = useState(() => sessionStorage.getItem('bob_admin_token'));
+  // Bridge to the global AuthContext so a successful admin login also
+  // authenticates the rest of the app. Pre-Session-5, the `withAdminJwt`
+  // localStorage swap had a race that left the admin JWT in `bob_token`
+  // permanently (overlapping calls trampled the `prev` save); the side
+  // effect made users globally authenticated after admin login.
+  // Session-5 removed the race but also removed the side effect, which
+  // surprised users who expected admin login at /admin to also unlock
+  // /orchestrator etc. Restore the navigation effect *explicitly* here.
+  const {
+    token: globalToken,
+    isAuthenticated,
+    login: globalLogin,
+    logout: globalLogout,
+  } = useAuth();
+
+  // If the global AuthContext clears the token from under us (U02
+  // auto-logout fired, U03 401 interceptor wiped it on a revoked admin
+  // JWT, or the user logged out from another tab), drop the admin
+  // session too so AdminLogin re-renders.
+  useEffect(() => {
+    if (jwt && !isAuthenticated) {
+      sessionStorage.removeItem('bob_admin_token');
+      setJwt(null);
+    }
+  }, [isAuthenticated, jwt]);
+
+  // Conversely, if the AuthContext was bootstrapped with an existing
+  // admin JWT (page refresh on /admin), recover our local state from
+  // sessionStorage so the dashboard renders without forcing re-login.
+  useEffect(() => {
+    if (!jwt && globalToken) {
+      const sessionToken = sessionStorage.getItem('bob_admin_token');
+      if (sessionToken === globalToken) setJwt(sessionToken);
+    }
+  }, [globalToken, jwt]);
 
   const handleAuth = (token) => {
     sessionStorage.setItem('bob_admin_token', token);
     setJwt(token);
+    // The admin JWT carries role:"admin" + a real exp claim, so the
+    // global AuthContext (U02) schedules auto-logout at exp and the
+    // 401 interceptor (U03) clears both stores if the token gets
+    // revoked.
+    globalLogin(token);
   };
 
   const handleLogout = () => {
     sessionStorage.removeItem('bob_admin_token');
     setJwt(null);
+    globalLogout();
   };
 
   if (!jwt) return <AdminLogin onAuth={handleAuth} />;

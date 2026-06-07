@@ -42,20 +42,51 @@ SPEAKERS_DIR = Path(os.getenv("COQUI_SPEAKERS_DIR", "/speakers"))
 _tts = None
 _model_lock = threading.Lock()
 _last_used = 0.0
+# R21 — remember which device we actually ended up on so the idle
+# unloader knows whether to empty the CUDA cache. CPU-only hosts skip
+# the cache flush (it's a no-op there but a noisy warning in some
+# torch builds).
+_device = "cpu"
+
+
+def _detect_device() -> str:
+    """Return 'cuda' if a usable GPU is present, else 'cpu'.
+
+    The COQUI_DEVICE env var lets the operator force a choice
+    (``cuda`` / ``cpu``) for tests and for hosts where ``torch.cuda``
+    appears available but the runtime is broken.
+    """
+    forced = (os.environ.get("COQUI_DEVICE") or "").strip().lower()
+    if forced in ("cpu", "cuda"):
+        return forced
+    try:
+        if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+            return "cuda"
+    except Exception:
+        pass
+    return "cpu"
 
 
 def _ensure_model():
-    """Load XTTS v2 into GPU memory."""
-    global _tts, _last_used
+    """Load XTTS v2 onto the best available device.
+
+    R21 — previously hardcoded ``.to("cuda")``, which crashed at first
+    request on CPU-only hosts (the audit-context-building docs already
+    flagged this as a deployment trap). Detect once on first load,
+    remember the choice in ``_device``, and log it so operators have
+    a clear breadcrumb when reading container logs.
+    """
+    global _tts, _last_used, _device
     with _model_lock:
         if _tts is not None:
             _last_used = time.time()
             return
-        logger.info("Loading XTTS v2 model...")
+        _device = _detect_device()
+        logger.info("Loading XTTS v2 model on %s...", _device)
         from TTS.api import TTS
-        _tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
+        _tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(_device)
         _last_used = time.time()
-        logger.info("XTTS v2 model loaded")
+        logger.info("XTTS v2 model loaded on %s", _device)
 
 
 def _unload_if_idle():
@@ -67,7 +98,14 @@ def _unload_if_idle():
             if _tts is not None and (time.time() - _last_used) > IDLE_UNLOAD_SEC:
                 logger.info("Idle timeout — unloading XTTS model")
                 _tts = None
-                torch.cuda.empty_cache()
+                # R21 — only flush the CUDA cache when we were actually
+                # using it; on CPU-only hosts this would either be a
+                # no-op or (depending on torch build) emit a warning.
+                if _device == "cuda":
+                    try:
+                        torch.cuda.empty_cache()
+                    except Exception:
+                        logger.debug("torch.cuda.empty_cache failed", exc_info=True)
 
 
 # ── Request / Response schemas ─────────────────────────

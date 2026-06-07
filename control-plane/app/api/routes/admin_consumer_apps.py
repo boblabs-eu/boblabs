@@ -12,7 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.api.dependencies import DbSession, get_current_user
+from app.api.dependencies import DbSession, require_admin
 from app.repositories.consumer_app_repo import ConsumerAppRepository
 from app.services.consumer_apps import generate_secret
 
@@ -66,7 +66,7 @@ def _to_out(app) -> ConsumerAppOut:
 @router.get("", response_model=list[ConsumerAppOut])
 async def list_consumer_apps(
     db: DbSession,
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_admin),
 ):
     """List all registered consumer apps (without secrets)."""
     repo = ConsumerAppRepository(db)
@@ -77,7 +77,7 @@ async def list_consumer_apps(
 async def create_consumer_app(
     payload: CreateConsumerAppIn,
     db: DbSession,
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_admin),
 ):
     """Register a new consumer app and return its one-time HMAC secret."""
     app_id = payload.app_id.strip().lower()
@@ -115,7 +115,7 @@ async def create_consumer_app(
 async def revoke_consumer_app(
     app_uuid: UUID,
     db: DbSession,
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_admin),
 ):
     """Revoke a consumer app. Future requests with its secret return 401."""
     repo = ConsumerAppRepository(db)
@@ -132,7 +132,7 @@ async def revoke_consumer_app(
 async def delete_consumer_app(
     app_uuid: UUID,
     db: DbSession,
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_admin),
 ):
     """Hard-delete a consumer app row. Frees the app_id slug for reuse and is
     irreversible. Any deployment still holding the old secret will get 401s."""

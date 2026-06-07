@@ -165,7 +165,7 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
                 "ip": _client_ip(request),
                 "method": request.method,
                 "path": _trunc(path, 1000),
-                "query": _trunc(str(request.url.query), 1000),
+                "query": _trunc(_scrub_query(str(request.url.query)), 1000),
                 "status": status_code,
                 "duration_ms": duration_ms,
                 "user_email": _trunc(user_email, 255),
@@ -183,3 +183,38 @@ def _trunc(value: str | None, limit: int) -> str | None:
     if value is None or value == "":
         return None
     return value[:limit]
+
+
+# Cluster K — auth-bearing query parameters that must NOT land in
+# request_log.query. Values are replaced with the literal "<redacted>"
+# while the key is kept so admins can still see which parameter was
+# present.
+_SENSITIVE_QUERY_KEYS: frozenset[str] = frozenset({
+    "token",
+    "access_token",
+    "admin_secret",
+    "password",
+    "secret",
+    "api_key",
+    "apikey",
+    "bob_app_secret",
+})
+
+
+def _scrub_query(query: str | None) -> str | None:
+    """Return ``query`` with sensitive parameter values redacted."""
+    if not query:
+        return query
+    from urllib.parse import parse_qsl, urlencode
+
+    try:
+        pairs = parse_qsl(query, keep_blank_values=True)
+    except Exception:
+        # Malformed query string — fall back to redacting the whole thing
+        # rather than logging something we couldn't parse.
+        return "<unparseable>"
+    cleaned = [
+        (k, "<redacted>" if k.lower() in _SENSITIVE_QUERY_KEYS else v)
+        for k, v in pairs
+    ]
+    return urlencode(cleaned, doseq=False)

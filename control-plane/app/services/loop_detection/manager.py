@@ -37,6 +37,16 @@ HISTORY_PER_ACTOR = 12        # ring buffer size per (lab, actor)
 RECOVERY_KEEP_TAIL = 0        # how many recent looping msgs to KEEP
 MIN_CONTENT_LEN = 20          # don't embed trivially short messages
 RED_AUTOACT_SEVERITY = "red"  # severity that triggers auto-recovery
+# R14 — hard cap on how long `_recover` can hold the per-lab slot in
+# `_recovering`. If the inner async work wedges past this, the wait_for
+# fires, the slot is released, and the next loop-warning round gets to
+# fire a fresh recovery attempt instead of being permanently no-op'd.
+RECOVERY_TIMEOUT_SEC = 60
+# Sweeper runs this often. The sweeper is a defence-in-depth net: any
+# legitimate recovery completes well inside RECOVERY_TIMEOUT_SEC, so
+# the sweeper should only fire on the asyncio.wait_for failure path
+# (or a future process-crash-then-restore scenario).
+RECOVERY_SWEEP_INTERVAL_SEC = 30
 
 
 def _now() -> datetime:
@@ -76,11 +86,39 @@ class LoopManager:
         self._buffers: dict[tuple[UUID, str], _ActorBuffer] = {}
         self._detector = build_default_detector()
         self._recovering: set[UUID] = set()
+        # R14 — when we added a lab to `_recovering`. The sweeper uses
+        # this to evict entries that overshoot RECOVERY_TIMEOUT_SEC for
+        # any reason the wait_for above didn't catch (e.g. an unhandled
+        # exception path).
+        self._recovery_started_at: dict[UUID, datetime] = {}
         self._session_factory: async_sessionmaker | None = None
         self._lock = asyncio.Lock()
 
     def configure(self, session_factory: async_sessionmaker) -> None:
         self._session_factory = session_factory
+
+    async def sweep_stale_recoveries(self) -> int:
+        """R14 — drop entries from ``_recovering`` whose recovery has
+        been running longer than RECOVERY_TIMEOUT_SEC.
+
+        Defence-in-depth on top of the per-call ``asyncio.wait_for``.
+        Returns the count of evicted entries so callers (a periodic
+        startup task, an admin probe) can log it.
+        """
+        cutoff = _now() - timedelta(seconds=RECOVERY_TIMEOUT_SEC)
+        async with self._lock:
+            stale = [
+                lab_id for lab_id, started in self._recovery_started_at.items()
+                if started < cutoff
+            ]
+            for lab_id in stale:
+                self._recovering.discard(lab_id)
+                self._recovery_started_at.pop(lab_id, None)
+                logger.warning(
+                    "R14 sweeper — evicting wedged recovery for lab=%s "
+                    "(started %s)", lab_id, self._recovery_started_at.get(lab_id),
+                )
+        return len(stale)
 
     # ──────────────────────────────────────────────
     # Public entrypoint — called by lab_runner.
@@ -190,11 +228,30 @@ class LoopManager:
             if lab_id in self._recovering:
                 return
             self._recovering.add(lab_id)
+            # R14 — record when recovery started so the periodic sweeper
+            # in `_sweep_stale_recoveries` can drop entries whose
+            # `_recover` is wedged (a websocket broadcast deadlocking,
+            # for example) and would otherwise pin the lab out of all
+            # future recovery attempts.
+            self._recovery_started_at[lab_id] = _now()
 
         try:
-            await self._recover(lab_id, report)
+            # R14 — cap the recovery latency. If the inner await is
+            # genuinely stuck we still want the lock released so the
+            # next loop-warning round can fire a fresh attempt.
+            await asyncio.wait_for(
+                self._recover(lab_id, report),
+                timeout=RECOVERY_TIMEOUT_SEC,
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                "Loop recovery for lab=%s exceeded %ss; clearing _recovering "
+                "so future recoveries can fire (R14)",
+                lab_id, RECOVERY_TIMEOUT_SEC,
+            )
         finally:
             self._recovering.discard(lab_id)
+            self._recovery_started_at.pop(lab_id, None)
 
     # ──────────────────────────────────────────────
     # Recovery: pause → delete loop msgs → resume.
@@ -261,7 +318,25 @@ class LoopManager:
         try:
             await runner.resume()
         except Exception:
+            # Cluster H — the DELETE at step (2) already succeeded, so we
+            # cannot "roll back" without re-creating duplicate rows. The
+            # lab stays paused; surface a distinct event so the UI can
+            # render an actionable banner instead of silently losing the
+            # orphan state.
             logger.exception("Loop recovery: resume failed for lab=%s", lab_id)
+            try:
+                await ws_manager.broadcast_to_clients({
+                    "type": "lab.loop_recovery_failed",
+                    "payload": {
+                        "lab_id": str(lab_id),
+                        "severity": report.severity,
+                        "score": report.score,
+                        "removed_count": removed,
+                        "reason": "resume_failed",
+                    },
+                })
+            except Exception:
+                logger.exception("Failed to broadcast lab.loop_recovery_failed")
 
     async def _purge_messages(self, lab_id: UUID, ids: list[UUID]) -> int:
         if not ids:
@@ -306,10 +381,20 @@ class LoopManager:
     # Lab lifecycle hooks.
     # ──────────────────────────────────────────────
     def reset_lab(self, lab_id: UUID) -> None:
-        """Drop all in-memory state for a lab (e.g., on stop or reset)."""
+        """Drop all in-memory state for a lab (e.g., on stop or reset).
+
+        Cluster H — also discard ``lab_id`` from ``_recovering``. Previously
+        a force-stop during recovery left the lab id in the set forever
+        (its ``finally`` only ran if the recovery coroutine reached it),
+        which silently blocked the next anti-loop trigger on the same lab.
+        Discarding here is safe: an in-flight ``_recover`` re-adds itself
+        on completion only via its own finally, and the asyncio.Lock keyed
+        by ``lab_id`` is not held across this call.
+        """
         keys = [k for k in self._buffers if k[0] == lab_id]
         for k in keys:
             self._buffers.pop(k, None)
+        self._recovering.discard(lab_id)
 
 
 # ──────────────────────────────────────────────

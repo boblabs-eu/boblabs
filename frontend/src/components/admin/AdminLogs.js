@@ -3,9 +3,10 @@
  * Dashboard + filterable tables for HTTP requests, LLM dispatch events,
  * orchestrator tasks and lab anti-loop events.
  *
- * Mounted from AdminPage (Logs tab). Receives `withAdminJwt` from the parent
- * so all calls go out with the admin JWT regardless of the user's regular
- * `bob_token`.
+ * Mounted from AdminPage (Logs tab). Receives `adminApi` from the parent
+ * (built by createAdminApiClient(jwt) in services/api.js, A07) so every
+ * call goes through the per-instance admin axios with the admin JWT
+ * baked into its Authorization header. No localStorage swap.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -14,15 +15,6 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   BarChart, Bar,
 } from 'recharts';
-
-import {
-  getAdminLogRequests,
-  getAdminLogFacets,
-  getAdminLogMetrics,
-  getAdminLogLabLoops,
-  getAdminLogTasks,
-  getAdminLogLlmEvents,
-} from '../../services/api';
 
 const SINCE_OPTIONS = [
   { value: '15m', label: 'Last 15 min' },
@@ -183,7 +175,7 @@ function Dashboard({ metrics }) {
 }
 
 /* ─── Requests sub-tab ─────────────────────────────── */
-function RequestsTable({ since, withAdminJwt }) {
+function RequestsTable({ since, adminApi }) {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -198,15 +190,14 @@ function RequestsTable({ since, withAdminJwt }) {
     setLoading(true);
     const params = { since, limit, offset };
     Object.entries(filters).forEach(([k, v]) => { if (v !== '' && v !== null) params[k] = v; });
-    return withAdminJwt(() => getAdminLogRequests(params)
+    return adminApi.getAdminLogRequests(params)
       .then((r) => { setItems(r.data.items); setTotal(r.data.total); })
-      .finally(() => setLoading(false))
-    );
-  }, [since, offset, filters, withAdminJwt]);
+      .finally(() => setLoading(false));
+  }, [since, offset, filters, adminApi]);
 
-  const loadFacets = useCallback(() => withAdminJwt(() =>
-    getAdminLogFacets({ since }).then((r) => setFacets(r.data))
-  ), [since, withAdminJwt]);
+  const loadFacets = useCallback(() =>
+    adminApi.getAdminLogFacets({ since }).then((r) => setFacets(r.data)),
+  [since, adminApi]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadFacets(); }, [loadFacets]);
@@ -287,7 +278,7 @@ function RequestsTable({ since, withAdminJwt }) {
 }
 
 /* ─── LLM Events sub-tab ───────────────────────────── */
-function LlmEventsTable({ since, withAdminJwt }) {
+function LlmEventsTable({ since, adminApi }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [eventType, setEventType] = useState('');
@@ -296,11 +287,10 @@ function LlmEventsTable({ since, withAdminJwt }) {
     setLoading(true);
     const params = { limit: 200, since };
     if (eventType) params.event_type = eventType;
-    return withAdminJwt(() => getAdminLogLlmEvents(params)
+    return adminApi.getAdminLogLlmEvents(params)
       .then((r) => setItems(r.data))
-      .finally(() => setLoading(false))
-    );
-  }, [since, eventType, withAdminJwt]);
+      .finally(() => setLoading(false));
+  }, [since, eventType, adminApi]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -348,7 +338,7 @@ function LlmEventsTable({ since, withAdminJwt }) {
 }
 
 /* ─── Tasks sub-tab ────────────────────────────────── */
-function TasksTable({ withAdminJwt }) {
+function TasksTable({ adminApi }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
@@ -357,11 +347,10 @@ function TasksTable({ withAdminJwt }) {
     setLoading(true);
     const params = { limit: 200 };
     if (statusFilter) params.status = statusFilter;
-    return withAdminJwt(() => getAdminLogTasks(params)
+    return adminApi.getAdminLogTasks(params)
       .then((r) => setItems(r.data))
-      .finally(() => setLoading(false))
-    );
-  }, [statusFilter, withAdminJwt]);
+      .finally(() => setLoading(false));
+  }, [statusFilter, adminApi]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -403,7 +392,7 @@ function TasksTable({ withAdminJwt }) {
 }
 
 /* ─── Lab loop events sub-tab ──────────────────────── */
-function LabLoopsTable({ withAdminJwt }) {
+function LabLoopsTable({ adminApi }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [severity, setSeverity] = useState('');
@@ -412,11 +401,10 @@ function LabLoopsTable({ withAdminJwt }) {
     setLoading(true);
     const params = { limit: 200 };
     if (severity) params.severity = severity;
-    return withAdminJwt(() => getAdminLogLabLoops(params)
+    return adminApi.getAdminLogLabLoops(params)
       .then((r) => setItems(r.data))
-      .finally(() => setLoading(false))
-    );
-  }, [severity, withAdminJwt]);
+      .finally(() => setLoading(false));
+  }, [severity, adminApi]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -457,16 +445,16 @@ function LabLoopsTable({ withAdminJwt }) {
 }
 
 /* ─── Main entry ───────────────────────────────────── */
-export default function AdminLogs({ withAdminJwt }) {
+export default function AdminLogs({ adminApi }) {
   const [since, setSince] = useState('24h');
   const [refreshSec, setRefreshSec] = useState(0);
   const [subTab, setSubTab] = useState('requests');
   const [metrics, setMetrics] = useState(null);
   const [tick, setTick] = useState(0);
 
-  const loadMetrics = useCallback(() => withAdminJwt(() =>
-    getAdminLogMetrics({ since }).then((r) => setMetrics(r.data))
-  ), [since, withAdminJwt]);
+  const loadMetrics = useCallback(() =>
+    adminApi.getAdminLogMetrics({ since }).then((r) => setMetrics(r.data)),
+  [since, adminApi]);
 
   useEffect(() => { loadMetrics(); }, [loadMetrics, tick]);
 
@@ -511,10 +499,10 @@ export default function AdminLogs({ withAdminJwt }) {
       </div>
 
       <div className="admin-logs-table-wrap" key={subTabKey}>
-        {subTab === 'requests' && <RequestsTable since={since} withAdminJwt={withAdminJwt} />}
-        {subTab === 'llm'      && <LlmEventsTable since={since} withAdminJwt={withAdminJwt} />}
-        {subTab === 'tasks'    && <TasksTable    withAdminJwt={withAdminJwt} />}
-        {subTab === 'loops'    && <LabLoopsTable withAdminJwt={withAdminJwt} />}
+        {subTab === 'requests' && <RequestsTable since={since} adminApi={adminApi} />}
+        {subTab === 'llm'      && <LlmEventsTable since={since} adminApi={adminApi} />}
+        {subTab === 'tasks'    && <TasksTable    adminApi={adminApi} />}
+        {subTab === 'loops'    && <LabLoopsTable adminApi={adminApi} />}
       </div>
     </div>
   );

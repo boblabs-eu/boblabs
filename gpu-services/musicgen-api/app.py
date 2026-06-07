@@ -91,7 +91,11 @@ class GenerateRequest(BaseModel):
     top_p: float = Field(default=0.0, ge=0.0, le=1.0)
     continuation_audio: Optional[str] = Field(default=None, description="Base64 WAV to continue from")
     melody_audio: Optional[str] = Field(default=None, description="Base64 WAV for melody conditioning (melody model only)")
-    sample_rate: int = Field(default=32000, ge=16000, le=48000)
+    # D10 — the prior `sample_rate` request field was declared but
+    # never wired into the encoder (the response always carried the
+    # model's native rate, typically 32 000 Hz). Field removed to
+    # match actual behavior; callers that need resampling do it
+    # client-side. Response.sample_rate still carries the rate.
 
 
 class GenerateResponse(BaseModel):

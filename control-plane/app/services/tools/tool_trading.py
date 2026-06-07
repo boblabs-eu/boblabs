@@ -94,15 +94,36 @@ async def _get_trading_config(executor) -> dict:
 
 
 async def _check_write_safety(executor, action: str, chain: str, config: dict,
-                                usd_value: float | None = None) -> str | None:
-    """Check if a write action is allowed. Returns error message or None."""
+                                usd_value: float | None = None,
+                                *, requires_usd_estimate: bool = True) -> str | None:
+    """Check if a write action is allowed. Returns error message or None.
+
+    Fail-closed contract (cluster D):
+      - If the caller passes ``requires_usd_estimate=True`` (default) AND a
+        ``max_tx_usd`` policy is set AND the oracle returned ``None``, we
+        refuse rather than silently bypassing the cap. Operators who want the
+        legacy "skip cap when oracle is down" behavior must explicitly set
+        ``max_tx_usd: null`` in their trading config.
+      - Callers that genuinely have no notional (e.g. unbounded approvals)
+        pass ``requires_usd_estimate=False`` and gate themselves separately.
+    """
     allowed_chains = config.get("allowed_chains", ["ethereum", "base", "bnb"])
     if chain not in allowed_chains:
         return f"Chain '{chain}' not in allowed chains: {', '.join(allowed_chains)}"
 
-    if usd_value is not None:
-        max_usd = float(config.get("max_tx_usd", 100))
-        if usd_value > max_usd:
+    max_usd_cfg = config.get("max_tx_usd", 100)
+    cap_active = max_usd_cfg is not None
+    if cap_active:
+        max_usd = float(max_usd_cfg)
+        if usd_value is None:
+            if requires_usd_estimate:
+                return (
+                    f"Refusing '{action}' on {chain}: USD value is unknown "
+                    f"(oracle returned no price) but max_tx_usd=${max_usd:.2f} is set. "
+                    f"Retry once the oracle recovers, or set max_tx_usd=null in trading "
+                    f"config to opt out of value-based capping."
+                )
+        elif usd_value > max_usd:
             return (f"Transaction value ~${usd_value:.2f} exceeds max_tx_usd ${max_usd:.2f}. "
                     f"Update trading config to increase limit.")
 
@@ -311,7 +332,13 @@ async def _send_native(executor, args: dict, chain: str) -> dict:
     if not all([wallet, to, amount_str]):
         return {"success": False, "output": "send_native requires 'wallet', 'to', 'amount'"}
 
-    amount = float(amount_str)
+    # Cluster D: Decimal-based amount math to match _send_token. Float was
+    # losing precision on values like '0.1' which round-trip differently
+    # through float vs Decimal when converted to wei.
+    try:
+        amount = Decimal(amount_str)
+    except Exception:
+        return {"success": False, "output": f"Invalid amount: {amount_str!r}"}
     config = await _get_trading_config(executor)
     gas_mult = float(config.get("gas_multiplier", 1.1))
 
@@ -320,7 +347,7 @@ async def _send_native(executor, args: dict, chain: str) -> dict:
     amount_wei = w3.to_wei(amount, "ether")
     usd_value = await estimate_usd_value(chain, NATIVE_TOKEN_ADDRESS, amount_wei)
 
-    # Safety check
+    # Safety check (fail-closed if oracle returned None and cap is set).
     err = await _check_write_safety(executor, "send_native", chain, config, usd_value)
     if err:
         return {"success": False, "output": err}
@@ -388,7 +415,9 @@ async def _send_token(executor, args: dict, chain: str) -> dict:
 
 
 async def _approve_token(executor, args: dict, chain: str) -> dict:
-    from app.services.trading_service import approve_token
+    from app.services.trading_service import (
+        approve_token, estimate_usd_value, get_w3, ERC20_ABI,
+    )
 
     wallet = args.get("wallet", "").strip()
     token = args.get("token", "").strip()
@@ -400,15 +429,65 @@ async def _approve_token(executor, args: dict, chain: str) -> dict:
     config = await _get_trading_config(executor)
     gas_mult = float(config.get("gas_multiplier", 1.1))
 
-    err = await _check_write_safety(executor, "approve_token", chain, config)
-    if err:
-        return {"success": False, "output": err}
+    # Cluster D: gate approve_token by confirmation_mode + the bounded-vs-
+    # unlimited distinction. Unlimited (max-uint256) approvals are 1-tx
+    # authorisations to drain the wallet; require explicit autonomous mode
+    # AND an opt-in flag. Bounded approvals follow the same confirm/autonomous
+    # split as send_native / send_token and surface a notional USD estimate
+    # for the cap check.
+    confirmation_mode = config.get("confirmation_mode", "confirm")
+    unlimited = amount_str is None
+    if unlimited:
+        if confirmation_mode != "autonomous" or not config.get("allow_unlimited_approval"):
+            return {"success": True, "output": (
+                f"**CONFIRMATION REQUIRED** — approve_token (unlimited)\n"
+                f"  Wallet: {wallet}\n  Token: {token}\n  Spender: {spender}\n"
+                f"  Approving max-uint256 lets the spender drain this token from the wallet.\n"
+                f"  To execute non-interactively set BOTH confirmation_mode='autonomous' AND\n"
+                f"  allow_unlimited_approval=true in trading config, or call again with a\n"
+                f"  bounded 'amount'."
+            )}
+        # Operator opted into unbounded approvals; cap-check still runs but
+        # no USD estimate is possible so we ask _check_write_safety not to
+        # require one. Operators who keep max_tx_usd set effectively block
+        # unbounded approvals (the bypass below only kicks in once they've
+        # explicitly turned off the cap).
+        err = await _check_write_safety(executor, "approve_token", chain, config,
+                                         usd_value=None, requires_usd_estimate=False)
+        if err:
+            return {"success": False, "output": err}
+        notional_usd = None
+    else:
+        # Bounded approval: best-effort USD estimate (same oracle path as
+        # send_token) so the standard cap + fail-closed contract applies.
+        try:
+            amount_dec = Decimal(amount_str)
+        except Exception:
+            return {"success": False, "output": f"Invalid amount: {amount_str!r}"}
+        w3 = get_w3(chain)
+        contract = w3.eth.contract(
+            address=Web3.to_checksum_address(token), abi=ERC20_ABI,
+        )
+        decimals = contract.functions.decimals().call()
+        amount_raw = int(amount_dec * Decimal(10 ** decimals))
+        notional_usd = await estimate_usd_value(chain, token, amount_raw)
+        err = await _check_write_safety(executor, "approve_token", chain, config,
+                                         usd_value=notional_usd)
+        if err:
+            return {"success": False, "output": err}
+        if confirmation_mode == "confirm":
+            return {"success": True, "output": (
+                f"**CONFIRMATION REQUIRED** — approve_token\n"
+                f"  Wallet: {wallet}\n  Token: {token}\n  Spender: {spender}\n"
+                f"  Allowance: {amount_dec}\n  Est. USD: ${notional_usd or '?'}\n"
+                f"  Set confirmation_mode to 'autonomous' in trading config to execute directly."
+            )}
 
     amount = float(amount_str) if amount_str else None
     result = await approve_token(chain, wallet, token, spender, amount, gas_mult)
     limit_str = f"{amount}" if amount else "unlimited"
     await _record_trade(executor, chain, wallet, result["tx_hash"], "approve",
-                        token, limit_str, "", "0", None)
+                        token, limit_str, "", "0", notional_usd)
     return {"success": True, "output": (
         f"Approved {limit_str} spending on {chain}.\n"
         f"  TX: {result['tx_hash']}\n  Explorer: {result['explorer_url']}"
@@ -483,6 +562,12 @@ async def _swap(executor, args: dict, chain: str) -> dict:
         swap_data = await build_swap_tx(chain, from_token, to_token, amount_raw, wallet, slippage_pct)
         tx_dict = swap_data.get("tx", {})
         if tx_dict:
+            # A01 — verify the upstream-supplied target is on our per-chain
+            # router allow-list BEFORE the hot wallet ever signs. A
+            # compromised / MITM'd 1inch response that swaps the
+            # aggregator address for an attacker contract is refused.
+            from app.services.trading_service import assert_swap_router_allowed
+            assert_swap_router_allowed(chain, tx_dict["to"])
             tx = {
                 "from": Web3.to_checksum_address(wallet),
                 "to": Web3.to_checksum_address(tx_dict["to"]),
@@ -535,15 +620,17 @@ async def _open_position(executor, args: dict, chain: str) -> dict:
         return {"success": False, "output": "open_position requires 'wallet', 'token', 'amount'"}
 
     repo = TradingRepo(executor.db)
+    # D03 — pass Decimals straight to the repo; it converts to wei
+    # internally using token_decimals (looked up from the symbol).
     pos = await repo.open_position(
         wallet_address=wallet,
         chain=chain,
         token_address=token,
         token_symbol=token_symbol or "???",
-        amount=float(amount_str),
-        entry_price_usd=float(entry_price) if entry_price else None,
-        stop_loss_usd=float(args["stop_loss"]) if args.get("stop_loss") else None,
-        take_profit_usd=float(args["take_profit"]) if args.get("take_profit") else None,
+        amount=Decimal(amount_str),
+        entry_price_usd=Decimal(entry_price) if entry_price else None,
+        stop_loss_usd=Decimal(args["stop_loss"]) if args.get("stop_loss") else None,
+        take_profit_usd=Decimal(args["take_profit"]) if args.get("take_profit") else None,
         notes=args.get("notes", ""),
         lab_id=executor.lab_id,
     )
@@ -564,7 +651,7 @@ async def _close_position(executor, args: dict) -> dict:
     repo = TradingRepo(executor.db)
     pos = await repo.close_position(
         position_id=position_id,
-        exit_price_usd=float(exit_price) if exit_price else None,
+        exit_price_usd=Decimal(exit_price) if exit_price else None,
         exit_tx_hash=args.get("tx_hash", ""),
     )
     if not pos:
@@ -628,7 +715,9 @@ async def _portfolio_pnl(executor, args: dict) -> dict:
     from app.repositories.trading_repo import TradingRepo
 
     repo = TradingRepo(executor.db)
-    pnl = await repo.get_portfolio_pnl()
+    # P06 — scope to this lab's positions so the trading tool never leaks
+    # other labs' open positions into an LLM prompt.
+    pnl = await repo.get_portfolio_pnl(lab_id=executor.lab_id)
     if not pnl:
         return {"success": True, "output": "No open positions to calculate P&L."}
 

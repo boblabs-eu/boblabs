@@ -1,5 +1,7 @@
 """Bob Manager — Access Token and Trial Request repository."""
 
+import hashlib
+import hmac
 import secrets
 from datetime import datetime, timezone
 from uuid import UUID
@@ -8,6 +10,12 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.access_token import AccessToken, QuoteRequest, TrialRequest
+from app.repositories._paginate import MAX_LIMIT, clamp_limit
+
+
+def _hash_token(token: str) -> str:
+    """SHA-256 hex of the plaintext token (cluster K)."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 class AccessTokenRepository:
@@ -16,9 +24,13 @@ class AccessTokenRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_all(self) -> list[AccessToken]:
+    async def get_all(self, limit: int = MAX_LIMIT, offset: int = 0) -> list[AccessToken]:
+        # P04 — cap unbounded scan; admin token UI shows ~20 at a time.
         result = await self.db.execute(
-            select(AccessToken).order_by(AccessToken.created_at.desc())
+            select(AccessToken)
+            .order_by(AccessToken.created_at.desc())
+            .limit(clamp_limit(limit))
+            .offset(max(0, offset))
         )
         return list(result.scalars().all())
 
@@ -29,6 +41,18 @@ class AccessTokenRepository:
         return result.scalar_one_or_none()
 
     async def get_by_token(self, token: str) -> AccessToken | None:
+        """Lookup by token. Cluster K — prefer the hash index; fall back
+        to the plaintext path during the dual-read deprecation window so
+        tokens issued before migration 0006 keep working."""
+        digest = _hash_token(token)
+        result = await self.db.execute(
+            select(AccessToken).where(AccessToken.token_hash == digest)
+        )
+        record = result.scalar_one_or_none()
+        if record is not None:
+            return record
+        # Dual-read fallback. Will be removed once the deprecation window
+        # closes and we drop the plaintext column.
         result = await self.db.execute(
             select(AccessToken).where(AccessToken.token == token)
         )
@@ -38,6 +62,7 @@ class AccessTokenRepository:
         token_value = f"bob_{secrets.token_urlsafe(32)}"
         access_token = AccessToken(
             token=token_value,
+            token_hash=_hash_token(token_value),
             label=label,
             email=email,
             expires_at=expires_at,
@@ -60,7 +85,12 @@ class AccessTokenRepository:
         return False
 
     async def validate(self, token: str) -> AccessToken | None:
-        """Return the token if it is valid, not expired, and not revoked."""
+        """Return the token if it is valid, not expired, and not revoked.
+
+        Cluster K — Constant-time secondary check via hmac.compare_digest
+        on top of the indexed token_hash lookup so a successful index
+        hit can't be distinguished from a near-miss by timing.
+        """
         record = await self.get_by_token(token)
         if not record:
             return None
@@ -68,6 +98,15 @@ class AccessTokenRepository:
             return None
         if record.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
             return None
+        # Defence-in-depth: ensure the row's plaintext (or hash) actually
+        # matches the presented token. Index lookups should never return
+        # a mismatched row, but compare in constant time anyway.
+        if record.token_hash:
+            if not hmac.compare_digest(record.token_hash, _hash_token(token)):
+                return None
+        elif record.token:
+            if not hmac.compare_digest(record.token, token):
+                return None
         return record
 
 
@@ -77,9 +116,13 @@ class TrialRequestRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_all(self) -> list[TrialRequest]:
+    async def get_all(self, limit: int = MAX_LIMIT, offset: int = 0) -> list[TrialRequest]:
+        # P04 — cap unbounded scan.
         result = await self.db.execute(
-            select(TrialRequest).order_by(TrialRequest.created_at.desc())
+            select(TrialRequest)
+            .order_by(TrialRequest.created_at.desc())
+            .limit(clamp_limit(limit))
+            .offset(max(0, offset))
         )
         return list(result.scalars().all())
 
@@ -118,9 +161,13 @@ class QuoteRequestRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_all(self) -> list[QuoteRequest]:
+    async def get_all(self, limit: int = MAX_LIMIT, offset: int = 0) -> list[QuoteRequest]:
+        # P04 — cap unbounded scan.
         result = await self.db.execute(
-            select(QuoteRequest).order_by(QuoteRequest.created_at.desc())
+            select(QuoteRequest)
+            .order_by(QuoteRequest.created_at.desc())
+            .limit(clamp_limit(limit))
+            .offset(max(0, offset))
         )
         return list(result.scalars().all())
 

@@ -48,6 +48,8 @@ class WorkflowResponse(WorkflowBase):
     id: UUID
     project_id: UUID | None
     steps: list[WorkflowStepResponse]
+    # Cluster F — surface ACL so the UI can render share controls.
+    acl: dict = {}
     created_at: datetime
     updated_at: datetime
 

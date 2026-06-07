@@ -6,6 +6,7 @@ Keys are NEVER logged, returned via API, or stored in the database.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -30,6 +31,8 @@ CHAIN_CONFIG = {
         "blockscout": "https://eth.blockscout.com",
         "explorer_tx": "https://etherscan.io/tx/",
         "1inch_chain_id": 1,
+        # A01 — 1inch v6 aggregation router (same address across mainnets).
+        "1inch_router": "0x111111125421cA6dc452d289314280a0f8842A65",
         "uniswap_v2_router": "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
         "uniswap_v3_router": "0xE592427A0AEce92De3Edee1F18E0157C05861564",
         "uniswap_v3_nft_manager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
@@ -43,6 +46,7 @@ CHAIN_CONFIG = {
         "blockscout": "https://base.blockscout.com",
         "explorer_tx": "https://basescan.org/tx/",
         "1inch_chain_id": 8453,
+        "1inch_router": "0x111111125421cA6dc452d289314280a0f8842A65",
         "uniswap_v2_router": "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24",
         "uniswap_v3_router": "0x2626664c2603336E57B271c5C0b26F421741e481",
         "uniswap_v3_nft_manager": "0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1",
@@ -56,11 +60,67 @@ CHAIN_CONFIG = {
         "blockscout": "https://bsc.blockscout.com",
         "explorer_tx": "https://bscscan.com/tx/",
         "1inch_chain_id": 56,
+        "1inch_router": "0x111111125421cA6dc452d289314280a0f8842A65",
         "pancakeswap_v2_router": "0x10ED43C718714eb63d5aA57B78B54704E256024E",
         "pancakeswap_v3_nft_manager": "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364",
         "weth": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",  # WBNB
     },
 }
+
+
+# A01 — keys whose values are router contracts we sign swap transactions
+# against. ``assert_swap_router_allowed`` builds the per-chain allow-list
+# by reading these keys out of CHAIN_CONFIG. Adding a new router (e.g. a
+# Curve pool) means adding the address here AND to the relevant chain
+# dict — there is no "any address that 1inch sends us" escape hatch.
+_SWAP_ROUTER_KEYS = (
+    "1inch_router",
+    "uniswap_v2_router",
+    "uniswap_v3_router",
+    "pancakeswap_v2_router",
+)
+
+
+def get_swap_router_allowlist(chain: str) -> set[str]:
+    """Return the set of lowercase router addresses we will sign for on ``chain``."""
+    cfg = CHAIN_CONFIG.get(chain, {})
+    out: set[str] = set()
+    for k in _SWAP_ROUTER_KEYS:
+        addr = cfg.get(k)
+        if addr:
+            out.add(addr.lower())
+    return out
+
+
+def assert_swap_router_allowed(chain: str, tx_to: str) -> None:
+    """A01 — refuse to sign a swap tx whose target isn't on our per-chain allow-list.
+
+    Pre-fix: ``tx.to`` came verbatim from 1inch's swap-build response.
+    A compromised 1inch (or a MITM on a leaky DNS path) could replace
+    the router address with an attacker contract; the hot wallet would
+    sign the substituted target without notice.
+
+    The allow-list is built from ``CHAIN_CONFIG`` so adding a new
+    router (Curve, Balancer, …) requires an explicit code change and
+    PR review. Non-swap paths (``send_native``, ``send_token``) do
+    NOT go through this check — those legitimately target arbitrary
+    recipients.
+    """
+    if not tx_to:
+        raise ValueError("Swap tx has no destination address (tx.to is empty)")
+    allowed = get_swap_router_allowlist(chain)
+    if not allowed:
+        raise ValueError(
+            f"No swap router allow-list configured for chain '{chain}' — "
+            "refusing to sign a swap tx."
+        )
+    if tx_to.lower() not in allowed:
+        raise ValueError(
+            f"Swap router {tx_to} is not on the allow-list for chain "
+            f"'{chain}'. Expected one of: {sorted(allowed)}. "
+            "If this address is a legitimate new router, add it to "
+            "CHAIN_CONFIG['{chain}'] and to _SWAP_ROUTER_KEYS."
+        )
 
 # ── Minimal ABIs ─────────────────────────────────────────────────────────
 
@@ -85,12 +145,28 @@ UNISWAP_V3_ROUTER_ABI = [
 ]
 
 # ── Hot wallet management ────────────────────────────────────────────────
+#
+# Cluster R — wallets are loaded lazily on first access instead of at module
+# import. This lets operators rotate TRADING_PRIVATE_KEYS without a full
+# bob-api restart (call reset_hot_wallets() then any accessor) and makes the
+# trading_service safe to import from contexts that don't have the env yet
+# (tests, scripts).
+#
+# A per-wallet asyncio.Lock keyed by lowercase address serialises
+# estimate_and_send's nonce read / sign / send block — concurrent calls for
+# the same wallet previously raced on `w3.eth.get_transaction_count`.
 
 _HOT_WALLETS: dict[str, Account] = {}
+_HOT_WALLETS_LOADED: bool = False
+_WALLET_LOCKS: dict[str, asyncio.Lock] = {}
 
 
 def _load_hot_wallets() -> None:
-    """Load private keys from TRADING_PRIVATE_KEYS env var."""
+    """Load private keys from TRADING_PRIVATE_KEYS env var. Idempotent."""
+    global _HOT_WALLETS_LOADED
+    if _HOT_WALLETS_LOADED:
+        return
+    _HOT_WALLETS_LOADED = True
     raw = os.environ.get("TRADING_PRIVATE_KEYS", "").strip()
     if not raw:
         return
@@ -115,22 +191,48 @@ def _load_hot_wallets() -> None:
         logger.error("Failed to load TRADING_PRIVATE_KEYS: %s", e)
 
 
-# Load at module import
-_load_hot_wallets()
+def reset_hot_wallets() -> None:
+    """Reset cached wallets so the next accessor re-reads the env.
+
+    Intended for tests and operator key rotation. Per-wallet locks are kept
+    so any in-flight estimate_and_send call still finishes against its
+    original lock.
+    """
+    global _HOT_WALLETS_LOADED
+    _HOT_WALLETS.clear()
+    _HOT_WALLETS_LOADED = False
+
+
+def _ensure_loaded() -> None:
+    if not _HOT_WALLETS_LOADED:
+        _load_hot_wallets()
 
 
 def list_hot_wallets() -> list[dict]:
     """Return addresses of loaded hot wallets (never exposes keys)."""
+    _ensure_loaded()
     return [{"address": addr} for addr in _HOT_WALLETS]
 
 
 def get_hot_wallet(address: str) -> Account | None:
     """Get a hot wallet Account by address. Returns None if not loaded."""
+    _ensure_loaded()
     return _HOT_WALLETS.get(address.lower())
 
 
 def has_hot_wallets() -> bool:
+    _ensure_loaded()
     return len(_HOT_WALLETS) > 0
+
+
+def _wallet_lock(address: str) -> asyncio.Lock:
+    """Return a per-wallet asyncio.Lock; created lazily on first use."""
+    key = address.lower()
+    lock = _WALLET_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _WALLET_LOCKS[key] = lock
+    return lock
 
 
 # ── Web3 helpers ─────────────────────────────────────────────────────────
@@ -223,43 +325,57 @@ async def estimate_and_send(
     w3 = get_w3(chain)
     checksum_addr = Web3.to_checksum_address(wallet_address)
 
-    # Fill nonce
-    tx_dict["nonce"] = w3.eth.get_transaction_count(checksum_addr)
-    tx_dict["chainId"] = config["chain_id"]
+    # Cluster R — serialise per-wallet so concurrent calls (same address,
+    # different transactions) cannot race on `get_transaction_count` and
+    # produce two transactions with the same nonce.
+    async with _wallet_lock(wallet_address):
+        # Fill nonce
+        tx_dict["nonce"] = w3.eth.get_transaction_count(checksum_addr)
+        tx_dict["chainId"] = config["chain_id"]
 
-    # Estimate gas
-    if "gas" not in tx_dict:
-        estimated = w3.eth.estimate_gas(tx_dict)
-        tx_dict["gas"] = int(estimated * gas_multiplier)
+        # Estimate gas
+        if "gas" not in tx_dict:
+            estimated = w3.eth.estimate_gas(tx_dict)
+            tx_dict["gas"] = int(estimated * gas_multiplier)
 
-    # Gas price (use EIP-1559 if supported)
-    if "maxFeePerGas" not in tx_dict and "gasPrice" not in tx_dict:
-        try:
-            latest = w3.eth.get_block("latest")
-            base_fee = latest.get("baseFeePerGas")
-            if base_fee:
-                priority = w3.eth.max_priority_fee
-                tx_dict["maxFeePerGas"] = int((base_fee * 2 + priority) * gas_multiplier)
-                tx_dict["maxPriorityFeePerGas"] = int(priority * gas_multiplier)
-            else:
+        # Gas price (use EIP-1559 if supported)
+        if "maxFeePerGas" not in tx_dict and "gasPrice" not in tx_dict:
+            try:
+                latest = w3.eth.get_block("latest")
+                base_fee = latest.get("baseFeePerGas")
+                if base_fee:
+                    priority = w3.eth.max_priority_fee
+                    tx_dict["maxFeePerGas"] = int((base_fee * 2 + priority) * gas_multiplier)
+                    tx_dict["maxPriorityFeePerGas"] = int(priority * gas_multiplier)
+                else:
+                    tx_dict["gasPrice"] = int(w3.eth.gas_price * gas_multiplier)
+            except Exception:
                 tx_dict["gasPrice"] = int(w3.eth.gas_price * gas_multiplier)
-        except Exception:
-            tx_dict["gasPrice"] = int(w3.eth.gas_price * gas_multiplier)
 
-    # Simulate with eth_call
-    if simulate:
-        try:
-            w3.eth.call(tx_dict, "latest")
-        except ContractLogicError as e:
-            raise ValueError(f"Transaction simulation reverted: {e}")
-        except Exception as e:
-            # Some simple transfers don't support eth_call well, allow through
-            logger.debug("Simulation warning (proceeding): %s", e)
+        # Simulate with eth_call
+        if simulate:
+            try:
+                w3.eth.call(tx_dict, "latest")
+            except ContractLogicError as e:
+                raise ValueError(f"Transaction simulation reverted: {e}")
+            except Exception as e:
+                # Some simple transfers don't support eth_call well, allow through
+                logger.debug("Simulation warning (proceeding): %s", e)
 
-    # Sign and send
-    signed = acct.sign_transaction(tx_dict)
-    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-    tx_hash_hex = tx_hash.hex()
+        # Sign and send. eth_account renamed `rawTransaction` to
+        # `raw_transaction` in 0.10.0; keep both spellings supported so a
+        # downstream-pin downgrade still works.
+        signed = acct.sign_transaction(tx_dict)
+        raw_tx = getattr(signed, "raw_transaction", None)
+        if raw_tx is None:
+            raw_tx = getattr(signed, "rawTransaction", None)
+        if raw_tx is None:
+            raise ValueError(
+                "Signed transaction has neither raw_transaction nor "
+                "rawTransaction attribute; unsupported eth_account version."
+            )
+        tx_hash = w3.eth.send_raw_transaction(raw_tx)
+        tx_hash_hex = tx_hash.hex()
 
     return {
         "tx_hash": tx_hash_hex,

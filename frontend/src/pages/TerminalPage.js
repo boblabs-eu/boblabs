@@ -26,8 +26,11 @@ const XTERM_THEME = {
   brightBlue: '#fca5a5', brightMagenta: '#c084fc', brightCyan: '#fbbf24', brightWhite: '#fafaf9',
 };
 
-let termIdCounter = 0;
-
+// U06 — `termIdCounter` used to live at module scope. Under React 18
+// StrictMode the component mounts twice on dev; the module-level
+// counter persisted across remounts and produced colliding ids on
+// fast HMR cycles. Moving it into a component-scoped ref keeps each
+// TerminalPage instance isolated.
 export default function TerminalPage() {
   const [servers, setServers] = useState([]);
   const [locked, setLocked] = useState(false);
@@ -35,6 +38,7 @@ export default function TerminalPage() {
   const [restricted, setRestricted] = useState(false);
   const [loading, setLoading] = useState(true);
   const termsRef = useRef({}); // termId -> { xterm, fitAddon, sessionId, serverId, ro, disposed }
+  const termIdRef = useRef(0); // U06 — per-instance, replaces module-level counter
   const lockedRef = useRef(false);
   const termsRefForLock = useRef(termsRef); // alias for closure
   termsRefForLock.current = termsRef;
@@ -161,7 +165,8 @@ export default function TerminalPage() {
   if (loading) return <div style={{ padding: '2rem', color: 'var(--text-muted)' }}>Loading…</div>;
 
   function addTerminalSlot() {
-    const id = ++termIdCounter;
+    termIdRef.current += 1;
+    const id = termIdRef.current;
     setTerminals((prev) => [...prev, { id, serverId: null }]);
     termsRef.current[id] = { xterm: null, fitAddon: null, sessionId: null, serverId: null, ro: null, disposed: false, _connecting: false, _pendingServer: null };
     return id;
@@ -236,13 +241,41 @@ export default function TerminalPage() {
           <button
             className={locked ? 'btn btn-primary' : 'btn btn-outline'}
             onClick={() => setLocked(!locked)}
-            title={locked ? 'Input is synced to all terminals' : 'Input goes to focused terminal only'}
+            title={locked ? 'Input is synced to ALL connected terminals (mass-administration mode — see the banner below)' : 'Input goes to focused terminal only'}
           >
             {locked ? <><IC.lock size={14} /> Synced</> : <><IC.unlock size={14} /> Independent</>}
           </button>
           <button className="btn btn-outline" onClick={() => addTerminalSlot()}>+ Add Terminal</button>
         </div>
       </div>
+      {/* U05 — when lock mode is on and connected terminals span more
+          than one server, render a prominent banner. The behaviour is
+          intentional ("mass-administration mode") but the audit flagged
+          that a user hitting `rm -rf /` while locked could hit several
+          servers without realising. The banner makes the blast radius
+          visible. */}
+      {locked && (() => {
+        const connectedServers = new Set(
+          terminals
+            .map((t) => termsRef.current[t.id]?.serverId)
+            .filter((sid) => sid != null),
+        );
+        if (connectedServers.size < 2) return null;
+        return (
+          <div style={{
+            margin: '0.25rem 0', padding: '0.5rem 0.75rem',
+            background: 'rgba(248, 113, 113, 0.12)',
+            border: '1px solid rgba(248, 113, 113, 0.45)',
+            borderRadius: 'var(--radius)', color: 'var(--text)',
+            fontSize: '0.85rem',
+          }}>
+            <strong>⚠ Mass-administration mode</strong> — keystrokes go to
+            all <strong>{connectedServers.size}</strong> connected servers.
+            Destructive commands hit every one. Toggle <em>Independent</em>
+            to scope to the focused pane.
+          </div>
+        );
+      })()}
 
       <div style={{
         flex: 1, minHeight: 0, overflowY: 'auto',

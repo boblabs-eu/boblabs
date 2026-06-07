@@ -28,6 +28,8 @@ from sqlalchemy import select
 from app.api.dependencies import DbSession, get_current_user
 from app.api.routes.labs import LAB_RESOURCES_ROOT
 from app.models.orchestrator import Lab, ToolConfig
+from app.repositories.lab_repo import LabRepository
+from app.services.authorization import Permission, check_permission
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +115,38 @@ async def _lab_name_map(db) -> dict[str, str]:
     return {str(r[0]): r[1] for r in rows}
 
 
+async def _accessible_lab_ids(db, user: dict) -> set[str] | None:
+    """Cluster O.2 — return the set of lab UUIDs (as strings) the caller
+    can VIEW, or ``None`` for admin (no filtering).
+
+    Used by ``list_drafts`` to scope the cross-lab directory iteration to
+    labs whose ``Lab.acl`` grants the caller view rights. Mirrors the
+    `list_workflows` pattern from cluster F.
+    """
+    if user.get("role") == "admin":
+        return None
+    labs = await LabRepository(db).get_all(user=user)
+    return {str(l.id) for l in labs}
+
+
+async def _require_lab_permission(
+    db,
+    lab_id: UUID,
+    user: dict,
+    permission: Permission,
+) -> Lab:
+    """Cluster O.2 — fetch a lab by id and assert the caller has ``permission``
+    on its ACL. Returns 404 if the lab doesn't exist (don't leak existence),
+    raises 403 via :func:`check_permission` on insufficient permissions.
+    Returns the loaded Lab so callers can use its fields (e.g., name).
+    """
+    lab = await LabRepository(db).get_by_id(lab_id)
+    if lab is None:
+        raise HTTPException(status_code=404, detail="Lab not found")
+    check_permission(user, lab.acl, permission)
+    return lab
+
+
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
 class DraftSummary(BaseModel):
@@ -155,6 +189,9 @@ async def list_drafts(
     if not LAB_RESOURCES_ROOT.exists():
         return []
 
+    # Cluster O.2 — non-admin callers only see drafts for labs whose ACL
+    # grants them VIEW. Admin sees everything (allowed_lab_ids is None).
+    allowed_lab_ids = await _accessible_lab_ids(db, user)
     name_map = await _lab_name_map(db)
     out: list[DraftSummary] = []
 
@@ -162,6 +199,8 @@ async def list_drafts(
         if not lab_dir.is_dir():
             continue
         lab_id = lab_dir.name
+        if allowed_lab_ids is not None and lab_id not in allowed_lab_ids:
+            continue
         lab_name = name_map.get(lab_id, lab_id)
         drafts_dir = lab_dir / "output" / "drafts"
         if not drafts_dir.is_dir():
@@ -205,6 +244,8 @@ async def get_draft(
     db: DbSession,
     user: dict = Depends(get_current_user),
 ):
+    # Cluster O.2 — VIEW permission on the parent lab required.
+    await _require_lab_permission(db, lab_id, user, Permission.VIEW)
     path = _resolve_draft_path(lab_id, filename)
     parsed = _parse_draft(path)
     if not parsed:
@@ -237,6 +278,8 @@ async def edit_draft(
     user: dict = Depends(get_current_user),
 ):
     """Edit a pending draft. Sent/rejected drafts are immutable."""
+    # Cluster O.2 — EDIT permission on the parent lab required.
+    await _require_lab_permission(db, lab_id, user, Permission.EDIT)
     path = _resolve_draft_path(lab_id, filename)
     if _draft_status(path) != "pending":
         raise HTTPException(status_code=409, detail="Only pending drafts are editable")
@@ -264,6 +307,9 @@ async def reject_draft(
 ):
     """Move a pending draft to the rejected folder. Append the recipient to
     suppression.txt so the Lab won't redraft them."""
+    # Cluster O.2 — EDIT permission on the parent lab required (reject
+    # mutates the lab's suppression list, a write).
+    await _require_lab_permission(db, lab_id, user, Permission.EDIT)
     path = _resolve_draft_path(lab_id, filename)
     if _draft_status(path) != "pending":
         raise HTTPException(status_code=409, detail="Only pending drafts can be rejected")
@@ -291,6 +337,9 @@ async def send_draft(
     user: dict = Depends(get_current_user),
 ):
     """Send the draft via the configured mail tool's SMTP, then move it to sent/."""
+    # Cluster O.2 — EDIT permission on the parent lab required (sending
+    # the email is a write that touches the lab's outreach history).
+    await _require_lab_permission(db, lab_id, user, Permission.EDIT)
     path = _resolve_draft_path(lab_id, filename)
     if _draft_status(path) != "pending":
         raise HTTPException(status_code=409, detail="Only pending drafts can be sent")

@@ -12,24 +12,45 @@ Runs on GPU servers. Model loads on first request, unloads after idle timeout.
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import logging
 import os
 import threading
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
+from pathlib import Path
 
 import numpy as np
 import torch
 
-# PyTorch 2.6+ changed torch.load() default to weights_only=True,
-# which breaks Bark's model checkpoint loading.  Patch it globally.
+# A10 — pre-fix this monkey-patched torch.load **globally** to
+# weights_only=False so Bark's checkpoint loader could keep working under
+# PyTorch 2.6's tightened default. The side effect was that *every*
+# torch.load anywhere in the process (including caller-provided model
+# paths) unpickled with arbitrary code execution enabled. We now expose
+# the relaxation only during the bark.preload_models() call via
+# ``_allow_unsafe_torch_load``, restoring the safe default elsewhere.
 _original_torch_load = torch.load
-def _patched_torch_load(*args, **kwargs):
-    if "weights_only" not in kwargs:
-        kwargs["weights_only"] = False
-    return _original_torch_load(*args, **kwargs)
-torch.load = _patched_torch_load
+
+
+@contextmanager
+def _allow_unsafe_torch_load():
+    """Temporarily allow torch.load(weights_only=False) for code inside
+    ``with`` (Bark preload path only). Outside this block the upstream
+    PyTorch 2.6 default (weights_only=True) stays in force."""
+
+    def _patched(*args, **kwargs):
+        if "weights_only" not in kwargs:
+            kwargs["weights_only"] = False
+        return _original_torch_load(*args, **kwargs)
+
+    torch.load = _patched
+    try:
+        yield
+    finally:
+        torch.load = _original_torch_load
+
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -44,6 +65,54 @@ IDLE_UNLOAD_SEC = int(os.getenv("BARK_IDLE_UNLOAD_SEC", "300"))
 HOST = os.getenv("BARK_HOST", "0.0.0.0")
 PORT = int(os.getenv("BARK_PORT", "3015"))
 MAX_TEXT_LENGTH = int(os.getenv("BARK_MAX_TEXT_LENGTH", "2000"))
+
+# A10 — optional manifest of trusted checkpoint hashes. The operator
+# drops a ``manifest.sha256`` file (one ``<sha256>  <filename>`` per
+# line) next to the Bark HF cache; on startup we verify every listed
+# file. Setting ``BARK_REQUIRE_MANIFEST=1`` makes the absence of the
+# manifest a startup error (otherwise we warn and continue, preserving
+# the old behaviour).
+BARK_CHECKPOINT_DIR = os.getenv("BARK_CHECKPOINT_DIR", "")
+BARK_REQUIRE_MANIFEST = os.getenv("BARK_REQUIRE_MANIFEST", "").lower() in ("1", "true", "yes")
+
+
+def _sha256_of_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _verify_bark_manifest() -> None:
+    if not BARK_CHECKPOINT_DIR:
+        return
+    root = Path(BARK_CHECKPOINT_DIR)
+    manifest = root / "manifest.sha256"
+    if not manifest.exists():
+        msg = f"A10: manifest.sha256 missing in {root}"
+        if BARK_REQUIRE_MANIFEST:
+            raise RuntimeError(msg)
+        logger.warning("%s; skipping checksum verification", msg)
+        return
+    for line in manifest.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        expected, fname = parts[0].lower(), parts[1]
+        target = root / fname
+        if not target.is_file():
+            raise RuntimeError(f"A10: manifest lists {fname} but file missing")
+        actual = _sha256_of_file(target).lower()
+        if actual != expected:
+            raise RuntimeError(
+                f"A10: checksum mismatch for {fname} — expected "
+                f"{expected[:16]}..., got {actual[:16]}.... Refusing to start."
+            )
+        logger.info("A10: bark checkpoint %s verified", fname)
 
 # ── Global model state ───────────────────────────────
 
@@ -61,7 +130,10 @@ def _ensure_model():
             return
         logger.info("Loading Bark models...")
         from bark import preload_models
-        preload_models()
+        # A10 — only relax torch.load's weights_only default for the
+        # duration of Bark's checkpoint preload, not globally.
+        with _allow_unsafe_torch_load():
+            preload_models()
         _model_loaded = True
         _last_used = time.time()
         logger.info("Bark models loaded")
@@ -102,6 +174,9 @@ class GenerateResponse(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # A10 — verify operator-pinned checkpoint hashes (if configured)
+    # before the first request can trigger _ensure_model().
+    _verify_bark_manifest()
     t = threading.Thread(target=_unload_if_idle, daemon=True)
     t.start()
     logger.info("Bark API starting (max text: %d chars)", MAX_TEXT_LENGTH)

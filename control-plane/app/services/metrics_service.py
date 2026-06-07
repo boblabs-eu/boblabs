@@ -34,7 +34,9 @@ class MetricsService:
             Inspection data dict or None on timeout/failure.
         """
         request_id = str(uuid.uuid4())
-        future = manager.create_pending(request_id)
+        # R01 — track against agent so unregister cancels the future,
+        # and drop it eagerly on timeout / send failure.
+        future = manager.create_pending(request_id, agent_name=server_name)
 
         sent = await manager.send_to_agent(server_name, {
             "type": "inspection.request",
@@ -43,11 +45,13 @@ class MetricsService:
         })
 
         if not sent:
+            manager.cancel_pending(request_id, reason="send_failed")
             return None
 
         try:
             result = await asyncio.wait_for(future, timeout=timeout)
             return result
         except asyncio.TimeoutError:
+            manager.cancel_pending(request_id, reason="caller_timeout")
             logger.warning("Inspection %s timed out for %s", inspection_type, server_name)
             return None

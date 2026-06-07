@@ -52,6 +52,28 @@ app.post("/render", async (req, res) => {
     // Write the user-provided component code
     fs.writeFileSync(path.join(tmpDir, "src", "Comp.tsx"), code);
 
+    // A06 — sanitize every interpolated field so a caller-supplied
+    // composition_id like ``foo" />){evilJs}({" `` can't break out of
+    // the JSX attribute and inject code. We also coerce numerics so a
+    // string in ``width`` fails fast instead of producing a malformed
+    // <Composition>.
+    const safeCompositionId = JSON.stringify(String(composition_id));
+    const numericFields = {
+      duration_in_frames,
+      fps,
+      width,
+      height,
+    };
+    const safeNumeric = {};
+    for (const [k, v] of Object.entries(numericFields)) {
+      const n = Number(v);
+      if (!Number.isFinite(n)) {
+        return res.status(400).json({ error: `Invalid numeric field: ${k}=${v}` });
+      }
+      safeNumeric[k] = n;
+    }
+    const safeProps = JSON.stringify(props ?? {});
+
     // Write the Root composition that registers the component
     fs.writeFileSync(
       path.join(tmpDir, "src", "Root.tsx"),
@@ -62,13 +84,13 @@ import { Main } from "./Comp";
 export const RemotionRoot: React.FC = () => {
   return (
     <Composition
-      id="${composition_id}"
+      id={${safeCompositionId}}
       component={Main}
-      durationInFrames={${duration_in_frames}}
-      fps={${fps}}
-      width={${width}}
-      height={${height}}
-      defaultProps={${JSON.stringify(props)}}
+      durationInFrames={${safeNumeric.duration_in_frames}}
+      fps={${safeNumeric.fps}}
+      width={${safeNumeric.width}}
+      height={${safeNumeric.height}}
+      defaultProps={${safeProps}}
     />
   );
 };
@@ -147,14 +169,15 @@ registerRoot(RemotionRoot);
 
     console.log(`[${jobId}] Render complete!`);
 
-    // 5. Read output and return as base64
-    const videoBuffer = fs.readFileSync(outFile);
-    const b64 = videoBuffer.toString("base64");
-    const sizeBytes = videoBuffer.length;
-
-    res.json({
+    // R19 — stream the MP4 instead of slurping it twice (raw buffer +
+    // base64 string) on the event loop. The response is still JSON for
+    // back-compat: we write the envelope header, then pipe the file
+    // through a base64 encoder, then close the JSON. Peak memory is now
+    // one 64 KiB chunk + ceil(chunk * 4 / 3) of base64 instead of the
+    // whole file twice.
+    const sizeBytes = fs.statSync(outFile).size;
+    const trailer = {
       success: true,
-      video_base64: b64,
       size_bytes: sizeBytes,
       composition_id,
       width: composition.width,
@@ -163,7 +186,39 @@ registerRoot(RemotionRoot);
       duration_in_frames: composition.durationInFrames,
       duration_seconds: composition.durationInFrames / composition.fps,
       codec,
+    };
+    res.setHeader("Content-Type", "application/json");
+    // Write the envelope head, then the base64 payload, then the trailer.
+    res.write('{"video_base64":"');
+    await new Promise((resolve, reject) => {
+      const stream = fs.createReadStream(outFile, { highWaterMark: 64 * 1024 });
+      // Base64 encodes 3 bytes -> 4 chars. To stream without corruption
+      // we buffer a tail of <3 bytes between chunks and only encode the
+      // largest 3-multiple prefix; the final flush encodes the tail
+      // with the standard padding.
+      let tail = Buffer.alloc(0);
+      stream.on("data", (chunk) => {
+        const combined = tail.length ? Buffer.concat([tail, chunk]) : chunk;
+        const aligned = combined.length - (combined.length % 3);
+        if (aligned > 0) {
+          res.write(combined.subarray(0, aligned).toString("base64"));
+        }
+        tail = combined.subarray(aligned);
+      });
+      stream.on("end", () => {
+        if (tail.length) {
+          res.write(tail.toString("base64"));
+        }
+        resolve();
+      });
+      stream.on("error", reject);
     });
+    // Close the JSON envelope: end the video_base64 string with `"`,
+    // then splice in the trailer object minus its leading `{` so the
+    // whole response is a single well-formed JSON object:
+    //   {"video_base64":"<base64>","success":true,…}
+    const trailerJson = JSON.stringify(trailer);
+    res.end('",' + trailerJson.slice(1));
   } catch (err) {
     console.error(`[${jobId}] Render failed:`, err);
     res.status(500).json({

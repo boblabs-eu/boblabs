@@ -108,16 +108,60 @@ def _parse_script_meta(path: Path) -> dict | None:
         return None
 
 
-def discover_scripts() -> dict[str, dict]:
-    """Scan SCRIPTS_DIR for valid scripts and return {name: meta}."""
-    scripts: dict[str, dict] = {}
-    if not SCRIPTS_DIR.is_dir():
-        logger.warning("Scripts directory does not exist: %s", SCRIPTS_DIR)
-        return scripts
+# P08 — cache the discovery scan and invalidate on mtime drift. The
+# previous implementation re-stat'd every file on every request, which
+# adds a meaningful penalty on a busy GPU box with dozens of scripts on
+# a slow disk. Cache shape:
+#   { signature: tuple[(name, mtime_ns)], result: dict[name, meta] }
+# ``signature`` is recomputed on every call (cheap — one ``scandir``
+# per call) and compared against the cached one. If the set of script
+# files or any mtime has changed, we rescan; otherwise we return the
+# cached dict.
+_DISCOVERY_CACHE: dict[str, Any] = {"signature": None, "result": {}}
 
-    for py_file in sorted(SCRIPTS_DIR.glob("*.py")):
-        if py_file.name.startswith("_"):
-            continue
+
+def _scripts_dir_signature() -> tuple[tuple[str, int], ...] | None:
+    """Lightweight fingerprint of the scripts dir (sorted name+mtime)."""
+    if not SCRIPTS_DIR.is_dir():
+        return None
+    entries: list[tuple[str, int]] = []
+    try:
+        with os.scandir(SCRIPTS_DIR) as it:
+            for entry in it:
+                if not entry.is_file():
+                    continue
+                if not entry.name.endswith(".py") or entry.name.startswith("_"):
+                    continue
+                try:
+                    st = entry.stat()
+                except OSError:
+                    continue
+                entries.append((entry.name, st.st_mtime_ns))
+    except OSError:
+        return None
+    entries.sort()
+    return tuple(entries)
+
+
+def discover_scripts() -> dict[str, dict]:
+    """Scan SCRIPTS_DIR for valid scripts and return {name: meta}.
+
+    P08 — result is cached by ``(filename, mtime_ns)`` so a request that
+    arrives with no on-disk drift returns the cached dict without
+    re-parsing.
+    """
+    signature = _scripts_dir_signature()
+    if signature is None:
+        logger.warning("Scripts directory does not exist: %s", SCRIPTS_DIR)
+        _DISCOVERY_CACHE["signature"] = None
+        _DISCOVERY_CACHE["result"] = {}
+        return {}
+    if _DISCOVERY_CACHE["signature"] == signature and _DISCOVERY_CACHE["result"]:
+        return _DISCOVERY_CACHE["result"]
+
+    scripts: dict[str, dict] = {}
+    for fname, _mtime in signature:
+        py_file = SCRIPTS_DIR / fname
         meta = _parse_script_meta(py_file)
         if meta:
             name = meta.get("name", py_file.stem)
@@ -125,6 +169,9 @@ def discover_scripts() -> dict[str, dict]:
             logger.info("Discovered script: %s (%s) env=%s", name, py_file.name, meta.get("env", "system"))
         else:
             logger.debug("Skipping %s (no BOB_SCRIPT_META)", py_file.name)
+
+    _DISCOVERY_CACHE["signature"] = signature
+    _DISCOVERY_CACHE["result"] = scripts
     return scripts
 
 
@@ -363,6 +410,43 @@ async def run_script(script_name: str, req: ScriptRunRequest):
     )
 
 
+# R18 — stdout/stderr are streamed line-by-line into bounded buffers so a
+# chatty script (think tqdm or transformers warm-up logs) can't OOM the
+# script-runner. Per-stream cap defaults to 1 MiB; older output is
+# discarded once the cap is hit and a single ``[truncated …]`` marker
+# is appended. The container-wide ``stdout_text[:10000]`` slice that
+# the run handler already applies still wins for the final response,
+# so this is purely about peak memory during execution.
+_SUBPROCESS_STREAM_CAP_BYTES = int(os.environ.get("BOB_SCRIPTS_STREAM_CAP_BYTES", str(1024 * 1024)))
+
+
+async def _drain_stream(stream: asyncio.StreamReader, cap_bytes: int) -> bytes:
+    """Read ``stream`` line-by-line until EOF, returning at most
+    ``cap_bytes`` of head data plus a truncation marker on overflow."""
+    chunks: list[bytes] = []
+    used = 0
+    overflow = False
+    marker = b"\n[truncated: stream cap reached]\n"
+    while True:
+        line = await stream.readline()
+        if not line:
+            break
+        if overflow:
+            # Keep draining so the subprocess doesn't block on a full pipe.
+            continue
+        room = cap_bytes - used
+        if len(line) > room:
+            if room > 0:
+                chunks.append(line[:room])
+                used += room
+            chunks.append(marker)
+            overflow = True
+            continue
+        chunks.append(line)
+        used += len(line)
+    return b"".join(chunks)
+
+
 async def _run_subprocess(cmd: list[str], cwd: Path) -> dict:
     """Run a command as an async subprocess, return stdout/stderr/returncode."""
     # Inherit env and forward HF_TOKEN for gated model access
@@ -378,7 +462,12 @@ async def _run_subprocess(cmd: list[str], cwd: Path) -> dict:
         cwd=str(cwd),
         env=child_env,
     )
-    stdout, stderr = await proc.communicate()
+    # R18 — drain both streams concurrently with per-stream caps so a
+    # chatty subprocess doesn't buffer hundreds of MB into Python.
+    stdout_task = asyncio.create_task(_drain_stream(proc.stdout, _SUBPROCESS_STREAM_CAP_BYTES))
+    stderr_task = asyncio.create_task(_drain_stream(proc.stderr, _SUBPROCESS_STREAM_CAP_BYTES))
+    stdout, stderr = await asyncio.gather(stdout_task, stderr_task)
+    await proc.wait()
     return {
         "returncode": proc.returncode,
         "stdout": stdout.decode(errors="replace") if stdout else "",

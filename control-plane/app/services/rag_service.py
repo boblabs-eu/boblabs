@@ -133,8 +133,35 @@ class RagService:
         if existing:
             raise ValueError(f"Collection '{data.name}' already exists.")
 
-        collection = await self.collections.create(user=user, **data.model_dump())
-        await asyncio.to_thread(self._ensure_qdrant_collection, collection.name, collection.embedding_dim, collection.distance_metric)
+        # A05 — create Qdrant FIRST, then the DB row. Pre-fix order:
+        # DB flush → Qdrant create. If Qdrant raised (network blip,
+        # disk-full), the DB ended up with a row pointing at a
+        # non-existent collection and the next ingest call exploded
+        # at insert time. New order: ensure Qdrant exists, then persist
+        # the row; if the DB raises afterwards, undo the Qdrant
+        # collection so the system stays consistent.
+        # `data.embedding_dim` is populated by the RagCollectionCreate
+        # validator from `data.embedding_model`, so it's safe to read
+        # here without an extra catalog lookup.
+        await asyncio.to_thread(
+            self._ensure_qdrant_collection,
+            data.name, data.embedding_dim, data.distance_metric,
+        )
+        try:
+            collection = await self.collections.create(user=user, **data.model_dump())
+        except Exception:
+            # Compensation: roll back the Qdrant collection so the next
+            # create_collection with the same name doesn't hit the
+            # "already exists" guard with no matching DB row.
+            try:
+                await asyncio.to_thread(self._qdrant.delete_collection, data.name)
+            except Exception:
+                logger.exception(
+                    "A05 — failed to roll back Qdrant collection %r after DB "
+                    "create raised; manual cleanup may be required",
+                    data.name,
+                )
+            raise
         return collection
 
     async def create_app_collection(

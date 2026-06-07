@@ -42,8 +42,11 @@ class CommandService:
         cmd_record = await self.exec_repo.create_command(cmd_record)
 
         # Send to agent via WebSocket
+        # R01 — pass agent_name so the pending future is cancelled if
+        # the agent drops mid-command, and call cancel_pending() in our
+        # own send-failure / timeout branches to drop it eagerly.
         command_id = str(uuid.uuid4())
-        future = manager.create_pending(command_id)
+        future = manager.create_pending(command_id, agent_name=server.name)
 
         sent = await manager.send_to_agent(server.name, {
             "type": "command.execute",
@@ -52,6 +55,7 @@ class CommandService:
         })
 
         if not sent:
+            manager.cancel_pending(command_id, reason="send_failed")
             await self.exec_repo.update_command(
                 cmd_record.id,
                 exit_code=-1,
@@ -68,6 +72,7 @@ class CommandService:
         try:
             result = await asyncio.wait_for(future, timeout=timeout)
         except asyncio.TimeoutError:
+            manager.cancel_pending(command_id, reason="caller_timeout")
             result = {"exit_code": -1, "stdout": "", "stderr": "Command timed out"}
 
         # Update history

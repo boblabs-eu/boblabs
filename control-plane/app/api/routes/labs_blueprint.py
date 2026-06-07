@@ -14,19 +14,31 @@ from app.repositories.lab_repo import (
 from app.repositories.rag_repo import LabRagAccessRepository, RagCollectionRepository
 from app.schemas.orchestrator import LabBlueprint, LabResponse
 from app.api.routes.labs import _lab_to_response
+from app.services.authorization import Permission, check_permission
 
 router = APIRouter(tags=["labs"])
 
 
 @router.get("/{lab_id}/export", response_model=LabBlueprint)
-async def export_lab(lab_id: UUID, db: DbSession):
-    """Export a lab as a portable JSON blueprint."""
+async def export_lab(lab_id: UUID, db: DbSession,
+                       user: dict = Depends(get_current_user)):
+    """Export a lab as a portable JSON blueprint.
+
+    Cluster G — previously anonymous and shipped system_prompt for every
+    agent (a system-wide leak path: anyone with a lab UUID could harvest
+    prompts). Now requires authentication, applies the same Permission.EDIT
+    check used by labs_execution.update_lab so only editors/owners can
+    extract a blueprint, and zeroes out every system_prompt in the
+    response — re-importing the blueprint produces a lab whose agents
+    have empty prompts that the new owner must re-author.
+    """
     from app.repositories.orchestrator_repo import AIModelRepository
 
     lab_repo = LabRepository(db)
     lab = await lab_repo.get_by_id(lab_id)
     if not lab:
         raise HTTPException(404, "Lab not found")
+    check_permission(user, lab.acl, Permission.EDIT)
 
     # Helpers to resolve UUIDs to portable names
     model_repo = AIModelRepository(db)
@@ -60,10 +72,14 @@ async def export_lab(lab_id: UUID, db: DbSession):
                 names.append(ts.name)
         return names
 
-    # Build orchestrator section
+    # Build orchestrator section. Cluster G: the freeform prompt is
+    # zeroed-out; importers see an empty prompt and must re-author it.
+    # prompt_template references survive because they point at named,
+    # reusable assets — the recipient still needs read access to those
+    # templates in the target DB.
     orch = {
         "model": await model_ref(lab.orchestrator_model_id),
-        "prompt": lab.orchestrator_prompt or "",
+        "prompt": "",
         "prompt_template": await prompt_template_ref(lab.orchestrator_prompt_template_id),
         "temperature": float(lab.orchestrator_temperature or 0.7),
         "max_tokens": lab.orchestrator_max_tokens or 4096,
@@ -92,7 +108,10 @@ async def export_lab(lab_id: UUID, db: DbSession):
         agent_list.append({
             "name": a.name,
             "role": a.role or "",
-            "system_prompt": a.system_prompt or "",
+            # Cluster G: per-agent system prompt is the most leak-sensitive
+            # field of a blueprint. Zero it out on export — re-import
+            # produces an empty prompt that the new owner re-authors.
+            "system_prompt": "",
             "prompt_template": await prompt_template_ref(a.prompt_template_id),
             "model": await model_ref(a.model_id),
             "temperature": float(a.temperature or 0.7),
@@ -258,6 +277,14 @@ async def import_lab(blueprint: LabBlueprint, db: DbSession, user: dict = Depend
                 can_read=ref.can_read,
                 can_write=ref.can_write,
             )
+
+    # Drop context_files to disk now so they show up in WORKSPACE FILES (and the
+    # user can read/edit them) before the lab is ever run. The runner calls the
+    # same function on each run — it's idempotent and only rewrites when the
+    # content differs, so this doesn't fight with later edits.
+    if bp.context_files:
+        from app.services.lab_runner import _materialize_context_files
+        _materialize_context_files(lab)
 
     agents = await agent_repo.get_by_lab(lab.id)
     return _lab_to_response(lab, len(agents), 0)

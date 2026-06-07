@@ -19,6 +19,14 @@ class AccessToken(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     token: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    # Cluster K — SHA-256 hex of the plaintext token. Populated on new
+    # issuance; backfilled from existing rows by migration 0006. Lookup
+    # path uses ``WHERE token_hash = :sha256_of_presented`` then
+    # ``hmac.compare_digest`` for constant-time equality, eliminating
+    # both the SQL string-compare timing side-channel and the
+    # plaintext-at-rest exposure in DB dumps once the deprecation window
+    # ends and the plaintext column is dropped.
+    token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     label: Mapped[str] = mapped_column(String(255), default="")
     email: Mapped[str] = mapped_column(String(255), default="")
     expires_at: Mapped[datetime] = mapped_column(

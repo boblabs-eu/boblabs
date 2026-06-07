@@ -7,6 +7,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.consumer_app import ConsumerApp
+from app.repositories._paginate import MAX_LIMIT, clamp_limit
 
 
 class ConsumerAppRepository:
@@ -15,9 +16,13 @@ class ConsumerAppRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_all(self) -> list[ConsumerApp]:
+    async def get_all(self, limit: int = MAX_LIMIT, offset: int = 0) -> list[ConsumerApp]:
+        # P04 — cap unbounded scan. Admin UI usually shows <10 apps.
         result = await self.db.execute(
-            select(ConsumerApp).order_by(ConsumerApp.created_at.desc())
+            select(ConsumerApp)
+            .order_by(ConsumerApp.created_at.desc())
+            .limit(clamp_limit(limit))
+            .offset(max(0, offset))
         )
         return list(result.scalars().all())
 

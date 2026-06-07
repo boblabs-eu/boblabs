@@ -212,9 +212,22 @@ export default function LandingPage({ forceLang }) {
           <Link to="/docs">{t('nav.docs')}</Link>
           <Link to="/blog">{t('nav.blog')}</Link>
           <Link to="/live" className="lp-live-link"><span className="lp-live-dot" />{t('nav.live')}</Link>
+          <a href="https://showroom.boblabs.eu" target="_blank" rel="noopener noreferrer">{t('nav.showroom')}</a>
         </nav>
         <div className="lp-header-actions">
           <LanguageToggle />
+          <a
+            href="https://github.com/boblabs-eu/boblabs"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="lp-github-link"
+            aria-label="GitHub repository"
+            title="GitHub"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.55-.29-5.23-1.27-5.23-5.66 0-1.25.45-2.27 1.18-3.07-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.17.91-.25 1.89-.38 2.86-.39.97.01 1.95.14 2.86.39 2.19-1.48 3.15-1.17 3.15-1.17.62 1.58.23 2.75.11 3.04.73.8 1.18 1.82 1.18 3.07 0 4.4-2.69 5.37-5.25 5.65.41.36.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.21.67.8.55C20.21 21.39 23.5 17.08 23.5 12c0-6.35-5.15-11.5-11.5-11.5z" />
+            </svg>
+          </a>
           <Link to="/login" className="lp-btn-ghost">{t('nav.signin')}</Link>
           <Link to="/request-trial" className="lp-btn-primary-sm">{t('nav.requestTrial')}</Link>
         </div>
@@ -231,7 +244,17 @@ export default function LandingPage({ forceLang }) {
         <div className="lp-hero-actions">
           <Link to="/docs" className="lp-btn-primary">{t('hero.cta.start')}</Link>
           <a href="#preview" className="lp-btn-outline">{t('hero.cta.preview')}</a>
-          <Link to="/live" className="lp-btn-outline"><span className="lp-live-dot" /> {t('hero.cta.live')}</Link>
+          <a
+            href="https://github.com/boblabs-eu/boblabs"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="lp-btn-outline"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ marginRight: 8, verticalAlign: '-3px' }}>
+              <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.55-.29-5.23-1.27-5.23-5.66 0-1.25.45-2.27 1.18-3.07-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.17.91-.25 1.89-.38 2.86-.39.97.01 1.95.14 2.86.39 2.19-1.48 3.15-1.17 3.15-1.17.62 1.58.23 2.75.11 3.04.73.8 1.18 1.82 1.18 3.07 0 4.4-2.69 5.37-5.25 5.65.41.36.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.21.67.8.55C20.21 21.39 23.5 17.08 23.5 12c0-6.35-5.15-11.5-11.5-11.5z" />
+            </svg>
+            {t('hero.cta.github')}
+          </a>
         </div>
         <div className="lp-hero-proof">
           <span>{t('hero.proof.private')}</span>
@@ -344,7 +367,7 @@ export default function LandingPage({ forceLang }) {
               <span className="lpx-chrome-dot" style={{ background: '#22c55e' }} />
               <span className="lpx-chrome-url">your-server ~ $</span>
             </div>
-            <pre className="lpx-terminal-body">{`$ git clone https://github.com/bob-labs/bob-manager
+            <pre className="lpx-terminal-body">{`$ git clone https://github.com/boblabs-eu/boblabs
 $ cd bob-manager && docker compose up -d
 
 ✔ control-plane    started
@@ -365,7 +388,7 @@ $ cd bob-manager && docker compose up -d
             </ul>
             <div className="lp-hero-actions" style={{ marginTop: '1.5rem' }}>
               <Link to="/docs" className="lp-btn-primary">{t('deploy.cta.docs')}</Link>
-              <a href="https://github.com/bob-labs/bob-manager" target="_blank" rel="noopener noreferrer" className="lp-btn-outline">{t('deploy.cta.github')}</a>
+              <a href="https://github.com/boblabs-eu/boblabs" target="_blank" rel="noopener noreferrer" className="lp-btn-outline">{t('deploy.cta.github')}</a>
             </div>
           </div>
         </div>
@@ -459,7 +482,7 @@ $ cd bob-manager && docker compose up -d
             <div>
               <h4>{t('footer.resources.title')}</h4>
               <Link to="/docs">{t('footer.resources.docs')}</Link>
-              <a href="https://github.com/bob-labs/bob-manager" target="_blank" rel="noopener noreferrer">{t('footer.resources.github')}</a>
+              <a href="https://github.com/boblabs-eu/boblabs" target="_blank" rel="noopener noreferrer">{t('footer.resources.github')}</a>
               <Link to="/blog">{t('footer.resources.blog')}</Link>
             </div>
             <div>
