@@ -72,6 +72,25 @@ production. The single rule: **never skip step 2 of the upgrade flow.**
 
 Most recent first.
 
+### 0.11.0 → 0.11.1
+
+**Theme**: Security patch — gate the metrics router + drop container processes off root.
+
+- **Schema migrations**: none.
+- **Env vars**: none added or removed.
+- **Downtime**: ~10s for the rebuild + restart (`./deploy-prod.sh`).
+- **⚠️ Possibly breaking for scrapers**: if any external client was
+  hitting `/api/v1/metrics/*` without an access token, it will now
+  receive `401`. Add an access token with the `infra` scope (or
+  admin auth) to the request. Internal callers from bob-ui already
+  carry the JWT — no change needed there.
+- **No data migration required.** Existing containers will be
+  rebuilt and restarted as a non-root user; any files written into
+  shared volumes (`/data/lab_resources`, `/data/rag_staging`,
+  `/data/lightrag`) must be readable + writable by the new uid. If
+  you mounted host paths with restrictive ownership, run
+  `chown -R 1000:1000 <path>` on the volume before restart.
+
 ### 0.10.0 → 0.11.0
 
 **Theme**: Process maturity for v1.0 prep. CI, lint, OpenAPI commitment,

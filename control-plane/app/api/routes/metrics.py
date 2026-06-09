@@ -1,10 +1,23 @@
 """Bob Manager — Metrics API routes."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.services.authorization import require_infra_access
 from app.services.metrics_service import MetricsService
 
-router = APIRouter(prefix="/metrics", tags=["metrics"])
+# CSO #1 + #2 — the cached agent metrics payload (~100 KB per fleet) leaks
+# every GPU server's hostname, hardware inventory, CPU/GPU usage history,
+# disk mounts, network throughput. Pre-fix the router had no auth and
+# nginx proxied /api/ to the public internet, so the whole fleet recon
+# surface was world-readable. Gate the router with require_infra_access
+# (mirroring commands.py / servers.py which expose the same class of
+# operator-only surface). Closes both the collection route and the
+# per-server variant in a single dependency.
+router = APIRouter(
+    prefix="/metrics",
+    tags=["metrics"],
+    dependencies=[Depends(require_infra_access)],
+)
 
 
 @router.get("")

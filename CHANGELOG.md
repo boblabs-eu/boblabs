@@ -5,6 +5,42 @@ All notable changes to Bob Labs are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] — 2026-06-09 — Security hardening: metrics auth + container user
+
+Patch release closing two CSO findings against 0.11.0. No schema
+migrations, no deploy changes beyond rebuilding containers.
+
+### Security
+
+- **Auth required on `/api/v1/metrics/*`** (CSO #1, #2). The router
+  was previously unauthenticated, so the cached agent-metrics payload
+  (every GPU server's hostname, hardware inventory, CPU/GPU usage
+  history, disk mounts, network throughput) was world-readable
+  through nginx. Now gated by `require_infra_access`, mirroring
+  `commands.py` / `servers.py`. **If you scraped `/metrics`
+  unauthenticated, update your client to attach an access token with
+  the `infra` scope or admin auth.**
+- **Non-root container user** in every shipped Dockerfile
+  (control-plane, agent, sandbox, remotion-api, all 7 GPU service
+  images). Defense-in-depth: a process escape no longer lands as
+  root inside the container.
+
+### Added
+
+- `control-plane/tests/regression/test_cso_2026_06_metrics_auth.py` —
+  asserts the metrics router carries the auth dependency on every
+  endpoint.
+- `control-plane/tests/regression/test_cso_2026_06_dockerfile_user.py` —
+  asserts each shipped Dockerfile declares a non-root `USER`.
+
+### Notes
+
+- All four components aligned at **0.11.1**.
+- OpenAPI artifact regenerated — the metrics endpoints now carry a
+  `HTTPBearer` security requirement in `docs/openapi.json`.
+
+[0.11.1]: https://github.com/boblabs-eu/boblabs/releases/tag/v0.11.1
+
 ## [0.11.0] — 2026-06-07 — v1.0 prep: CI, versioning, OpenAPI commitment
 
 No schema migrations, no runtime behavior changes. This release is

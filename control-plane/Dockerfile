@@ -10,7 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright Chromium deps + browser for web tools
+# Install Playwright Chromium deps + browser for web tools.
+# CSO #3 — install to /opt/playwright (world-readable) so the non-root
+# user added below can launch chromium without re-installing.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 \
     libcups2 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 \
@@ -21,6 +24,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY app/ ./app/
 COPY alembic.ini ./
+
+# CSO #3 — drop root for the control-plane process. bob-api writes to
+# the lab_resources and qdrant_staging volumes (rw); both inherit
+# 1000:1000 from the first write on a fresh deploy. For existing
+# deployments, operator must chown the volumes once before redeploy:
+#   docker run --rm -v bob-manager_lab_resources:/data alpine \
+#     chown -R 1000:1000 /data
+#   docker run --rm -v bob-manager_qdrant_staging:/data alpine \
+#     chown -R 1000:1000 /data
+# The bob-api process never needs to bind a privileged port (uvicorn
+# on :8000) so dropping privileges is safe.
+RUN if ! id -u 1000 >/dev/null 2>&1; then \
+        useradd -u 1000 -m -s /bin/bash bobapi; \
+    fi && chown -R 1000:1000 /app
+USER 1000
 
 EXPOSE 8000
 

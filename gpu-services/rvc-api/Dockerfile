@@ -36,6 +36,18 @@ COPY app.py rvc_infer.py ./
 # Models directory — mount or copy .pth + .index files here
 VOLUME /models
 
+# CSO #3 — drop root. RVC reads models from /models (operator-managed
+# read-only mount in practice). The A10 checksum verifier reads the
+# sidecar .sha256 alongside each .pth, no writes needed. GPU access
+# (/dev/nvidia*) is granted by the nvidia container runtime
+# regardless of in-container uid — no root required. If you bind-
+# mount /models from a host dir, the host dir needs to be world-
+# readable OR owned by uid 1000.
+RUN if ! id -u 1000 >/dev/null 2>&1; then \
+        useradd -u 1000 -m -s /bin/bash gpu; \
+    fi && chown -R 1000:1000 /app
+USER 1000
+
 EXPOSE 3016
 
 CMD ["python3", "app.py"]

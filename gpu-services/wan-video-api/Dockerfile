@@ -35,4 +35,13 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV WAN_HOST=0.0.0.0
 ENV WAN_PORT=3019
 
+# CSO #3 — drop root. Wan-2.2 weights pulled from HuggingFace on
+# first request; cache under /app/.cache.
+ENV HF_HOME=/app/.cache/huggingface
+ENV XDG_CACHE_HOME=/app/.cache
+RUN if ! id -u 1000 >/dev/null 2>&1; then \
+        useradd -u 1000 -m -s /bin/bash gpu; \
+    fi && mkdir -p /app/.cache && chown -R 1000:1000 /app
+USER 1000
+
 CMD ["python3", "app.py"]

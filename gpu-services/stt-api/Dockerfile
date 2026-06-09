@@ -19,6 +19,16 @@ RUN pip3 install --no-cache-dir uv && \
 
 COPY app.py .
 
+# CSO #3 — drop root. faster-whisper / openai-whisper downloads model
+# weights on first request; cache lives under /app/.cache so the
+# non-root user has write access.
+ENV HF_HOME=/app/.cache/huggingface
+ENV XDG_CACHE_HOME=/app/.cache
+RUN if ! id -u 1000 >/dev/null 2>&1; then \
+        useradd -u 1000 -m -s /bin/bash gpu; \
+    fi && mkdir -p /app/.cache && chown -R 1000:1000 /app
+USER 1000
+
 EXPOSE 7865
 
 CMD ["python3", "app.py"]

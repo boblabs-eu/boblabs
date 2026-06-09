@@ -284,6 +284,56 @@ operator-pinned SHA-256 checksums:
 
 Generate digests with `sha256sum model.pth > model.pth.sha256`.
 
+### CSO #3 — Containers now drop to uid 1000 (migration on existing volumes)
+
+All production Dockerfiles now declare `USER 1000` and run as a non-
+root user. The Dockerfiles use a conditional `useradd` so they reuse
+any pre-existing uid-1000 user (e.g. `node:22-slim` ships `node` at
+uid 1000, `ubuntu:24.04`-based images ship `ubuntu`) instead of
+failing the build with "UID 1000 is not unique". Services affected:
+
+| Service          | uid  | User name (varies by base image) |
+|------------------|------|----------------------------------|
+| bob-api          | 1000 | `bobapi` (python:slim — created) |
+| sandbox          | 1000 | `sandbox` (python:slim — created)|
+| showroom-api     | 1000 | `showroom` (python:slim — created)|
+| bob-remotion     | 1000 | `node` (reused from node:slim)   |
+| bob-agent        | 1000 | `bobagent` (python:slim — created)|
+| RVC/Bark/MusicGen/STT/CoquiTTS | 1000 | `gpu` (cuda:ubuntu22.04 — created) |
+| LTX/Wan-video    | 1000 | `ubuntu` (reused from cuda:ubuntu24.04) |
+
+**Fresh deploys:** nothing to do. Each named docker volume inherits
+`1000:1000` ownership from the first container that writes to it.
+
+**Existing deploys:** the long-lived named volumes were created when
+containers ran as root, so they currently belong to `0:0`. Before
+redeploying with the new images, chown them once:
+
+```bash
+# Stop the stack so no service holds a file open
+docker compose down
+
+# Chown each named volume to uid 1000 via a throwaway alpine container
+for vol in bob-manager_lab_resources bob-manager_qdrant_staging bob-manager_app_uploads; do
+  docker run --rm -v "$vol":/data alpine chown -R 1000:1000 /data
+done
+
+# Rebuild with the new Dockerfiles + start
+docker compose build
+docker compose up -d
+```
+
+If you mount `/models` from a host directory into RVC/Bark/Coqui/STT/
+MusicGen/LTX/Wan, that host directory needs to be readable by uid
+1000 (either world-readable, or `sudo chown -R 1000:1000 /path/to/models`).
+
+The agent container collectors handle `psutil.AccessDenied` gracefully
+([ports.py:23](agent/app/inspectors/ports.py#L23), [network.py:52](agent/app/collectors/network.py#L52),
+[processes.py:32](agent/app/inspectors/processes.py#L32)), so some
+per-process / cross-user metrics from the container variant become
+unavailable — expected trade-off for not running the metrics daemon
+as root.
+
 ## Related Documents
 
 - [GPU_SERVICES.md](GPU_SERVICES.md) — GPU pipeline services

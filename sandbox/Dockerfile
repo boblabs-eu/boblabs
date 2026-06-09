@@ -15,10 +15,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Chromium browser binaries used by Playwright (no system deps via apt — already installed above)
+# CSO #3 — install Playwright browsers to a shared path that any USER
+# can read, so the non-root user added below can still launch chromium.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 RUN python -m playwright install chromium
 
 COPY main.py .
+
+# CSO #3 — drop root inside the sandbox container. This is the highest-
+# impact USER fix in the stack because the sandbox IS the untrusted
+# code-execution boundary; any future python_exec / shell_exec escape
+# now lands as uid 1000, not root. The lab_resources bind mount needs
+# matching ownership — on a fresh deploy the volume inherits 1000:1000
+# from the first write. For existing deployments, the operator must
+# run once before redeploy:
+#   docker run --rm -v bob-manager_lab_resources:/data alpine \
+#     chown -R 1000:1000 /data
+RUN if ! id -u 1000 >/dev/null 2>&1; then \
+        useradd -u 1000 -m -s /bin/bash sandbox; \
+    fi && chown -R 1000:1000 /app
+USER 1000
 
 EXPOSE 9000
 
