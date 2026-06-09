@@ -44,7 +44,7 @@ OFFLOAD = os.getenv("WAN_OFFLOAD", "auto")  # "auto", "always", "never"
 
 # Model ID mapping (diffusers)
 _MODEL_HF_IDS = {
-    "TI2V-5B":  "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+    "TI2V-5B": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
     "T2V-A14B": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
     "I2V-A14B": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
 }
@@ -77,16 +77,14 @@ app = FastAPI(title="Wan-Video API", version="1.0.0")
 
 # ── Model lifecycle ──────────────────────────────────
 
+
 def _resolve_model_source() -> str:
     """Return the model path or HF repo ID to load from."""
     if MODEL_DIR and os.path.isdir(MODEL_DIR):
         return MODEL_DIR
     hf_id = _MODEL_HF_IDS.get(MODEL_NAME)
     if not hf_id:
-        raise ValueError(
-            f"Unknown model '{MODEL_NAME}'. "
-            f"Valid: {', '.join(_MODEL_HF_IDS.keys())}"
-        )
+        raise ValueError(f"Unknown model '{MODEL_NAME}'. Valid: {', '.join(_MODEL_HF_IDS.keys())}")
     return hf_id
 
 
@@ -117,26 +115,36 @@ def _ensure_model():
         source = _resolve_model_source()
 
         if MODEL_NAME in ("TI2V-5B", "T2V-A14B"):
-            from diffusers import WanPipeline, AutoencoderKLWan
+            from diffusers import AutoencoderKLWan, WanPipeline
 
             vae = AutoencoderKLWan.from_pretrained(
-                source, subfolder="vae", torch_dtype=torch.bfloat16,
+                source,
+                subfolder="vae",
+                torch_dtype=torch.bfloat16,
             )
             _pipe = WanPipeline.from_pretrained(
-                source, vae=vae, torch_dtype=torch.bfloat16,
+                source,
+                vae=vae,
+                torch_dtype=torch.bfloat16,
             )
         elif MODEL_NAME == "I2V-A14B":
-            from diffusers import WanImageToVideoPipeline, AutoencoderKLWan
+            from diffusers import AutoencoderKLWan, WanImageToVideoPipeline
             from transformers import CLIPVisionModel
 
             image_encoder = CLIPVisionModel.from_pretrained(
-                source, subfolder="image_encoder", torch_dtype=torch.bfloat16,
+                source,
+                subfolder="image_encoder",
+                torch_dtype=torch.bfloat16,
             )
             vae = AutoencoderKLWan.from_pretrained(
-                source, subfolder="vae", torch_dtype=torch.bfloat16,
+                source,
+                subfolder="vae",
+                torch_dtype=torch.bfloat16,
             )
             _pipe = WanImageToVideoPipeline.from_pretrained(
-                source, vae=vae, image_encoder=image_encoder,
+                source,
+                vae=vae,
+                image_encoder=image_encoder,
                 torch_dtype=torch.bfloat16,
             )
         else:
@@ -146,9 +154,8 @@ def _ensure_model():
         # known device-mismatch bug (CPU vs CUDA tensors at step 2+).
         # Wan 2.2 uses flow matching, so we need FlowMatchEulerDiscreteScheduler.
         from diffusers import FlowMatchEulerDiscreteScheduler
-        _pipe.scheduler = FlowMatchEulerDiscreteScheduler.from_config(
-            _pipe.scheduler.config
-        )
+
+        _pipe.scheduler = FlowMatchEulerDiscreteScheduler.from_config(_pipe.scheduler.config)
 
         # Sequential CPU offload — moves individual layers to GPU one at a time
         # rather than whole sub-models. Keeps peak system RAM very low (~2-3 GB)
@@ -163,7 +170,8 @@ def _ensure_model():
         _last_used = time.time()
         logger.info(
             "Wan 2.2 pipeline loaded in %.1fs (model=%s)",
-            time.time() - start, MODEL_NAME,
+            time.time() - start,
+            MODEL_NAME,
         )
 
 
@@ -205,7 +213,9 @@ threading.Thread(target=_idle_watcher, daemon=True).start()
 
 class GenerateRequest(BaseModel):
     prompt: str = Field(
-        ..., min_length=1, max_length=2000,
+        ...,
+        min_length=1,
+        max_length=2000,
         description="Text prompt describing the video",
     )
     negative_prompt: str = Field(
@@ -213,20 +223,27 @@ class GenerateRequest(BaseModel):
         description="Negative prompt (things to avoid)",
     )
     image: str | None = Field(
-        None, description="Base64-encoded image for image-to-video conditioning",
+        None,
+        description="Base64-encoded image for image-to-video conditioning",
     )
     width: int = Field(1280, ge=128, le=1920, description="Width")
     height: int = Field(704, ge=128, le=1920, description="Height")
     num_frames: int = Field(
-        121, ge=9, le=257,
+        121,
+        ge=9,
+        le=257,
         description="Number of frames (121 = 5s at 24fps)",
     )
     num_inference_steps: int = Field(
-        50, ge=1, le=100,
+        50,
+        ge=1,
+        le=100,
         description="Denoising steps",
     )
     guidance_scale: float = Field(
-        5.0, ge=1.0, le=20.0,
+        5.0,
+        ge=1.0,
+        le=20.0,
         description="CFG guidance scale",
     )
     seed: int = Field(-1, description="Random seed (-1 for random)")
@@ -330,7 +347,11 @@ def generate(req: GenerateRequest):
 
         logger.info(
             "Generating video: %dx%d, %d frames, seed=%d, model=%s",
-            req.width, req.height, req.num_frames, seed, MODEL_NAME,
+            req.width,
+            req.height,
+            req.num_frames,
+            seed,
+            MODEL_NAME,
         )
         t0 = time.time()
         _generating = True
@@ -357,8 +378,9 @@ def generate(req: GenerateRequest):
 
             # I2V: load and inject image
             if req.image:
-                from PIL import Image
                 import io
+
+                from PIL import Image
 
                 img_bytes = base64.b64decode(req.image)
                 image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
@@ -381,6 +403,7 @@ def generate(req: GenerateRequest):
             output_path = os.path.join(tmpdir, "output.mp4")
 
             from diffusers.utils import export_to_video
+
             export_to_video(frames, output_path, fps=req.fps)
 
             elapsed = time.time() - t0

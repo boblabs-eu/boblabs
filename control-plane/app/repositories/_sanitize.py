@@ -14,7 +14,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 # NULL bytes + the unpaired UTF-16 surrogate range.
 _BAD_CHARS = re.compile(r"[\x00\ud800-\udfff]")
 

@@ -66,15 +66,18 @@ async def _open_session(server_name: str) -> tuple[str | None, str | None]:
     q = manager.create_tool_terminal_queue(session_id)
     manager.map_tool_terminal_session(session_id, server_name)
 
-    sent = await manager.send_to_agent(server_name, {
-        "type": "terminal.open",
-        "id": session_id,
-        "payload": {
-            "session_id": session_id,
-            "cols": 200,
-            "rows": 50,
+    sent = await manager.send_to_agent(
+        server_name,
+        {
+            "type": "terminal.open",
+            "id": session_id,
+            "payload": {
+                "session_id": session_id,
+                "cols": 200,
+                "rows": 50,
+            },
         },
-    })
+    )
 
     if not sent:
         manager.remove_tool_terminal_queue(session_id)
@@ -128,11 +131,14 @@ async def _execute_command(session_id: str, command: str, timeout: int = 30) -> 
     # echo -n avoids extra newline; ; ensures end marker runs even if command fails
     full_command = f"echo -n '{start_marker}'; {command}; echo \"\\n{end_marker}_$?\"\n"
 
-    await manager.send_to_agent(mapping["server_name"], {
-        "type": "terminal.input",
-        "id": session_id,
-        "payload": {"session_id": session_id, "data": full_command},
-    })
+    await manager.send_to_agent(
+        mapping["server_name"],
+        {
+            "type": "terminal.input",
+            "id": session_id,
+            "payload": {"session_id": session_id, "data": full_command},
+        },
+    )
 
     # Collect raw stream until end marker appears (or timeout)
     buffer = ""
@@ -151,9 +157,7 @@ async def _execute_command(session_id: str, command: str, timeout: int = 30) -> 
                 buffer += msg["data"]
                 clean_buf = _strip_ansi(buffer)
                 # Look for end marker pattern with exit code: __BOB_END_<id>_<code>
-                end_match = re.search(
-                    re.escape(end_marker) + r"_(\d+)", clean_buf
-                )
+                end_match = re.search(re.escape(end_marker) + r"_(\d+)", clean_buf)
                 if end_match:
                     exit_code = end_match.group(1)
                     saw_end = True
@@ -169,9 +173,9 @@ async def _execute_command(session_id: str, command: str, timeout: int = 30) -> 
 
     if start_idx >= 0 and end_idx > start_idx:
         # Skip past start marker
-        output = clean[start_idx + len(start_marker):end_idx]
+        output = clean[start_idx + len(start_marker) : end_idx]
     elif start_idx >= 0:
-        output = clean[start_idx + len(start_marker):]
+        output = clean[start_idx + len(start_marker) :]
     else:
         # Start marker not found — return raw with markers stripped
         output = clean
@@ -198,11 +202,14 @@ async def _close_session(session_id: str) -> None:
     """Close a terminal session."""
     mapping = manager.get_terminal_mapping(session_id)
     if mapping:
-        await manager.send_to_agent(mapping["server_name"], {
-            "type": "terminal.close",
-            "id": session_id,
-            "payload": {"session_id": session_id},
-        })
+        await manager.send_to_agent(
+            mapping["server_name"],
+            {
+                "type": "terminal.close",
+                "id": session_id,
+                "payload": {"session_id": session_id},
+            },
+        )
     manager.unmap_terminal_session(session_id)
     manager.remove_tool_terminal_queue(session_id)
 
@@ -242,7 +249,10 @@ async def control_server(executor: ToolExecutor, args: dict) -> dict:
         access_repo = LabServerAccessRepository(executor.db)
         allowed = await access_repo.list_server_names(executor.lab_id)
         if server_name not in allowed:
-            return {"success": False, "output": f"Server '{server_name}' is not linked to this lab."}
+            return {
+                "success": False,
+                "output": f"Server '{server_name}' is not linked to this lab.",
+            }
 
         session_id, err = await _open_session(server_name)
         if err:

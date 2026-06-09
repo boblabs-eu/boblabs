@@ -32,14 +32,46 @@ TOOLS = {
                 "description": "Action: prices, token_search, protocol_tvl, chain_tvl, yields, dex_pair, dex_search, gas_tracker",
                 "required": True,
             },
-            "query": {"type": "string", "description": "Search query (for token_search, dex_search) or protocol slug (for protocol_tvl)", "required": False},
-            "token_ids": {"type": "string", "description": "Comma-separated CoinGecko token IDs (for prices, e.g. 'bitcoin,ethereum')", "required": False},
-            "contract": {"type": "string", "description": "Token contract address (for dex_pair, prices by contract)", "required": False},
-            "chain": {"type": "string", "description": "Chain filter (for yields, dex_pair, prices by contract). e.g. ethereum, bsc, base", "required": False},
-            "project": {"type": "string", "description": "Project filter for yields (e.g. 'aave-v3', 'uniswap-v3')", "required": False},
-            "min_apy": {"type": "string", "description": "Minimum APY filter for yields (e.g. '5.0')", "required": False},
-            "min_tvl": {"type": "string", "description": "Minimum TVL in USD for yields (e.g. '1000000')", "required": False},
-            "limit": {"type": "integer", "description": "Max results (default: 20, max: 50)", "required": False},
+            "query": {
+                "type": "string",
+                "description": "Search query (for token_search, dex_search) or protocol slug (for protocol_tvl)",
+                "required": False,
+            },
+            "token_ids": {
+                "type": "string",
+                "description": "Comma-separated CoinGecko token IDs (for prices, e.g. 'bitcoin,ethereum')",
+                "required": False,
+            },
+            "contract": {
+                "type": "string",
+                "description": "Token contract address (for dex_pair, prices by contract)",
+                "required": False,
+            },
+            "chain": {
+                "type": "string",
+                "description": "Chain filter (for yields, dex_pair, prices by contract). e.g. ethereum, bsc, base",
+                "required": False,
+            },
+            "project": {
+                "type": "string",
+                "description": "Project filter for yields (e.g. 'aave-v3', 'uniswap-v3')",
+                "required": False,
+            },
+            "min_apy": {
+                "type": "string",
+                "description": "Minimum APY filter for yields (e.g. '5.0')",
+                "required": False,
+            },
+            "min_tvl": {
+                "type": "string",
+                "description": "Minimum TVL in USD for yields (e.g. '1000000')",
+                "required": False,
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max results (default: 20, max: 50)",
+                "required": False,
+            },
         },
     },
 }
@@ -95,6 +127,7 @@ async def defi_data(executor: ToolExecutor, args: dict) -> dict:
 
 # ── CoinGecko ────────────────────────────────────────────────────────────
 
+
 async def _prices(args: dict) -> dict:
     """Get token prices from CoinGecko by ID or contract address."""
     token_ids = (args.get("token_ids") or "").strip()
@@ -105,8 +138,12 @@ async def _prices(args: dict) -> dict:
         if contract and chain:
             # Price by contract address
             platform_map = {
-                "ethereum": "ethereum", "base": "base", "bnb": "binance-smart-chain",
-                "bsc": "binance-smart-chain", "arbitrum": "arbitrum-one", "polygon": "polygon-pos",
+                "ethereum": "ethereum",
+                "base": "base",
+                "bnb": "binance-smart-chain",
+                "bsc": "binance-smart-chain",
+                "arbitrum": "arbitrum-one",
+                "polygon": "polygon-pos",
             }
             platform = platform_map.get(chain.lower(), chain.lower())
             cache_key = f"price_contract_{platform}_{contract}"
@@ -116,8 +153,12 @@ async def _prices(args: dict) -> dict:
 
             resp = await client.get(
                 f"https://api.coingecko.com/api/v3/simple/token_price/{platform}",
-                params={"contract_addresses": contract, "vs_currencies": "usd",
-                        "include_24hr_change": "true", "include_market_cap": "true"},
+                params={
+                    "contract_addresses": contract,
+                    "vs_currencies": "usd",
+                    "include_24hr_change": "true",
+                    "include_market_cap": "true",
+                },
             )
             if resp.status_code != 200:
                 return {"success": False, "output": f"CoinGecko API error: {resp.status_code}"}
@@ -133,7 +174,11 @@ async def _prices(args: dict) -> dict:
                 if mcap:
                     line += f" | MCap: ${mcap:,.0f}"
                 lines.append(line)
-            output = f"**Token Price** ({chain}):\n" + "\n".join(lines) if lines else "No price data found."
+            output = (
+                f"**Token Price** ({chain}):\n" + "\n".join(lines)
+                if lines
+                else "No price data found."
+            )
             _set_cached(cache_key, output)
             return {"success": True, "output": output}
 
@@ -147,8 +192,11 @@ async def _prices(args: dict) -> dict:
 
         resp = await client.get(
             "https://api.coingecko.com/api/v3/coins/markets",
-            params={"vs_currency": "usd", "ids": token_ids,
-                    "price_change_percentage": "24h,7d,30d"},
+            params={
+                "vs_currency": "usd",
+                "ids": token_ids,
+                "price_change_percentage": "24h,7d,30d",
+            },
         )
         if resp.status_code != 200:
             return {"success": False, "output": f"CoinGecko API error: {resp.status_code}"}
@@ -206,11 +254,15 @@ async def _token_search(args: dict) -> dict:
 
 # ── DeFiLlama ────────────────────────────────────────────────────────────
 
+
 async def _protocol_tvl(args: dict) -> dict:
     """Get protocol TVL data from DeFiLlama."""
     query = (args.get("query") or "").strip()
     if not query:
-        return {"success": False, "output": "protocol_tvl requires 'query' (protocol slug, e.g. 'aave')"}
+        return {
+            "success": False,
+            "output": "protocol_tvl requires 'query' (protocol slug, e.g. 'aave')",
+        }
 
     cache_key = f"protocol_tvl_{query}"
     cached = _get_cached(cache_key, _DATA_TTL)
@@ -220,7 +272,10 @@ async def _protocol_tvl(args: dict) -> dict:
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         resp = await client.get(f"https://api.llama.fi/protocol/{query}")
         if resp.status_code != 200:
-            return {"success": False, "output": f"DeFiLlama error: {resp.status_code}. Try searching at https://defillama.com/"}
+            return {
+                "success": False,
+                "output": f"DeFiLlama error: {resp.status_code}. Try searching at https://defillama.com/",
+            }
 
         data = resp.json()
         name = data.get("name", query)
@@ -324,13 +379,12 @@ async def _yields(args: dict) -> dict:
         chain = p.get("chain", "?")
         apy = p.get("apy", 0)
         tvl = p.get("tvlUsd", 0)
-        lines.append(
-            f"  {symbol} | {project} on {chain} | APY: {apy:.2f}% | TVL: ${tvl:,.0f}"
-        )
+        lines.append(f"  {symbol} | {project} on {chain} | APY: {apy:.2f}% | TVL: ${tvl:,.0f}")
     return {"success": True, "output": "\n".join(lines)}
 
 
 # ── DEX Screener ─────────────────────────────────────────────────────────
+
 
 async def _dex_pair(args: dict) -> dict:
     """Get DEX pair data for a token from DEX Screener."""
@@ -422,6 +476,7 @@ async def _dex_search(args: dict) -> dict:
 
 # ── Gas Tracker ──────────────────────────────────────────────────────────
 
+
 async def _gas_tracker(args: dict) -> dict:
     """Get current gas prices across chains."""
     from app.services.trading_service import CHAIN_CONFIG
@@ -430,10 +485,15 @@ async def _gas_tracker(args: dict) -> dict:
     async with httpx.AsyncClient(timeout=10.0) as client:
         for chain_id, config in CHAIN_CONFIG.items():
             try:
-                resp = await client.post(config["rpc"], json={
-                    "jsonrpc": "2.0", "id": 1,
-                    "method": "eth_gasPrice", "params": [],
-                })
+                resp = await client.post(
+                    config["rpc"],
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "eth_gasPrice",
+                        "params": [],
+                    },
+                )
                 if resp.status_code == 200:
                     data = resp.json()
                     gas_wei = int(data.get("result", "0x0"), 16)

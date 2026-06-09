@@ -42,10 +42,26 @@ TOOLS = {
     "blockchain": {
         "description": "Query on-chain blockchain data. Supports Ethereum, Base (L2), BNB Chain, and Solana. Actions: balance (native + token balances), transactions (recent tx history), token_transfers (ERC-20 transfers), token_info (token metadata and market data).",
         "parameters": {
-            "action": {"type": "string", "description": "Action: balance, transactions, token_transfers, token_info", "required": True},
-            "address": {"type": "string", "description": "Wallet or token contract address", "required": True},
-            "chain": {"type": "string", "description": "Blockchain: ethereum, base, bnb, solana (default: ethereum)", "required": False},
-            "limit": {"type": "integer", "description": "Max results for transactions/transfers (default: 20, max: 100)", "required": False},
+            "action": {
+                "type": "string",
+                "description": "Action: balance, transactions, token_transfers, token_info",
+                "required": True,
+            },
+            "address": {
+                "type": "string",
+                "description": "Wallet or token contract address",
+                "required": True,
+            },
+            "chain": {
+                "type": "string",
+                "description": "Blockchain: ethereum, base, bnb, solana (default: ethereum)",
+                "required": False,
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max results for transactions/transfers (default: 20, max: 100)",
+                "required": False,
+            },
         },
     },
 }
@@ -58,7 +74,8 @@ async def _blockchain_balance(client: httpx.AsyncClient, address: str, chain: st
         return await _solana_balance(client, address, config)
 
     rpc_payload = {
-        "jsonrpc": "2.0", "id": 1,
+        "jsonrpc": "2.0",
+        "id": 1,
         "method": "eth_getBalance",
         "params": [address, "latest"],
     }
@@ -67,10 +84,14 @@ async def _blockchain_balance(client: httpx.AsyncClient, address: str, chain: st
     raw_balance = int(data.get("result", "0x0"), 16)
     native_balance = raw_balance / (10 ** config["decimals"])
 
-    lines = [f"**{config['native_symbol']} Balance**: {native_balance:.6f} {config['native_symbol']}"]
+    lines = [
+        f"**{config['native_symbol']} Balance**: {native_balance:.6f} {config['native_symbol']}"
+    ]
 
     try:
-        token_resp = await client.get(f"{config['blockscout']}/api/v2/addresses/{address}/token-balances")
+        token_resp = await client.get(
+            f"{config['blockscout']}/api/v2/addresses/{address}/token-balances"
+        )
         if token_resp.status_code == 200:
             tokens = token_resp.json()
             if isinstance(tokens, list):
@@ -79,7 +100,7 @@ async def _blockchain_balance(client: httpx.AsyncClient, address: str, chain: st
                     symbol = tok.get("symbol", "???")
                     decimals = int(tok.get("decimals", "18") or "18")
                     raw = int(t.get("value", "0") or "0")
-                    bal = raw / (10 ** decimals) if decimals else raw
+                    bal = raw / (10**decimals) if decimals else raw
                     if bal > 0:
                         lines.append(f"  {symbol}: {bal:.6f}")
     except Exception:
@@ -89,11 +110,15 @@ async def _blockchain_balance(client: httpx.AsyncClient, address: str, chain: st
 
 
 async def _solana_balance(client: httpx.AsyncClient, address: str, config: dict) -> dict:
-    resp = await client.post(config["rpc"], json={
-        "jsonrpc": "2.0", "id": 1,
-        "method": "getBalance",
-        "params": [address],
-    })
+    resp = await client.post(
+        config["rpc"],
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getBalance",
+            "params": [address],
+        },
+    )
     data = resp.json()
     lamports = data.get("result", {}).get("value", 0)
     sol_balance = lamports / 1_000_000_000
@@ -101,15 +126,19 @@ async def _solana_balance(client: httpx.AsyncClient, address: str, config: dict)
     lines = [f"**SOL Balance**: {sol_balance:.6f} SOL"]
 
     try:
-        tok_resp = await client.post(config["rpc"], json={
-            "jsonrpc": "2.0", "id": 2,
-            "method": "getTokenAccountsByOwner",
-            "params": [
-                address,
-                {"programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"},
-                {"encoding": "jsonParsed"},
-            ],
-        })
+        tok_resp = await client.post(
+            config["rpc"],
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "getTokenAccountsByOwner",
+                "params": [
+                    address,
+                    {"programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"},
+                    {"encoding": "jsonParsed"},
+                ],
+            },
+        )
         tok_data = tok_resp.json()
         accounts = tok_data.get("result", {}).get("value", [])
         for acc in accounts[:20]:
@@ -125,7 +154,9 @@ async def _solana_balance(client: httpx.AsyncClient, address: str, config: dict)
     return {"success": True, "output": "\n".join(lines)}
 
 
-async def _blockchain_transactions(client: httpx.AsyncClient, address: str, chain: str, limit: int) -> dict:
+async def _blockchain_transactions(
+    client: httpx.AsyncClient, address: str, chain: str, limit: int
+) -> dict:
     config = _CHAIN_CONFIG[chain]
 
     if chain == "solana":
@@ -158,12 +189,18 @@ async def _blockchain_transactions(client: httpx.AsyncClient, address: str, chai
     return {"success": True, "output": "\n".join(lines)}
 
 
-async def _solana_transactions(client: httpx.AsyncClient, address: str, config: dict, limit: int) -> dict:
-    resp = await client.post(config["rpc"], json={
-        "jsonrpc": "2.0", "id": 1,
-        "method": "getSignaturesForAddress",
-        "params": [address, {"limit": limit}],
-    })
+async def _solana_transactions(
+    client: httpx.AsyncClient, address: str, config: dict, limit: int
+) -> dict:
+    resp = await client.post(
+        config["rpc"],
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getSignaturesForAddress",
+            "params": [address, {"limit": limit}],
+        },
+    )
     data = resp.json()
     sigs = data.get("result", [])
     if not sigs:
@@ -174,18 +211,21 @@ async def _solana_transactions(client: httpx.AsyncClient, address: str, config: 
         err = "✗" if sig.get("err") else "✓"
         memo = sig.get("memo", "")[:40] if sig.get("memo") else ""
         lines.append(
-            f"  {err} {sig.get('signature', '')[:16]}… | "
-            f"slot {sig.get('slot', '')} | "
-            f"{memo}"
+            f"  {err} {sig.get('signature', '')[:16]}… | slot {sig.get('slot', '')} | {memo}"
         )
     return {"success": True, "output": "\n".join(lines)}
 
 
-async def _blockchain_token_transfers(client: httpx.AsyncClient, address: str, chain: str, limit: int) -> dict:
+async def _blockchain_token_transfers(
+    client: httpx.AsyncClient, address: str, chain: str, limit: int
+) -> dict:
     config = _CHAIN_CONFIG[chain]
 
     if chain == "solana":
-        return {"success": True, "output": "Token transfers on Solana: use 'transactions' action to see all signatures, then inspect individual txs on a Solana explorer."}
+        return {
+            "success": True,
+            "output": "Token transfers on Solana: use 'transactions' action to see all signatures, then inspect individual txs on a Solana explorer.",
+        }
 
     resp = await client.get(
         f"{config['blockscout']}/api/v2/addresses/{address}/token-transfers",
@@ -205,7 +245,7 @@ async def _blockchain_token_transfers(client: httpx.AsyncClient, address: str, c
         symbol = tok.get("symbol", "???")
         decimals = int(tok.get("decimals", "18") or "18")
         raw = int(tr.get("total", {}).get("value", "0") or "0")
-        amount = raw / (10 ** decimals) if decimals else raw
+        amount = raw / (10**decimals) if decimals else raw
         direction = "←" if tr.get("to", {}).get("hash", "").lower() == address.lower() else "→"
         lines.append(
             f"  {direction} {amount:.4f} {symbol} | "
@@ -251,7 +291,9 @@ async def _blockchain_token_info(client: httpx.AsyncClient, address: str, chain:
         lines.append(f"  Price: ${data['exchange_rate']}")
     if data.get("total_supply"):
         decimals = int(data.get("decimals", "18") or "18")
-        supply = int(data["total_supply"]) / (10 ** decimals) if decimals else int(data["total_supply"])
+        supply = (
+            int(data["total_supply"]) / (10**decimals) if decimals else int(data["total_supply"])
+        )
         lines.append(f"  Total Supply: {supply:,.2f}")
     if data.get("circulating_market_cap"):
         lines.append(f"  Market Cap: ${float(data['circulating_market_cap']):,.0f}")
@@ -267,11 +309,17 @@ async def blockchain(executor: ToolExecutor, args: dict) -> dict:
     limit = min(int(args.get("limit", 20)), 100)
 
     if not action:
-        return {"success": False, "output": "blockchain requires 'action' (balance, transactions, token_transfers, token_info)"}
+        return {
+            "success": False,
+            "output": "blockchain requires 'action' (balance, transactions, token_transfers, token_info)",
+        }
     if not address:
         return {"success": False, "output": "blockchain requires 'address'"}
     if chain not in _CHAIN_CONFIG:
-        return {"success": False, "output": f"Unsupported chain: {chain}. Use: ethereum, base, bnb, solana"}
+        return {
+            "success": False,
+            "output": f"Unsupported chain: {chain}. Use: ethereum, base, bnb, solana",
+        }
 
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(20.0)) as client:
@@ -284,7 +332,10 @@ async def blockchain(executor: ToolExecutor, args: dict) -> dict:
             elif action == "token_info":
                 return await _blockchain_token_info(client, address, chain)
             else:
-                return {"success": False, "output": f"Unknown action: {action}. Use: balance, transactions, token_transfers, token_info"}
+                return {
+                    "success": False,
+                    "output": f"Unknown action: {action}. Use: balance, transactions, token_transfers, token_info",
+                }
     except Exception as e:
         return {"success": False, "output": f"Blockchain query failed: {e}"}
 

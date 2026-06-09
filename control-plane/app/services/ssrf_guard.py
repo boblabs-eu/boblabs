@@ -103,7 +103,7 @@ def is_private_host(hostname: str | None) -> bool:
     except (socket.gaierror, UnicodeError, OSError):
         return True
 
-    for fam, _kind, _proto, _canon, sockaddr in infos:
+    for _fam, _kind, _proto, _canon, sockaddr in infos:
         # sockaddr is (host, port) for IPv4, (host, port, flowinfo, scope) for IPv6
         ip_str = sockaddr[0]
         try:
@@ -155,7 +155,7 @@ async def safe_get(
     if method not in {m.upper() for m in allowed_methods}:
         raise ValueError(f"method {method!r} not in allowed_methods")
 
-    for hop in range(max_redirects + 1):
+    for _hop in range(max_redirects + 1):
         request = client.build_request(method, current, headers=headers)
         # Stream so we can size-cap before fully loading into memory.
         resp = await client.send(request, stream=True)
@@ -176,9 +176,7 @@ async def safe_get(
                 total += len(chunk)
                 if total > max_bytes:
                     await resp.aclose()
-                    raise PrivateHostError(
-                        f"response exceeded max_bytes={max_bytes}"
-                    )
+                    raise PrivateHostError(f"response exceeded max_bytes={max_bytes}")
                 chunks.append(chunk)
             body = b"".join(chunks)
             # Rebuild response with materialised body so callers can use
@@ -195,6 +193,4 @@ async def safe_get(
             # call again (httpx makes aclose idempotent).
             await resp.aclose()
 
-    raise RedirectLoopError(
-        f"exceeded {max_redirects} redirects starting from {url!r}"
-    )
+    raise RedirectLoopError(f"exceeded {max_redirects} redirects starting from {url!r}")

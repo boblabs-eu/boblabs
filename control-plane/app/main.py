@@ -39,6 +39,7 @@ warnings.filterwarnings(
 # set BOB_API_ALLOW_MULTI_WORKER=1 *after* doing that work; the env is
 # undocumented on purpose so it can't be set accidentally.
 
+
 def _enforce_single_worker() -> None:
     if os.environ.get("BOB_API_ALLOW_MULTI_WORKER", "").lower() in {"1", "true", "yes"}:
         return
@@ -79,12 +80,41 @@ _enforce_single_worker()
 from fastapi import FastAPI, WebSocket  # noqa: E402  (after warnings filter)
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
-from app.api.routes import auth, servers, commands, workflows, projects, metrics, modules, resources, news, web3, web3_access, orchestrator, labs, tool_sets, prompt_templates, library_agents, cron_jobs, rag, public, access_tokens, tool_configs, server_access, internal_apps, outreach, admin_logs, admin_consumer_apps, admin_labs, blog_seo  # noqa: E402
+from app.api.routes import (  # noqa: E402
+    access_tokens,
+    admin_consumer_apps,
+    admin_labs,
+    admin_logs,
+    auth,
+    blog_seo,
+    commands,
+    cron_jobs,
+    internal_apps,
+    labs,
+    library_agents,
+    metrics,
+    modules,
+    news,
+    orchestrator,
+    outreach,
+    projects,
+    prompt_templates,
+    public,
+    rag,
+    resources,
+    server_access,
+    servers,
+    tool_configs,
+    tool_sets,
+    web3,
+    web3_access,
+    workflows,
+)
 from app.database import async_session
 from app.middleware.request_logger import RequestLoggerMiddleware
+from app.version import __version__
 from app.websocket.agent_handler import handle_agent_connection
 from app.websocket.client_handler import handle_client_connection
-from app.version import __version__
 
 logging.basicConfig(
     level=logging.INFO,
@@ -204,18 +234,22 @@ async def run_database_migrations():
 
     try:
         async with async_session() as db:
-            has_alembic = (await db.execute(text(
-                "SELECT to_regclass('public.alembic_version') IS NOT NULL"
-            ))).scalar()
-            has_blog = (await db.execute(text(
-                "SELECT to_regclass('public.blog_posts') IS NOT NULL"
-            ))).scalar()
+            has_alembic = (
+                await db.execute(text("SELECT to_regclass('public.alembic_version') IS NOT NULL"))
+            ).scalar()
+            has_blog = (
+                await db.execute(text("SELECT to_regclass('public.blog_posts') IS NOT NULL"))
+            ).scalar()
             has_slug = False
             if has_blog:
-                has_slug = (await db.execute(text(
-                    "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
-                    "WHERE table_schema='public' AND table_name='blog_posts' AND column_name='slug')"
-                ))).scalar()
+                has_slug = (
+                    await db.execute(
+                        text(
+                            "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+                            "WHERE table_schema='public' AND table_name='blog_posts' AND column_name='slug')"
+                        )
+                    )
+                ).scalar()
 
         ini_path = Path(__file__).resolve().parent.parent / "alembic.ini"
         if not ini_path.exists():
@@ -251,10 +285,11 @@ async def _snapshot_loop():
         try:
             async with async_session() as db:
                 from app.services.web3_service import (
+                    cleanup_old_snapshots,
                     get_web3_settings,
                     record_portfolio_snapshot,
-                    cleanup_old_snapshots,
                 )
+
                 settings = await get_web3_settings(db)
                 interval = settings["refresh_interval"]
 
@@ -283,6 +318,7 @@ async def start_snapshot_scheduler():
 @app.on_event("startup")
 async def start_lab_scheduler():
     from app.services.lab_scheduler import start_scheduler
+
     start_scheduler(async_session)
     logger.info("Lab cron scheduler started")
 
@@ -290,15 +326,18 @@ async def start_lab_scheduler():
 @app.on_event("startup")
 async def rename_legacy_ollama_providers():
     """Rename ollama-{agent} providers to {agent} for cleaner display."""
-    from app.database import async_session
     from sqlalchemy import text
+
+    from app.database import async_session
 
     try:
         async with async_session() as db:
             result = await db.execute(
-                text("UPDATE ai_providers SET name = REGEXP_REPLACE(name, '^ollama-', '') "
-                     "WHERE name LIKE 'ollama-%' AND provider_type = 'ollama' "
-                     "AND REGEXP_REPLACE(name, '^ollama-', '') NOT IN (SELECT name FROM ai_providers)")
+                text(
+                    "UPDATE ai_providers SET name = REGEXP_REPLACE(name, '^ollama-', '') "
+                    "WHERE name LIKE 'ollama-%' AND provider_type = 'ollama' "
+                    "AND REGEXP_REPLACE(name, '^ollama-', '') NOT IN (SELECT name FROM ai_providers)"
+                )
             )
             if result.rowcount > 0:
                 await db.commit()
@@ -310,15 +349,15 @@ async def rename_legacy_ollama_providers():
 @app.on_event("startup")
 async def reset_stuck_labs():
     """Reset labs stuck in 'running' state after a server restart (no active runner)."""
-    from app.database import async_session
     from sqlalchemy import text
+
+    from app.database import async_session
 
     try:
         async with async_session() as db:
             result = await db.execute(
                 text(
-                    "UPDATE labs SET status = 'paused', paused_at = NOW() "
-                    "WHERE status = 'running'"
+                    "UPDATE labs SET status = 'paused', paused_at = NOW() WHERE status = 'running'"
                 )
             )
             if result.rowcount > 0:
@@ -331,8 +370,9 @@ async def reset_stuck_labs():
 @app.on_event("startup")
 async def link_orphaned_providers():
     """Link HF/OpenAI providers that have no server_id by matching base_url host to servers.host."""
-    from app.database import async_session
     from sqlalchemy import text
+
+    from app.database import async_session
 
     try:
         async with async_session() as db:
@@ -355,6 +395,7 @@ async def link_orphaned_providers():
 async def configure_loop_manager():
     """Wire the loop-detection manager to the DB session factory."""
     from app.services.loop_detection import get_loop_manager
+
     try:
         get_loop_manager().configure(async_session)
         logger.info("Loop manager configured")
@@ -376,14 +417,19 @@ async def _request_log_purge_loop():
         try:
             async with async_session() as db:
                 result = await db.execute(
-                    text("DELETE FROM request_log "
-                         "WHERE timestamp < NOW() - (INTERVAL '1 day' * :days)"),
+                    text(
+                        "DELETE FROM request_log "
+                        "WHERE timestamp < NOW() - (INTERVAL '1 day' * :days)"
+                    ),
                     {"days": retention_days},
                 )
                 await db.commit()
                 if result.rowcount:
-                    logger.info("Purged %d request_log rows older than %d days",
-                                result.rowcount, retention_days)
+                    logger.info(
+                        "Purged %d request_log rows older than %d days",
+                        result.rowcount,
+                        retention_days,
+                    )
         except Exception as e:
             logger.warning("request_log purge error: %s", e)
         await asyncio.sleep(3600)
@@ -400,6 +446,7 @@ async def cleanup_sandbox_containers():
     """Remove orphaned per-lab sandbox containers from previous API runs."""
     try:
         from app.services.container_manager import cleanup_orphaned
+
         removed = await cleanup_orphaned()
         if removed:
             logger.info("Cleaned up %d orphaned sandbox containers on startup", removed)
@@ -412,6 +459,7 @@ async def sweep_lightrag_orphans():
     """OP04 — drop on-disk LightRAG dirs whose rag_collections row vanished."""
     try:
         from app.services.lightrag_service import LightRagService
+
         removed = await LightRagService.sweep_orphans()
         if removed:
             logger.info("OP04: swept %d orphan LightRAG dirs on startup", removed)
@@ -424,6 +472,7 @@ async def seed_agent_template_presets():
     """Seed reusable agent template presets (OpenClaw, Hermes, ...)."""
     try:
         from app.services.agent_template_seed import seed_agent_templates
+
         await seed_agent_templates(async_session)
     except Exception as e:
         logger.warning("Failed to seed agent templates: %s", e)
@@ -440,4 +489,5 @@ async def stop_snapshot_scheduler():
             pass
 
     from app.services.lab_scheduler import stop_scheduler
+
     stop_scheduler()

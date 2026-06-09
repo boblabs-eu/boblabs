@@ -62,17 +62,20 @@ def _parse_rss(xml_text: str, source: dict, limit: int = 20) -> list[dict]:
             # Strip HTML tags from description
             if "<" in description:
                 import re
+
                 description = re.sub(r"<[^>]+>", "", description).strip()
 
-            articles.append({
-                "title": title,
-                "link": link,
-                "description": description[:300],
-                "pub_date": pub_date,
-                "source": source["name"],
-                "source_id": source["id"],
-                "category": source["category"],
-            })
+            articles.append(
+                {
+                    "title": title,
+                    "link": link,
+                    "description": description[:300],
+                    "pub_date": pub_date,
+                    "source": source["name"],
+                    "source_id": source["id"],
+                    "category": source["category"],
+                }
+            )
     except ET.ParseError as e:
         logger.warning("Failed to parse RSS from %s: %s", source["name"], e)
     return articles
@@ -97,22 +100,24 @@ async def fetch_news(
     async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
         for source in sources:
             try:
-                resp = await client.get(source["url"], headers={
-                    "User-Agent": "BobManager/1.0 (RSS Reader)",
-                })
+                resp = await client.get(
+                    source["url"],
+                    headers={
+                        "User-Agent": "BobManager/1.0 (RSS Reader)",
+                    },
+                )
                 if resp.status_code == 200:
                     articles = _parse_rss(resp.text, source, limit=limit)
                     all_articles.extend(articles)
                 else:
-                    logger.warning(
-                        "Feed %s returned HTTP %d", source["name"], resp.status_code
-                    )
+                    logger.warning("Feed %s returned HTTP %d", source["name"], resp.status_code)
             except httpx.HTTPError as e:
                 logger.warning("Failed to fetch feed %s: %s", source["name"], e)
 
     # Sort by pub_date descending (best effort parsing)
     def parse_date(article):
         from datetime import timezone
+
         for fmt in (
             "%a, %d %b %Y %H:%M:%S %z",
             "%a, %d %b %Y %H:%M:%S %Z",

@@ -16,7 +16,6 @@ from __future__ import annotations
 import inspect
 
 import pytest
-
 from app.services import lab_scheduler
 
 pytestmark = pytest.mark.regression
@@ -50,13 +49,16 @@ def test_execute_lab_cron_cmd_posts_to_shell_exec():
 
 
 def test_execute_lab_cron_cmd_builds_sandbox_url_from_lab_id():
-    """The sandbox URL convention is bob-lab-<first12>:9000."""
+    """The sandbox URL is built from the lab id (currently via ensure_sandbox)."""
     fn = getattr(lab_scheduler, "_execute_lab_cron_cmd", None)
     if fn is None:
         pytest.skip("function renamed — update test to track")
     src = inspect.getsource(fn)
-    assert "bob-lab-" in src, (
-        "_execute_lab_cron_cmd no longer builds the bob-lab-<id> URL — Wave 4 P regression"
+    # R6: the bob-lab-<id> URL convention moved into ensure_sandbox so a
+    # single helper owns the format; _execute_lab_cron_cmd must call it.
+    assert "ensure_sandbox" in src, (
+        "_execute_lab_cron_cmd no longer routes through ensure_sandbox — "
+        "Wave 4 P regression (URL would no longer carry lab.id)"
     )
 
 

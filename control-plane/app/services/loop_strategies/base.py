@@ -15,7 +15,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
-from uuid import UUID
 
 if TYPE_CHECKING:
     from app.models.orchestrator import Lab, LabAgent, LabMemory, LabMessage, LabResource
@@ -44,6 +43,7 @@ def trim_results(buf: list, max_len: int = MAX_ACCUMULATED_RESULTS) -> list:
 @dataclass
 class PlanAction:
     """Dispatch a set of tasks to agents."""
+
     tasks: list[TaskItem]
 
 
@@ -57,12 +57,14 @@ class TaskItem:
 @dataclass
 class SynthesizeAction:
     """The goal is achieved — produce final summary."""
+
     summary: str
 
 
 @dataclass
 class PauseAction:
     """Strategy requests a pause."""
+
     reason: str
 
 
@@ -75,6 +77,7 @@ LoopAction = PlanAction | SynthesizeAction | PauseAction
 @dataclass
 class LoopContext:
     """Snapshot of Lab state passed to the strategy each step."""
+
     lab: Lab
     agents: list[LabAgent]
     iteration: int
@@ -138,7 +141,7 @@ def inject_memory_index(system: str, memories: list, max_entries: int = 30) -> s
     Agents use memory_search(query) to load full content (Level-1).
     """
     # Filter out hidden memories
-    visible = [m for m in memories if not getattr(m, 'is_hidden', False)]
+    visible = [m for m in memories if not getattr(m, "is_hidden", False)]
     if not visible:
         return system
 
@@ -154,7 +157,11 @@ def inject_memory_index(system: str, memories: list, max_entries: int = 30) -> s
         if hasattr(mem, "updated_at") and mem.updated_at:
             try:
                 now = datetime.now(timezone.utc)
-                delta = now - mem.updated_at.replace(tzinfo=timezone.utc) if mem.updated_at.tzinfo is None else now - mem.updated_at
+                delta = (
+                    now - mem.updated_at.replace(tzinfo=timezone.utc)
+                    if mem.updated_at.tzinfo is None
+                    else now - mem.updated_at
+                )
                 secs = int(delta.total_seconds())
                 if secs < 60:
                     age = f"{secs}s ago"
@@ -236,7 +243,7 @@ def build_strategy_system(
     Shared by ALL strategies to avoid duplication.
     """
     # Use strategy prompt override if the user has customized it for this lab
-    override = getattr(context.lab, 'strategy_prompt_override', None)
+    override = getattr(context.lab, "strategy_prompt_override", None)
     if override:
         # The override replaces the default strategy prompt
         # Apply the same {lab_name} and {agent_descriptions} placeholders
@@ -252,11 +259,12 @@ def build_strategy_system(
     _STATIC_TOOLS_BLOCK = (
         "## CRITICAL: You cannot act — only delegate\n"
         "You are a COORDINATOR. You CANNOT execute tools, write files, run code, or perform any action yourself.\n"
-        "The ONLY way to get work done is by dispatching tasks to agents via the \"tasks\" array.\n"
+        'The ONLY way to get work done is by dispatching tasks to agents via the "tasks" array.\n'
         "NEVER say you will do something and then set done=true without dispatching a task for it.\n"
     )
     if context.orch_tool_names:
         from app.services.tool_executor import format_tool_descriptions
+
         orch_tools_desc = format_tool_descriptions(context.orch_tool_names)
         has_agents = bool(context.agents)
         if has_agents:
@@ -264,7 +272,7 @@ def build_strategy_system(
                 "## Your Tools\n"
                 "You have the following tools available and can use them DIRECTLY:\n"
                 f"{orch_tools_desc}\n"
-                "You can ALSO delegate tasks to agents via the \"tasks\" array.\n"
+                'You can ALSO delegate tasks to agents via the "tasks" array.\n'
                 "Use your own tools for quick actions. Delegate complex multi-step work to agents.\n"
             )
         else:
@@ -291,7 +299,7 @@ def build_strategy_system(
     system = inject_memory_index(system, context.lab_memories)
 
     # Auto sweep instruction
-    if getattr(context.lab, 'auto_sweep_memory', False):
+    if getattr(context.lab, "auto_sweep_memory", False):
         system += (
             "\n**Memory Sweep**: You have auto-sweep enabled. Periodically use "
             "handle_memory(agent_name, action='list') to review each agent's memories, "
@@ -340,26 +348,33 @@ def build_messages_from_history(
         elif msg.sender_type == "orchestrator" and msg.message_type == "message":
             messages.append({"role": "assistant", "content": msg.content})
         elif msg.sender_type == "agent" and msg.message_type == "result":
-            messages.append({
-                "role": "user",
-                "content": f"[Agent {msg.sender_name} result]: {msg.content}",
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"[Agent {msg.sender_name} result]: {msg.content}",
+                }
+            )
         elif msg.message_type == "inject":
-            messages.append({
-                "role": "user",
-                "content": f"[USER INSTRUCTION]: {msg.content}",
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"[USER INSTRUCTION]: {msg.content}",
+                }
+            )
 
     if last_results:
         results_text = "\n".join(
-            f"- {r.agent_name}: {r.response[:500]}" if not r.error
+            f"- {r.agent_name}: {r.response[:500]}"
+            if not r.error
             else f"- {r.agent_name}: ERROR: {r.error}"
             for r in last_results
         )
-        messages.append({
-            "role": "user",
-            "content": f"Agent results from iteration {context.iteration - 1}:\n{results_text}\n\n{prompt_suffix}",
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": f"Agent results from iteration {context.iteration - 1}:\n{results_text}\n\n{prompt_suffix}",
+            }
+        )
 
     for inj in injections:
         messages.append({"role": "user", "content": f"[USER INSTRUCTION]: {inj}"})
@@ -390,7 +405,9 @@ def inject_resources_into_system(system: str, resources: list, lab_id) -> str:
 
     for res in resources:
         if res.resource_type == "image":
-            image_parts.append(f"- {res.original_name} ({res.content_type}, {res.size_bytes} bytes)")
+            image_parts.append(
+                f"- {res.original_name} ({res.content_type}, {res.size_bytes} bytes)"
+            )
         else:
             desc = f" — {res.description}" if res.description else ""
             file_parts.append(
@@ -400,13 +417,15 @@ def inject_resources_into_system(system: str, resources: list, lab_id) -> str:
     if file_parts:
         system += "\n\n<uploaded_resources>\n"
         system += "\n".join(file_parts)
-        system += "\nUse file_read(path=\"<filename>\") to read resource content when needed."
+        system += '\nUse file_read(path="<filename>") to read resource content when needed.'
         system += "\n</uploaded_resources>"
 
     if image_parts:
         system += "\n\n<images>\n"
         system += "\n".join(image_parts)
-        system += "\nImage files are attached to the user message below for visual analysis.\n</images>"
+        system += (
+            "\nImage files are attached to the user message below for visual analysis.\n</images>"
+        )
 
     return system
 

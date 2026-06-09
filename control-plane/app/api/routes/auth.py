@@ -11,11 +11,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 class TokenRequest(BaseModel):
     """Login request with shared secret."""
+
     secret: str
 
 
 class TokenResponse(BaseModel):
     """JWT token response."""
+
     access_token: str
     token_type: str = "bearer"
 

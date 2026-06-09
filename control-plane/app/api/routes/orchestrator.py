@@ -13,7 +13,6 @@ from app.repositories.orchestrator_repo import (
     AIModelRepository,
     AIProviderRepository,
     OrchestratorSettingsRepository,
-    TaskRepository,
 )
 from app.schemas.orchestrator import (
     AIAgentCreate,
@@ -23,7 +22,6 @@ from app.schemas.orchestrator import (
     AIProviderCreate,
     AIProviderResponse,
     AIProviderUpdate,
-    ActivityItem,
     ConversationCreate,
     ConversationResponse,
     ConversationUpdate,
@@ -33,16 +31,22 @@ from app.schemas.orchestrator import (
     OrchestratorSettingsUpdate,
     TaskResponse,
 )
-from app.services.conversation_service import ConversationService
-from app.services.authorization import check_permission, filter_query_by_access, get_default_acl, Permission
+from app.services.authorization import (
+    Permission,
+    check_permission,
+    filter_query_by_access,
+)
 from app.services.comfyui_discovery import discover_comfyui_models
+from app.services.conversation_service import ConversationService
 from app.services.orchestrator_service import OrchestratorService
 from app.services.task_queue_service import TaskQueueService
 
 router = APIRouter(prefix="/orchestrator", tags=["orchestrator"])
 
 
-async def _infer_provider_server_id(db: DbSession, base_url: str, server_id: UUID | None) -> UUID | None:
+async def _infer_provider_server_id(
+    db: DbSession, base_url: str, server_id: UUID | None
+) -> UUID | None:
     if server_id is not None or not base_url:
         return server_id
 
@@ -51,6 +55,7 @@ async def _infer_provider_server_id(db: DbSession, base_url: str, server_id: UUI
         return None
 
     from sqlalchemy import select
+
     from app.models.server import Server
 
     result = await db.execute(select(Server.id).where(Server.host == host))
@@ -88,16 +93,16 @@ async def update_settings(data: OrchestratorSettingsUpdate, db: DbSession):
 # hardcoding the same entries — adding a new provider here makes it appear
 # in the UI automatically.
 SUPPORTED_PROVIDER_TYPES: list[dict[str, str]] = [
-    {"type": "ollama",        "label": "Ollama (Local)"},
-    {"type": "huggingface",   "label": "HuggingFace"},
-    {"type": "openai",        "label": "OpenAI-Compatible"},
-    {"type": "anthropic",     "label": "Anthropic (Claude)"},
-    {"type": "openai_cloud",  "label": "OpenAI"},
-    {"type": "xai",           "label": "xAI (Grok)"},
-    {"type": "groq",          "label": "Groq"},
-    {"type": "deepseek",      "label": "DeepSeek"},
-    {"type": "comfyui",       "label": "ComfyUI"},
-    {"type": "stt",           "label": "Speech-to-Text (Whisper)"},
+    {"type": "ollama", "label": "Ollama (Local)"},
+    {"type": "huggingface", "label": "HuggingFace"},
+    {"type": "openai", "label": "OpenAI-Compatible"},
+    {"type": "anthropic", "label": "Anthropic (Claude)"},
+    {"type": "openai_cloud", "label": "OpenAI"},
+    {"type": "xai", "label": "xAI (Grok)"},
+    {"type": "groq", "label": "Groq"},
+    {"type": "deepseek", "label": "DeepSeek"},
+    {"type": "comfyui", "label": "ComfyUI"},
+    {"type": "stt", "label": "Speech-to-Text (Whisper)"},
 ]
 _SUPPORTED_PROVIDER_TYPE_VALUES = {p["type"] for p in SUPPORTED_PROVIDER_TYPES}
 
@@ -110,7 +115,8 @@ async def list_provider_types():
 
 @router.get("/providers", response_model=list[AIProviderResponse])
 async def list_providers(db: DbSession):
-    from sqlalchemy import select, outerjoin
+    from sqlalchemy import select
+
     from app.models.orchestrator import AIProvider
     from app.models.server import Server
 
@@ -163,7 +169,9 @@ async def update_provider(provider_id: UUID, data: AIProviderUpdate, db: DbSessi
         provider = await repo.get_by_id(provider_id)
         if not provider:
             raise HTTPException(404, "Provider not found")
-        updates["server_id"] = await _infer_provider_server_id(db, updates["base_url"], provider.server_id)
+        updates["server_id"] = await _infer_provider_server_id(
+            db, updates["base_url"], provider.server_id
+        )
     result = await repo.update(provider_id, **updates)
     if result is None:
         raise HTTPException(404, "Provider not found")
@@ -187,8 +195,7 @@ async def test_provider(provider_id: UUID, db: DbSession):
 
 
 @router.post("/providers/{provider_id}/approve", response_model=AIProviderResponse)
-async def approve_provider(provider_id: UUID, db: DbSession,
-                             user: dict = Depends(require_admin)):
+async def approve_provider(provider_id: UUID, db: DbSession, user: dict = Depends(require_admin)):
     """Approve an auto-discovered AI provider (cluster I).
 
     Auto-discovered providers from agent metrics ticks are inserted with
@@ -202,7 +209,9 @@ async def approve_provider(provider_id: UUID, db: DbSession,
     if not provider:
         raise HTTPException(404, "Provider not found")
     updated = await repo.update(
-        provider_id, pending_approval=False, is_active=True,
+        provider_id,
+        pending_approval=False,
+        is_active=True,
     )
     return updated
 
@@ -226,7 +235,8 @@ async def list_unique_models(db: DbSession):
     - provider_ids: list of provider UUIDs hosting this model
     - server_names: list of server display names
     """
-    from sqlalchemy import select, func, case, Integer
+    from sqlalchemy import Integer, case, func, select
+
     from app.models.orchestrator import AIModel, AIProvider
     from app.models.server import Server
 
@@ -250,16 +260,18 @@ async def list_unique_models(db: DbSession):
     rows = result.all()
     out = []
     for row in rows:
-        out.append({
-            "model_identifier": row.model_identifier,
-            "total_providers": row.total_providers,
-            "available_providers": row.available_providers,
-            "any_available": bool(row.any_available),
-            "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
-            "model_ids": [str(mid) for mid in row.model_ids],
-            "provider_ids": [str(pid) for pid in row.provider_ids],
-            "server_names": list(set(row.server_names)) if row.server_names else [],
-        })
+        out.append(
+            {
+                "model_identifier": row.model_identifier,
+                "total_providers": row.total_providers,
+                "available_providers": row.available_providers,
+                "any_available": bool(row.any_available),
+                "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
+                "model_ids": [str(mid) for mid in row.model_ids],
+                "provider_ids": [str(pid) for pid in row.provider_ids],
+                "server_names": list(set(row.server_names)) if row.server_names else [],
+            }
+        )
     return out
 
 
@@ -296,16 +308,24 @@ async def get_live_models(db: DbSession):
         if ollama_models:
             # Find the matching provider
             matched_provider = next(
-                (p for p in ollama_providers if p.name == agent_name or p.name == f"ollama-{agent_name}"),
+                (
+                    p
+                    for p in ollama_providers
+                    if p.name == agent_name or p.name == f"ollama-{agent_name}"
+                ),
                 None,
             )
-            result.append({
-                "provider_id": str(matched_provider.id) if matched_provider else None,
-                "provider_name": matched_provider.name if matched_provider else f"ollama-{agent_name}",
-                "provider_type": "ollama",
-                "server": agent_name,
-                "models": ollama_models,
-            })
+            result.append(
+                {
+                    "provider_id": str(matched_provider.id) if matched_provider else None,
+                    "provider_name": matched_provider.name
+                    if matched_provider
+                    else f"ollama-{agent_name}",
+                    "provider_type": "ollama",
+                    "server": agent_name,
+                    "models": ollama_models,
+                }
+            )
             seen_servers.add(agent_name)
 
     # 2. Direct agent query fallback for unseen agents
@@ -314,13 +334,16 @@ async def get_live_models(db: DbSession):
     async def _ask_ollama(agent_name: str) -> dict | None:
         command_id = str(uuid.uuid4())
         future = manager.create_pending(command_id)
-        sent = await manager.send_to_agent(agent_name, {
-            "type": "command.execute",
-            "id": command_id,
-            "payload": {
-                "command": "curl -s http://localhost:11434/api/tags 2>/dev/null || echo '{}'",
+        sent = await manager.send_to_agent(
+            agent_name,
+            {
+                "type": "command.execute",
+                "id": command_id,
+                "payload": {
+                    "command": "curl -s http://localhost:11434/api/tags 2>/dev/null || echo '{}'",
+                },
             },
-        })
+        )
         if not sent:
             return None
         try:
@@ -332,19 +355,25 @@ async def get_live_models(db: DbSession):
             models = []
             for m in data.get("models", []):
                 details = m.get("details", {})
-                models.append({
-                    "name": m.get("name", ""),
-                    "model": m.get("model", m.get("name", "")),
-                    "size": m.get("size", 0),
-                    "parameter_size": details.get("parameter_size", ""),
-                    "quantization": details.get("quantization_level", ""),
-                    "family": details.get("family", ""),
-                    "format": details.get("format", ""),
-                    "modified_at": m.get("modified_at", ""),
-                })
+                models.append(
+                    {
+                        "name": m.get("name", ""),
+                        "model": m.get("model", m.get("name", "")),
+                        "size": m.get("size", 0),
+                        "parameter_size": details.get("parameter_size", ""),
+                        "quantization": details.get("quantization_level", ""),
+                        "family": details.get("family", ""),
+                        "format": details.get("format", ""),
+                        "modified_at": m.get("modified_at", ""),
+                    }
+                )
             if models:
                 matched = next(
-                    (p for p in ollama_providers if p.name == agent_name or p.name == f"ollama-{agent_name}"),
+                    (
+                        p
+                        for p in ollama_providers
+                        if p.name == agent_name or p.name == f"ollama-{agent_name}"
+                    ),
                     None,
                 )
                 return {
@@ -359,7 +388,9 @@ async def get_live_models(db: DbSession):
         return None
 
     # ── HuggingFace / OpenAI providers: query /v1/models ────────────
-    api_providers = [p for p in all_providers if p.provider_type in ("huggingface", "openai") and p.is_active]
+    api_providers = [
+        p for p in all_providers if p.provider_type in ("huggingface", "openai") and p.is_active
+    ]
     comfyui_providers = [p for p in all_providers if p.provider_type == "comfyui" and p.is_active]
 
     async def _ask_api_provider(provider: AIProvider) -> dict | None:
@@ -378,15 +409,17 @@ async def get_live_models(db: DbSession):
 
             models = []
             for m in served:
-                models.append({
-                    "name": m.get("id", ""),
-                    "model": m.get("id", ""),
-                    "size": 0,
-                    "parameter_size": "",
-                    "quantization": "",
-                    "family": "",
-                    "format": "",
-                })
+                models.append(
+                    {
+                        "name": m.get("id", ""),
+                        "model": m.get("id", ""),
+                        "size": 0,
+                        "parameter_size": "",
+                        "quantization": "",
+                        "family": "",
+                        "format": "",
+                    }
+                )
             # Find server name from server_id
             server_name = provider.name
             return {
@@ -446,13 +479,17 @@ async def get_live_models(db: DbSession):
                 (p for p in riffusion_providers if p.name == f"riffusion-{agent_name}"),
                 None,
             )
-            result.append({
-                "provider_id": str(matched_provider.id) if matched_provider else None,
-                "provider_name": matched_provider.name if matched_provider else f"riffusion-{agent_name}",
-                "provider_type": "riffusion",
-                "server": agent_name,
-                "models": riffusion_models,
-            })
+            result.append(
+                {
+                    "provider_id": str(matched_provider.id) if matched_provider else None,
+                    "provider_name": matched_provider.name
+                    if matched_provider
+                    else f"riffusion-{agent_name}",
+                    "provider_type": "riffusion",
+                    "server": agent_name,
+                    "models": riffusion_models,
+                }
+            )
 
     # ── GPU service providers (MusicGen, Bark, RVC, STT): use metrics cache ─────────────
     _GPU_SVC_KEYS = [
@@ -470,13 +507,15 @@ async def get_live_models(db: DbSession):
                     (p for p in typed_providers if p.name == f"{ptype}-{agent_name}"),
                     None,
                 )
-                result.append({
-                    "provider_id": str(matched.id) if matched else None,
-                    "provider_name": matched.name if matched else f"{ptype}-{agent_name}",
-                    "provider_type": ptype,
-                    "server": agent_name,
-                    "models": svc_models,
-                })
+                result.append(
+                    {
+                        "provider_id": str(matched.id) if matched else None,
+                        "provider_name": matched.name if matched else f"{ptype}-{agent_name}",
+                        "provider_type": ptype,
+                        "server": agent_name,
+                        "models": svc_models,
+                    }
+                )
 
     # ── Script Runner (ToolAI) providers ─────────────
     all_runners = manager.get_all_script_runners()
@@ -486,24 +525,28 @@ async def get_live_models(db: DbSession):
             models = []
             for s in scripts:
                 name = s.get("name", "") if isinstance(s, dict) else str(s)
-                desc = s.get("description", "") if isinstance(s, dict) else ""
+                s.get("description", "") if isinstance(s, dict) else ""
                 env = s.get("env", "") if isinstance(s, dict) else ""
-                models.append({
-                    "name": name,
-                    "model": name,
-                    "size": 0,
-                    "parameter_size": "",
-                    "quantization": env or "script",
-                    "family": "audio",
-                    "format": "script",
-                })
-            result.append({
-                "provider_id": None,
-                "provider_name": f"toolai-{agent_name}",
-                "provider_type": "toolai",
-                "server": agent_name,
-                "models": models,
-            })
+                models.append(
+                    {
+                        "name": name,
+                        "model": name,
+                        "size": 0,
+                        "parameter_size": "",
+                        "quantization": env or "script",
+                        "family": "audio",
+                        "format": "script",
+                    }
+                )
+            result.append(
+                {
+                    "provider_id": None,
+                    "provider_name": f"toolai-{agent_name}",
+                    "provider_type": "toolai",
+                    "server": agent_name,
+                    "models": models,
+                }
+            )
 
     return result
 
@@ -544,13 +587,16 @@ async def sync_all_models(db: DbSession):
         # Ask agent to query local Ollama
         command_id = str(uuid_mod.uuid4())
         future = manager.create_pending(command_id)
-        sent = await manager.send_to_agent(agent_name, {
-            "type": "command.execute",
-            "id": command_id,
-            "payload": {
-                "command": "curl -s http://localhost:11434/api/tags 2>/dev/null || echo '{}'",
+        sent = await manager.send_to_agent(
+            agent_name,
+            {
+                "type": "command.execute",
+                "id": command_id,
+                "payload": {
+                    "command": "curl -s http://localhost:11434/api/tags 2>/dev/null || echo '{}'",
+                },
             },
-        })
+        )
         if not sent:
             return agent_name, []
         try:
@@ -562,15 +608,17 @@ async def sync_all_models(db: DbSession):
             models = []
             for m in data.get("models", []):
                 details = m.get("details", {})
-                models.append({
-                    "name": m.get("name", ""),
-                    "model": m.get("model", m.get("name", "")),
-                    "size": m.get("size", 0),
-                    "parameter_size": details.get("parameter_size", ""),
-                    "quantization": details.get("quantization_level", ""),
-                    "family": details.get("family", ""),
-                    "format": details.get("format", ""),
-                })
+                models.append(
+                    {
+                        "name": m.get("name", ""),
+                        "model": m.get("model", m.get("name", "")),
+                        "size": m.get("size", 0),
+                        "parameter_size": details.get("parameter_size", ""),
+                        "quantization": details.get("quantization_level", ""),
+                        "family": details.get("family", ""),
+                        "format": details.get("format", ""),
+                    }
+                )
             return agent_name, models
         except Exception:
             return agent_name, []
@@ -607,6 +655,7 @@ async def sync_all_models(db: DbSession):
 
         # Fetch context_length for each model via /api/show
         ctx_lengths: dict[str, int] = {}
+
         async def _fetch_ctx(base_url: str, model_name: str):
             try:
                 async with httpx.AsyncClient(timeout=5.0) as hc:
@@ -615,14 +664,15 @@ async def sync_all_models(db: DbSession):
                         info = r.json().get("model_info", {})
                         for k, v in info.items():
                             if "context_length" in k and isinstance(v, (int, float)):
-                                ctx_lengths[model_name] = int(v)
+                                ctx_lengths[model_name] = int(v)  # noqa: B023 — closure intentionally shares ctx_lengths dict
                                 break
             except Exception:
                 pass
 
         ctx_tasks = [
             _fetch_ctx(provider.base_url, m.get("name", m.get("model", "")))
-            for m in ollama_models if m.get("name") or m.get("model")
+            for m in ollama_models
+            if m.get("name") or m.get("model")
         ]
         await asyncio.gather(*ctx_tasks)
 
@@ -653,14 +703,13 @@ async def sync_all_models(db: DbSession):
             await model_repo.mark_unavailable(provider.id, seen_ids)
 
     # ── Also discover vLLM containers from Docker metrics ──
-    import httpx
 
     for agent_name, metrics in all_metrics.items():
         docker_containers = metrics.get("docker_containers", [])
         vllm_containers = [
-            c for c in docker_containers
-            if c.get("state") == "running"
-            and "vllm" in (c.get("image", "") or "").lower()
+            c
+            for c in docker_containers
+            if c.get("state") == "running" and "vllm" in (c.get("image", "") or "").lower()
         ]
         if not vllm_containers:
             continue
@@ -671,6 +720,7 @@ async def sync_all_models(db: DbSession):
 
         for container in vllm_containers:
             from app.websocket.agent_handler import _parse_host_port
+
             host_port = _parse_host_port(container.get("ports", ""), 8000)
             if not host_port:
                 continue
@@ -769,12 +819,17 @@ async def list_llm_events(
     Non-admin callers only see events tied to a lab or conversation they
     own / edit / view via ACL. Admin sees everything.
     """
-    from sqlalchemy import select, desc, or_
-    from app.models.orchestrator import LlmEvent, Lab, Conversation
-    from app.services.authorization import filter_query_by_access
     from datetime import datetime as dt
 
-    q = select(LlmEvent, Lab.name.label("lab_name")).outerjoin(Lab, LlmEvent.lab_id == Lab.id).order_by(desc(LlmEvent.created_at))
+    from sqlalchemy import desc, or_, select
+
+    from app.models.orchestrator import Lab, LlmEvent
+
+    q = (
+        select(LlmEvent, Lab.name.label("lab_name"))
+        .outerjoin(Lab, LlmEvent.lab_id == Lab.id)
+        .order_by(desc(LlmEvent.created_at))
+    )
     if model:
         q = q.where(LlmEvent.model_identifier == model)
     if server:
@@ -787,7 +842,14 @@ async def list_llm_events(
         q = q.where(LlmEvent.event_type == event_type)
     if since:
         from datetime import timedelta, timezone
-        period_map = {"1h": timedelta(hours=1), "1d": timedelta(days=1), "1w": timedelta(weeks=1), "1m": timedelta(days=30), "1y": timedelta(days=365)}
+
+        period_map = {
+            "1h": timedelta(hours=1),
+            "1d": timedelta(days=1),
+            "1w": timedelta(weeks=1),
+            "1m": timedelta(days=30),
+            "1y": timedelta(days=365),
+        }
         if since in period_map:
             q = q.where(LlmEvent.created_at >= dt.now(timezone.utc) - period_map[since])
         else:
@@ -801,11 +863,15 @@ async def list_llm_events(
         # Restrict to events whose lab or conversation the user can VIEW.
         # Events with neither (system-level) are admin-only.
         visible_labs = filter_query_by_access(select(Lab.id), Lab, user).subquery()
-        visible_convs = filter_query_by_access(select(Conversation.id), Conversation, user).subquery()
-        q = q.where(or_(
-            LlmEvent.lab_id.in_(select(visible_labs)),
-            LlmEvent.conversation_id.in_(select(visible_convs)),
-        ))
+        visible_convs = filter_query_by_access(
+            select(Conversation.id), Conversation, user
+        ).subquery()
+        q = q.where(
+            or_(
+                LlmEvent.lab_id.in_(select(visible_labs)),
+                LlmEvent.conversation_id.in_(select(visible_convs)),
+            )
+        )
 
     q = q.offset(offset).limit(limit)
     result = await db.execute(q)
@@ -822,7 +888,9 @@ async def list_llm_events(
             "caller_name": r.LlmEvent.caller_name,
             "lab_id": str(r.LlmEvent.lab_id) if r.LlmEvent.lab_id else None,
             "lab_name": r.lab_name,
-            "conversation_id": str(r.LlmEvent.conversation_id) if r.LlmEvent.conversation_id else None,
+            "conversation_id": str(r.LlmEvent.conversation_id)
+            if r.LlmEvent.conversation_id
+            else None,
             "tokens_in": r.LlmEvent.tokens_in,
             "tokens_out": r.LlmEvent.tokens_out,
             "duration_ms": r.LlmEvent.duration_ms,
@@ -859,11 +927,19 @@ async def llm_event_stats(
     Non-admin callers only see events tied to a lab or conversation they own /
     edit / view via ACL.
     """
-    from sqlalchemy import select, func, case, text, distinct
-    from app.models.orchestrator import LlmEvent
-    from datetime import datetime as dt, timedelta, timezone
+    from datetime import datetime as dt
+    from datetime import timedelta, timezone
 
-    period_map = {"1h": timedelta(hours=1), "1d": timedelta(days=1), "1w": timedelta(weeks=1), "1m": timedelta(days=30), "1y": timedelta(days=365), "all": timedelta(days=36500)}
+    from sqlalchemy import text
+
+    period_map = {
+        "1h": timedelta(hours=1),
+        "1d": timedelta(days=1),
+        "1w": timedelta(weeks=1),
+        "1m": timedelta(days=30),
+        "1y": timedelta(days=365),
+        "all": timedelta(days=36500),
+    }
     delta = period_map.get(period, timedelta(hours=1))
     since = dt.now(timezone.utc) - delta
 
@@ -941,8 +1017,10 @@ async def llm_event_stats(
         GROUP BY model_identifier
         ORDER BY total DESC
     """)
-    by_model = [{"model": r.model, "total": r.total, "succeeded": r.succeeded, "failed": r.failed}
-                for r in (await db.execute(by_model_q, params)).all()]
+    by_model = [
+        {"model": r.model, "total": r.total, "succeeded": r.succeeded, "failed": r.failed}
+        for r in (await db.execute(by_model_q, params)).all()
+    ]
 
     # By server — count terminal events (response/failed) per server
     by_server_q = text(f"""
@@ -956,11 +1034,20 @@ async def llm_event_stats(
         GROUP BY server_name
         ORDER BY total DESC
     """)
-    by_server = [{"server": r.server, "total": r.total, "succeeded": r.succeeded, "failed": r.failed}
-                 for r in (await db.execute(by_server_q, params)).all()]
+    by_server = [
+        {"server": r.server, "total": r.total, "succeeded": r.succeeded, "failed": r.failed}
+        for r in (await db.execute(by_server_q, params)).all()
+    ]
 
     # Timeline (bucketed by time period)
-    step_map = {"1h": "5 minutes", "1d": "1 hour", "1w": "6 hours", "1m": "1 day", "1y": "1 week", "all": "1 week"}
+    step_map = {
+        "1h": "5 minutes",
+        "1d": "1 hour",
+        "1w": "6 hours",
+        "1m": "1 day",
+        "1y": "1 week",
+        "all": "1 week",
+    }
     step = step_map.get(period, "5 minutes")
     timeline_q = text(f"""
         SELECT
@@ -974,8 +1061,15 @@ async def llm_event_stats(
         ORDER BY bucket
     """)
     timeline_result = await db.execute(timeline_q, params)
-    timeline = [{"time": r.bucket.isoformat(), "succeeded": r.succeeded, "failed": r.failed, "dispatched": r.dispatched}
-                for r in timeline_result.all()]
+    timeline = [
+        {
+            "time": r.bucket.isoformat(),
+            "succeeded": r.succeeded,
+            "failed": r.failed,
+            "dispatched": r.dispatched,
+        }
+        for r in timeline_result.all()
+    ]
 
     return {
         "summary": {
@@ -1014,10 +1108,15 @@ async def get_llm_event_detail(
     Non-admin callers must have VIEW on the event's lab or conversation.
     """
     from sqlalchemy import select
-    from app.models.orchestrator import LlmEvent, Lab, Conversation
-    from app.services.authorization import check_permission, Permission
 
-    q = select(LlmEvent, Lab.name.label("lab_name")).outerjoin(Lab, LlmEvent.lab_id == Lab.id).where(LlmEvent.id == event_id)
+    from app.models.orchestrator import Lab, LlmEvent
+    from app.services.authorization import Permission, check_permission
+
+    q = (
+        select(LlmEvent, Lab.name.label("lab_name"))
+        .outerjoin(Lab, LlmEvent.lab_id == Lab.id)
+        .where(LlmEvent.id == event_id)
+    )
     result = await db.execute(q)
     row = result.first()
     if not row:
@@ -1036,7 +1135,9 @@ async def get_llm_event_detail(
                 except HTTPException:
                     pass
         if not allowed and ev.conversation_id is not None:
-            conv = (await db.execute(select(Conversation).where(Conversation.id == ev.conversation_id))).scalar_one_or_none()
+            conv = (
+                await db.execute(select(Conversation).where(Conversation.id == ev.conversation_id))
+            ).scalar_one_or_none()
             if conv is not None:
                 try:
                     check_permission(user, conv.acl, Permission.VIEW)
@@ -1124,7 +1225,9 @@ async def delete_agent(agent_id: UUID, db: DbSession):
 
 
 @router.get("/conversations", response_model=list[ConversationResponse])
-async def list_conversations(db: DbSession, conv_status: str | None = None, user: dict = Depends(get_current_user)):
+async def list_conversations(
+    db: DbSession, conv_status: str | None = None, user: dict = Depends(get_current_user)
+):
     svc = ConversationService(db)
     return await svc.list_conversations(status=conv_status, user=user)
 
@@ -1134,7 +1237,9 @@ async def list_conversations(db: DbSession, conv_status: str | None = None, user
     response_model=ConversationResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_conversation(data: ConversationCreate, db: DbSession, user: dict = Depends(get_current_user)):
+async def create_conversation(
+    data: ConversationCreate, db: DbSession, user: dict = Depends(get_current_user)
+):
     svc = ConversationService(db)
     conv = await svc.create_conversation(data, user=user)
     return {
@@ -1160,7 +1265,9 @@ async def get_conversation(conv_id: UUID, db: DbSession, user: dict = Depends(ge
 
 
 @router.put("/conversations/{conv_id}", response_model=ConversationResponse)
-async def update_conversation(conv_id: UUID, data: ConversationUpdate, db: DbSession, user: dict = Depends(get_current_user)):
+async def update_conversation(
+    conv_id: UUID, data: ConversationUpdate, db: DbSession, user: dict = Depends(get_current_user)
+):
     svc = ConversationService(db)
     conv = await svc.get_conversation(conv_id)
     if not conv:
@@ -1184,7 +1291,9 @@ async def delete_conversation(conv_id: UUID, db: DbSession, user: dict = Depends
 
 
 @router.get("/conversations/{conv_id}/messages", response_model=list[MessageResponse])
-async def get_messages(conv_id: UUID, db: DbSession, limit: int = 200, user: dict = Depends(get_current_user)):
+async def get_messages(
+    conv_id: UUID, db: DbSession, limit: int = 200, user: dict = Depends(get_current_user)
+):
     svc = ConversationService(db)
     conv = await svc.get_conversation(conv_id)
     if not conv:
@@ -1194,7 +1303,9 @@ async def get_messages(conv_id: UUID, db: DbSession, limit: int = 200, user: dic
 
 
 @router.post("/conversations/{conv_id}/messages")
-async def send_message(conv_id: UUID, data: MessageCreate, db: DbSession, user: dict = Depends(get_current_user)):
+async def send_message(
+    conv_id: UUID, data: MessageCreate, db: DbSession, user: dict = Depends(get_current_user)
+):
     """Send a user message and stream the orchestrator's response via SSE."""
     svc = ConversationService(db)
     conv = await svc.get_conversation(conv_id)
@@ -1211,9 +1322,13 @@ async def send_message(conv_id: UUID, data: MessageCreate, db: DbSession, user: 
     orch = OrchestratorService(db)
     return StreamingResponse(
         orch.process_message(
-            conv_id, data.content, model_override=data.model,
-            images=data.images, context_mode=data.context_mode,
-            agent_id=agent_id, adhoc_tools=adhoc_tools,
+            conv_id,
+            data.content,
+            model_override=data.model,
+            images=data.images,
+            context_mode=data.context_mode,
+            agent_id=agent_id,
+            adhoc_tools=adhoc_tools,
         ),
         media_type="text/event-stream",
         headers={
@@ -1250,8 +1365,8 @@ async def get_activity(
     specified, just that conversation).
     """
     from sqlalchemy import select
-    from app.models.orchestrator import Conversation, Message, OrchestratorTask
-    from app.services.authorization import filter_query_by_access
+
+    from app.models.orchestrator import Message, OrchestratorTask
 
     is_admin = user.get("role") == "admin"
 
@@ -1336,10 +1451,10 @@ async def list_builtin_tools():
             {"name": "post", "desc": "Post tweets"},
         ],
         "media_post": [
-            {"name": "x",         "desc": "Post to X (Twitter)"},
-            {"name": "linkedin",  "desc": "Post to LinkedIn"},
+            {"name": "x", "desc": "Post to X (Twitter)"},
+            {"name": "linkedin", "desc": "Post to LinkedIn"},
             {"name": "instagram", "desc": "Post to Instagram"},
-            {"name": "facebook",  "desc": "Post to Facebook"},
+            {"name": "facebook", "desc": "Post to Facebook"},
         ],
         "youtube": [
             {"name": "download_audio", "desc": "Download YouTube audio"},
@@ -1374,9 +1489,15 @@ async def list_builtin_tools():
         "web3_portfolio": [
             {"name": "list_addresses", "desc": "List tracked addresses granted to the lab"},
             {"name": "wallet_balances", "desc": "Balances for one tracked wallet"},
-            {"name": "wallet_transactions", "desc": "Transactions and transfers for one tracked wallet"},
+            {
+                "name": "wallet_transactions",
+                "desc": "Transactions and transfers for one tracked wallet",
+            },
             {"name": "portfolio_total", "desc": "Aggregate value across the lab's tracked wallets"},
-            {"name": "portfolio_history", "desc": "Historical snapshots for one or all granted tracked wallets"},
+            {
+                "name": "portfolio_history",
+                "desc": "Historical snapshots for one or all granted tracked wallets",
+            },
         ],
     }
 
@@ -1404,15 +1525,14 @@ async def list_builtin_tools():
 async def list_pipelines(db: DbSession):
     """Return registered media pipelines and whether each has an active provider."""
     from sqlalchemy import select
+
     from app.models.orchestrator import AIProvider
     from app.services.pipelines import get_available_pipelines
 
     pipelines = get_available_pipelines()
 
     # Fetch active provider types to check which pipelines are configured
-    result = await db.execute(
-        select(AIProvider.provider_type).where(AIProvider.is_active == True)
-    )
+    result = await db.execute(select(AIProvider.provider_type).where(AIProvider.is_active == True))
     active_types = {row[0] for row in result.all()}
 
     for p in pipelines:

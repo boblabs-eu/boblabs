@@ -130,7 +130,8 @@ class RiffusionPipeline(MediaPipeline):
         out["alpha"] = _clamp(float(params.get("alpha", DEFAULT_PARAMS["alpha"])), 0.0, 1.0)
         out["num_inference_steps"] = _clamp(
             int(params.get("num_inference_steps", DEFAULT_PARAMS["num_inference_steps"])),
-            20, 80,
+            20,
+            80,
         )
         sid = params.get("seed_image_id", DEFAULT_PARAMS["seed_image_id"])
         out["seed_image_id"] = sid if sid in VALID_SEED_IMAGES else "og_beat"
@@ -148,11 +149,13 @@ class RiffusionPipeline(MediaPipeline):
                 "seed": int(raw.get("seed", DEFAULT_PROMPT_PARAMS["seed"])),
                 "denoising": _clamp(
                     float(raw.get("denoising", DEFAULT_PROMPT_PARAMS["denoising"])),
-                    0.0, 1.0,
+                    0.0,
+                    1.0,
                 ),
                 "guidance": _clamp(
                     float(raw.get("guidance", DEFAULT_PROMPT_PARAMS["guidance"])),
-                    1.0, 20.0,
+                    1.0,
+                    20.0,
                 ),
             }
 
@@ -190,7 +193,9 @@ class RiffusionPipeline(MediaPipeline):
                 "guidance": float(extra.get("guidance", DEFAULT_PROMPT_PARAMS["guidance"])),
             },
             "alpha": float(extra.get("alpha", DEFAULT_PARAMS["alpha"])),
-            "num_inference_steps": int(extra.get("num_inference_steps", DEFAULT_PARAMS["num_inference_steps"])),
+            "num_inference_steps": int(
+                extra.get("num_inference_steps", DEFAULT_PARAMS["num_inference_steps"])
+            ),
             "seed_image_id": extra.get("seed_image_id", DEFAULT_PARAMS["seed_image_id"]),
         }
 
@@ -214,15 +219,16 @@ class RiffusionPipeline(MediaPipeline):
         else:
             lines.append(f'**Start**: "{s.get("prompt")}" → **End**: "{e.get("prompt")}"')
         lines.append(
-            f'**Alpha**: {params.get("alpha")} · '
-            f'**Seed image**: {params.get("seed_image_id")} · '
-            f'**Steps**: {params.get("num_inference_steps")} · '
-            f'**Seeds**: {s.get("seed")}/{e.get("seed")}'
+            f"**Alpha**: {params.get('alpha')} · "
+            f"**Seed image**: {params.get('seed_image_id')} · "
+            f"**Steps**: {params.get('num_inference_steps')} · "
+            f"**Seeds**: {s.get('seed')}/{e.get('seed')}"
         )
         return "\n".join(lines)
 
 
 # ── Utility ──────────────────────────────────────────
+
 
 def _clamp(value, lo, hi):
     return max(lo, min(hi, value))

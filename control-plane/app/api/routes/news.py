@@ -11,7 +11,9 @@ router = APIRouter(prefix="/news", tags=["news"])
 
 @router.get("/")
 async def list_news(
-    category: Optional[str] = Query(None, description="Filter by category: geopolitics, market, global, crypto"),
+    category: Optional[str] = Query(
+        None, description="Filter by category: geopolitics, market, global, crypto"
+    ),
     limit: int = Query(50, ge=1, le=200),
 ):
     """Fetch latest news articles from configured RSS feeds."""

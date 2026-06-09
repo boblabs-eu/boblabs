@@ -11,31 +11,44 @@ from uuid import UUID, uuid4
 
 import httpx
 from bs4 import BeautifulSoup
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    status,
+)
 
 from app.api.dependencies import DbSession, get_current_user
-from app.services.authorization import check_permission, Permission
-from app.services.ssrf_guard import (
-    PrivateHostError,
-    safe_get as _ssrf_safe_get,
-    validate_public_url as _ssrf_validate_public_url,
-)
 from app.schemas.rag import (
     RagAccessCreate,
     RagAccessResponse,
     RagAccessUpdate,
+    RagBatchActionResponse,
     RagCollectionCreate,
     RagCollectionResponse,
     RagCollectionUpdate,
-    RagBatchActionResponse,
     RagDocumentReingestRequest,
     RagDocumentResponse,
     RagSearchRequest,
     RagSearchResponse,
     RagUrlDocumentCreate,
 )
+from app.services.authorization import Permission, check_permission
 from app.services.rag_ingest import sanitize_html_document
 from app.services.rag_service import RAG_STAGING_ROOT, RagService, run_ingestion_task
+from app.services.ssrf_guard import (
+    PrivateHostError,
+)
+from app.services.ssrf_guard import (
+    safe_get as _ssrf_safe_get,
+)
+from app.services.ssrf_guard import (
+    validate_public_url as _ssrf_validate_public_url,
+)
 
 router = APIRouter(tags=["rag"])
 logger = logging.getLogger(__name__)
@@ -66,10 +79,14 @@ async def _fetch_webpage_text_http(url: str) -> tuple[str, str]:
     # body cap.
     async with httpx.AsyncClient(timeout=httpx.Timeout(20.0)) as client:
         try:
-            response = await _ssrf_safe_get(client, url, headers={
-                "User-Agent": "BobManagerRagFetcher/1.0",
-                "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
-            })
+            response = await _ssrf_safe_get(
+                client,
+                url,
+                headers={
+                    "User-Agent": "BobManagerRagFetcher/1.0",
+                    "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
+                },
+            )
         except PrivateHostError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         response.raise_for_status()
@@ -77,13 +94,20 @@ async def _fetch_webpage_text_http(url: str) -> tuple[str, str]:
     content_type = response.headers.get("content-type", "")
     if "html" in content_type:
         parsed = BeautifulSoup(response.text, "html.parser")
-        title = parsed.title.get_text(strip=True) if parsed.title else urlparse(url).hostname or "webpage"
+        title = (
+            parsed.title.get_text(strip=True)
+            if parsed.title
+            else urlparse(url).hostname or "webpage"
+        )
         body = sanitize_html_document(response.text)
     elif "text/" in content_type:
         title = urlparse(url).hostname or "webpage"
         body = response.text.strip()
     else:
-        raise HTTPException(status_code=400, detail=f"Unsupported content type for URL ingestion: {content_type or 'unknown'}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported content type for URL ingestion: {content_type or 'unknown'}",
+        )
 
     rendered = f"Title: {title}\nURL: {url}\n\n{body}".strip()
     return title, rendered
@@ -96,6 +120,7 @@ async def _browser_ssrf_route(route, request) -> None:
     # context.route level catches the redirect destination too.
     try:
         from app.services.ssrf_guard import is_private_host as _is_private_host
+
         host = urlparse(request.url).hostname or ""
     except Exception:
         await route.abort()
@@ -128,7 +153,9 @@ async def _fetch_webpage_text_browser(url: str) -> tuple[str, str]:
                 "DNT": "1",
             },
         )
-        await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        await context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        )
         await context.route("**/*", _browser_ssrf_route)
         page = await context.new_page()
         try:
@@ -157,8 +184,12 @@ async def _fetch_webpage_text(url: str, fetch_mode: str) -> tuple[str, str, str]
         try:
             title, rendered = await _fetch_webpage_text_browser(url)
             return title, rendered, "browser"
-        except Exception as exc:
-            logger.warning("Browser-rendered fetch failed for %s, falling back to HTTP fetch", url, exc_info=True)
+        except Exception:
+            logger.warning(
+                "Browser-rendered fetch failed for %s, falling back to HTTP fetch",
+                url,
+                exc_info=True,
+            )
             title, rendered = await _fetch_webpage_text_http(url)
             return title, rendered, "http"
 
@@ -166,7 +197,11 @@ async def _fetch_webpage_text(url: str, fetch_mode: str) -> tuple[str, str, str]
         title, rendered = await _fetch_webpage_text_browser(url)
         return title, rendered, "browser"
     except Exception:
-        logger.warning("Auto browser-rendered fetch failed for %s, falling back to HTTP fetch", url, exc_info=True)
+        logger.warning(
+            "Auto browser-rendered fetch failed for %s, falling back to HTTP fetch",
+            url,
+            exc_info=True,
+        )
         title, rendered = await _fetch_webpage_text_http(url)
         return title, rendered, "http"
 
@@ -204,14 +239,15 @@ async def list_collections(
     # to surface them for debugging.
     from app.services.rag_service import is_app_owned_tag
 
-    return [
-        c for c in collections
-        if not is_app_owned_tag((c.acl or {}).get("tag"))
-    ]
+    return [c for c in collections if not is_app_owned_tag((c.acl or {}).get("tag"))]
 
 
-@router.post("/rag/collections", response_model=RagCollectionResponse, status_code=status.HTTP_201_CREATED)
-async def create_collection(data: RagCollectionCreate, db: DbSession, user: dict = Depends(get_current_user)):
+@router.post(
+    "/rag/collections", response_model=RagCollectionResponse, status_code=status.HTTP_201_CREATED
+)
+async def create_collection(
+    data: RagCollectionCreate, db: DbSession, user: dict = Depends(get_current_user)
+):
     svc = RagService(db)
     try:
         collection = await svc.create_collection(data, user=user)
@@ -222,7 +258,9 @@ async def create_collection(data: RagCollectionCreate, db: DbSession, user: dict
 
 
 @router.get("/rag/collections/{collection_id}", response_model=RagCollectionResponse)
-async def get_collection(collection_id: UUID, db: DbSession, user: dict = Depends(get_current_user)):
+async def get_collection(
+    collection_id: UUID, db: DbSession, user: dict = Depends(get_current_user)
+):
     collection = await RagService(db).get_collection(collection_id)
     if not collection:
         raise HTTPException(status_code=404, detail="Collection not found")
@@ -231,7 +269,12 @@ async def get_collection(collection_id: UUID, db: DbSession, user: dict = Depend
 
 
 @router.patch("/rag/collections/{collection_id}", response_model=RagCollectionResponse)
-async def update_collection(collection_id: UUID, data: RagCollectionUpdate, db: DbSession, user: dict = Depends(get_current_user)):
+async def update_collection(
+    collection_id: UUID,
+    data: RagCollectionUpdate,
+    db: DbSession,
+    user: dict = Depends(get_current_user),
+):
     svc = RagService(db)
     collection = await svc.get_collection(collection_id)
     if not collection:
@@ -245,7 +288,9 @@ async def update_collection(collection_id: UUID, data: RagCollectionUpdate, db: 
 
 
 @router.delete("/rag/collections/{collection_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_collection(collection_id: UUID, db: DbSession, user: dict = Depends(get_current_user)):
+async def delete_collection(
+    collection_id: UUID, db: DbSession, user: dict = Depends(get_current_user)
+):
     svc = RagService(db)
     collection = await svc.get_collection(collection_id)
     if not collection:
@@ -256,8 +301,9 @@ async def delete_collection(collection_id: UUID, db: DbSession, user: dict = Dep
 
 
 @router.get("/rag/collections/{collection_id}/documents", response_model=list[RagDocumentResponse])
-async def list_documents(collection_id: UUID, db: DbSession,
-                          user: dict = Depends(get_current_user)):
+async def list_documents(
+    collection_id: UUID, db: DbSession, user: dict = Depends(get_current_user)
+):
     svc = RagService(db)
     collection = await svc.get_collection(collection_id)
     if not collection:
@@ -266,7 +312,11 @@ async def list_documents(collection_id: UUID, db: DbSession,
     return [_document_to_response(doc) for doc in documents]
 
 
-@router.post("/rag/collections/{collection_id}/documents", response_model=RagDocumentResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/rag/collections/{collection_id}/documents",
+    response_model=RagDocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def upload_document(
     collection_id: UUID,
     background_tasks: BackgroundTasks,
@@ -321,7 +371,11 @@ async def upload_document(
     return _document_to_response(document)
 
 
-@router.post("/rag/collections/{collection_id}/documents/from-url", response_model=RagDocumentResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/rag/collections/{collection_id}/documents/from-url",
+    response_model=RagDocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def upload_document_from_url(
     collection_id: UUID,
     data: RagUrlDocumentCreate,
@@ -336,7 +390,9 @@ async def upload_document_from_url(
 
     url = _validate_public_url(data.url.strip())
     chunk_size = data.chunk_size or collection.default_chunk_size
-    chunk_overlap = data.chunk_overlap if data.chunk_overlap is not None else collection.default_chunk_overlap
+    chunk_overlap = (
+        data.chunk_overlap if data.chunk_overlap is not None else collection.default_chunk_overlap
+    )
     splitter = data.splitter or collection.default_splitter
     if chunk_overlap > chunk_size:
         raise HTTPException(status_code=400, detail="chunk_overlap cannot exceed chunk_size")
@@ -378,15 +434,22 @@ async def upload_document_from_url(
     return _document_to_response(document)
 
 
-@router.delete("/rag/collections/{collection_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_document(collection_id: UUID, document_id: UUID, db: DbSession,
-                           user: dict = Depends(get_current_user)):
+@router.delete(
+    "/rag/collections/{collection_id}/documents/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_document(
+    collection_id: UUID, document_id: UUID, db: DbSession, user: dict = Depends(get_current_user)
+):
     deleted = await RagService(db).delete_document(collection_id, document_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Document not found")
 
 
-@router.post("/rag/collections/{collection_id}/documents/{document_id}/reingest", response_model=RagDocumentResponse)
+@router.post(
+    "/rag/collections/{collection_id}/documents/{document_id}/reingest",
+    response_model=RagDocumentResponse,
+)
 async def reingest_document(
     collection_id: UUID,
     document_id: UUID,
@@ -411,8 +474,14 @@ async def reingest_document(
         raise HTTPException(status_code=404, detail="No staged source file found for reingest")
 
     request = data or RagDocumentReingestRequest()
-    chunk_size = request.chunk_size if request.chunk_size is not None else collection.default_chunk_size
-    chunk_overlap = request.chunk_overlap if request.chunk_overlap is not None else collection.default_chunk_overlap
+    chunk_size = (
+        request.chunk_size if request.chunk_size is not None else collection.default_chunk_size
+    )
+    chunk_overlap = (
+        request.chunk_overlap
+        if request.chunk_overlap is not None
+        else collection.default_chunk_overlap
+    )
     splitter = request.splitter or collection.default_splitter
 
     if chunk_overlap > chunk_size:
@@ -432,7 +501,9 @@ async def reingest_document(
     return _document_to_response(target)
 
 
-@router.post("/rag/collections/{collection_id}/documents/reingest-all", response_model=RagBatchActionResponse)
+@router.post(
+    "/rag/collections/{collection_id}/documents/reingest-all", response_model=RagBatchActionResponse
+)
 async def reingest_all_documents(
     collection_id: UUID,
     background_tasks: BackgroundTasks,
@@ -446,8 +517,14 @@ async def reingest_all_documents(
         raise HTTPException(status_code=404, detail="Collection not found")
 
     request = data or RagDocumentReingestRequest()
-    chunk_size = request.chunk_size if request.chunk_size is not None else collection.default_chunk_size
-    chunk_overlap = request.chunk_overlap if request.chunk_overlap is not None else collection.default_chunk_overlap
+    chunk_size = (
+        request.chunk_size if request.chunk_size is not None else collection.default_chunk_size
+    )
+    chunk_overlap = (
+        request.chunk_overlap
+        if request.chunk_overlap is not None
+        else collection.default_chunk_overlap
+    )
     splitter = request.splitter or collection.default_splitter
     if chunk_overlap > chunk_size:
         raise HTTPException(status_code=400, detail="chunk_overlap cannot exceed chunk_size")
@@ -475,14 +552,18 @@ async def reingest_all_documents(
 
 
 @router.get("/labs/{lab_id}/rag-access", response_model=list[RagAccessResponse])
-async def list_lab_rag_access(lab_id: UUID, db: DbSession,
-                                user: dict = Depends(get_current_user)):
+async def list_lab_rag_access(lab_id: UUID, db: DbSession, user: dict = Depends(get_current_user)):
     return await RagService(db).list_lab_access(lab_id)
 
 
-@router.post("/labs/{lab_id}/rag-access", response_model=RagAccessResponse, status_code=status.HTTP_201_CREATED)
-async def grant_lab_rag_access(lab_id: UUID, data: RagAccessCreate, db: DbSession,
-                                user: dict = Depends(get_current_user)):
+@router.post(
+    "/labs/{lab_id}/rag-access",
+    response_model=RagAccessResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def grant_lab_rag_access(
+    lab_id: UUID, data: RagAccessCreate, db: DbSession, user: dict = Depends(get_current_user)
+):
     try:
         return await RagService(db).grant_lab_access(
             lab_id=lab_id,
@@ -517,16 +598,16 @@ async def update_lab_rag_access(
 
 
 @router.delete("/labs/{lab_id}/rag-access/{collection_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def revoke_lab_rag_access(lab_id: UUID, collection_id: UUID, db: DbSession,
-                                  user: dict = Depends(get_current_user)):
+async def revoke_lab_rag_access(
+    lab_id: UUID, collection_id: UUID, db: DbSession, user: dict = Depends(get_current_user)
+):
     deleted = await RagService(db).revoke_lab_access(lab_id, collection_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Access entry not found")
 
 
 @router.post("/rag/search", response_model=RagSearchResponse)
-async def search_rag(data: RagSearchRequest, db: DbSession,
-                       user: dict = Depends(get_current_user)):
+async def search_rag(data: RagSearchRequest, db: DbSession, user: dict = Depends(get_current_user)):
     try:
         results = await RagService(db).search(
             collection_name=data.collection,

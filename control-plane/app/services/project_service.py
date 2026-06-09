@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
@@ -14,9 +14,21 @@ from app.services.authorization import get_default_acl
 
 # Default palette for auto-assigning colors to new themes
 _DEFAULT_PALETTE = [
-    "#a855f7", "#3b82f6", "#ef4444", "#22c55e", "#f59e0b",
-    "#ec4899", "#06b6d4", "#f97316", "#8b5cf6", "#14b8a6",
-    "#e11d48", "#84cc16", "#6366f1", "#0ea5e9", "#d946ef",
+    "#a855f7",
+    "#3b82f6",
+    "#ef4444",
+    "#22c55e",
+    "#f59e0b",
+    "#ec4899",
+    "#06b6d4",
+    "#f97316",
+    "#8b5cf6",
+    "#14b8a6",
+    "#e11d48",
+    "#84cc16",
+    "#6366f1",
+    "#0ea5e9",
+    "#d946ef",
 ]
 
 
@@ -100,17 +112,13 @@ class ProjectService:
 
     async def get_theme_color(self, theme_name: str) -> str | None:
         """Return the color for a specific theme."""
-        result = await self.db.execute(
-            select(ThemeColor).where(ThemeColor.name == theme_name)
-        )
+        result = await self.db.execute(select(ThemeColor).where(ThemeColor.name == theme_name))
         tc = result.scalar_one_or_none()
         return tc.color if tc else None
 
     async def set_theme_color(self, theme_name: str, color: str) -> dict:
         """Set/update the color for a theme."""
-        result = await self.db.execute(
-            select(ThemeColor).where(ThemeColor.name == theme_name)
-        )
+        result = await self.db.execute(select(ThemeColor).where(ThemeColor.name == theme_name))
         tc = result.scalar_one_or_none()
         if tc:
             tc.color = color
@@ -153,9 +161,7 @@ class ProjectService:
                 count += 1
         await self.db.flush()
         # Rename the color mapping too
-        color_result = await self.db.execute(
-            select(ThemeColor).where(ThemeColor.name == old_name)
-        )
+        color_result = await self.db.execute(select(ThemeColor).where(ThemeColor.name == old_name))
         old_tc = color_result.scalar_one_or_none()
         if old_tc:
             old_color = old_tc.color

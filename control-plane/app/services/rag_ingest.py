@@ -10,7 +10,6 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
-
 TEXT_EXTENSIONS = {
     ".txt",
     ".md",
@@ -110,7 +109,7 @@ def sanitize_html_document(html: str) -> str:
         tag.decompose()
 
     text = soup.get_text("\n", strip=True)
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
 

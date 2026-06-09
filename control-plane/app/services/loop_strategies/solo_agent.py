@@ -22,9 +22,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.services.loop_strategies.base import (
-    LoopStrategy,
     LoopAction,
     LoopContext,
+    LoopStrategy,
     PauseAction,
     PlanAction,
     SynthesizeAction,
@@ -61,9 +61,7 @@ class SoloAgentStrategy(LoopStrategy):
             seed = self._collect_seed(context)
             if not seed:
                 return PauseAction(reason="solo_agent: no initial user message")
-            return PlanAction(
-                tasks=[TaskItem(agent_name=self._target_name, instruction=seed)]
-            )
+            return PlanAction(tasks=[TaskItem(agent_name=self._target_name, instruction=seed)])
 
         # Subsequent iterations: dispatch any new mid-run injection
         if self._injections:
@@ -81,9 +79,7 @@ class SoloAgentStrategy(LoopStrategy):
 
         return PauseAction(reason="solo_agent: no agent result yet")
 
-    async def on_results(
-        self, context: LoopContext, results: list[TaskResult]
-    ) -> None:
+    async def on_results(self, context: LoopContext, results: list[TaskResult]) -> None:
         if not results:
             return
         r = results[0]

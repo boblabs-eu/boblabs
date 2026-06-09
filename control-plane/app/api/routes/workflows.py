@@ -10,10 +10,10 @@ from app.engine.scheduler import WorkflowScheduler
 from app.repositories.execution_repo import ExecutionRepository
 from app.schemas.workflow import (
     WorkflowCreate,
-    WorkflowUpdate,
-    WorkflowResponse,
     WorkflowExecuteRequest,
     WorkflowExecutionResponse,
+    WorkflowResponse,
+    WorkflowUpdate,
 )
 from app.services.authorization import Permission, check_permission, require_infra_access
 from app.services.workflow_service import WorkflowService
@@ -22,7 +22,9 @@ from app.services.workflow_service import WorkflowService
 # surface) AND add a per-workflow ACL check on every handler that touches
 # a specific row. infra_access continues to gate WHO can see workflows
 # at all; the ACL gates WHICH workflows each infra user can act on.
-router = APIRouter(prefix="/workflows", tags=["workflows"], dependencies=[Depends(require_infra_access)])
+router = APIRouter(
+    prefix="/workflows", tags=["workflows"], dependencies=[Depends(require_infra_access)]
+)
 
 
 @router.get("", response_model=list[WorkflowResponse])
@@ -47,8 +49,7 @@ async def list_workflows(db: DbSession, user: dict = Depends(get_current_user)):
 
 
 @router.get("/{workflow_id}", response_model=WorkflowResponse)
-async def get_workflow(workflow_id: UUID, db: DbSession,
-                        user: dict = Depends(get_current_user)):
+async def get_workflow(workflow_id: UUID, db: DbSession, user: dict = Depends(get_current_user)):
     """Return a single workflow."""
     svc = WorkflowService(db)
     workflow = await svc.get_workflow(workflow_id)
@@ -59,16 +60,18 @@ async def get_workflow(workflow_id: UUID, db: DbSession,
 
 
 @router.post("", response_model=WorkflowResponse, status_code=status.HTTP_201_CREATED)
-async def create_workflow(data: WorkflowCreate, db: DbSession,
-                            user: dict = Depends(get_current_user)):
+async def create_workflow(
+    data: WorkflowCreate, db: DbSession, user: dict = Depends(get_current_user)
+):
     """Create a new workflow with steps. Caller becomes the owner."""
     svc = WorkflowService(db)
     return await svc.create_workflow(data, owner=user.get("sub", "admin"))
 
 
 @router.put("/{workflow_id}", response_model=WorkflowResponse)
-async def update_workflow(workflow_id: UUID, data: WorkflowUpdate, db: DbSession,
-                            user: dict = Depends(get_current_user)):
+async def update_workflow(
+    workflow_id: UUID, data: WorkflowUpdate, db: DbSession, user: dict = Depends(get_current_user)
+):
     """Update a workflow. Requires EDIT permission."""
     svc = WorkflowService(db)
     existing = await svc.get_workflow(workflow_id)
@@ -82,8 +85,7 @@ async def update_workflow(workflow_id: UUID, data: WorkflowUpdate, db: DbSession
 
 
 @router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_workflow(workflow_id: UUID, db: DbSession,
-                            user: dict = Depends(get_current_user)):
+async def delete_workflow(workflow_id: UUID, db: DbSession, user: dict = Depends(get_current_user)):
     """Delete a workflow. Requires DELETE permission (owner-or-admin)."""
     svc = WorkflowService(db)
     existing = await svc.get_workflow(workflow_id)
@@ -95,8 +97,12 @@ async def delete_workflow(workflow_id: UUID, db: DbSession,
 
 
 @router.post("/{workflow_id}/execute", response_model=list[dict])
-async def execute_workflow(workflow_id: UUID, data: WorkflowExecuteRequest, db: DbSession,
-                             user: dict = Depends(get_current_user)):
+async def execute_workflow(
+    workflow_id: UUID,
+    data: WorkflowExecuteRequest,
+    db: DbSession,
+    user: dict = Depends(get_current_user),
+):
     """Execute a workflow on one or more servers in parallel. Requires
     EDIT permission on the workflow (execute is treated as a write)."""
     svc = WorkflowService(db)
@@ -111,8 +117,7 @@ async def execute_workflow(workflow_id: UUID, data: WorkflowExecuteRequest, db: 
 
 
 @router.get("/{workflow_id}/executions", response_model=list[WorkflowExecutionResponse])
-async def get_executions(workflow_id: UUID, db: DbSession,
-                           user: dict = Depends(get_current_user)):
+async def get_executions(workflow_id: UUID, db: DbSession, user: dict = Depends(get_current_user)):
     """Return execution history for a workflow."""
     svc = WorkflowService(db)
     workflow = await svc.get_workflow(workflow_id)

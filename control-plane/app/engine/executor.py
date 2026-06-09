@@ -8,8 +8,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.execution import WorkflowExecution, ExecutionLog
-from app.models.workflow import Workflow
+from app.models.execution import ExecutionLog, WorkflowExecution
 from app.repositories.execution_repo import ExecutionRepository
 from app.repositories.workflow_repo import WorkflowRepository
 from app.websocket.hub import manager
@@ -47,14 +46,16 @@ class WorkflowExecutor:
         await self.db.commit()
 
         # Broadcast start
-        await manager.broadcast_to_clients({
-            "type": "workflow.execution.start",
-            "payload": {
-                "execution_id": str(execution.id),
-                "workflow": workflow.name,
-                "server": server_name,
-            },
-        })
+        await manager.broadcast_to_clients(
+            {
+                "type": "workflow.execution.start",
+                "payload": {
+                    "execution_id": str(execution.id),
+                    "workflow": workflow.name,
+                    "server": server_name,
+                },
+            }
+        )
 
         final_status = "success"
 
@@ -70,15 +71,17 @@ class WorkflowExecutor:
             await self.db.commit()
 
             # Broadcast step start
-            await manager.broadcast_to_clients({
-                "type": "workflow.step.start",
-                "payload": {
-                    "execution_id": str(execution.id),
-                    "step": step.name,
-                    "step_order": step.step_order,
-                    "server": server_name,
-                },
-            })
+            await manager.broadcast_to_clients(
+                {
+                    "type": "workflow.step.start",
+                    "payload": {
+                        "execution_id": str(execution.id),
+                        "step": step.name,
+                        "step_order": step.step_order,
+                        "server": server_name,
+                    },
+                }
+            )
 
             # Send command to agent
             # R01 + R04 — track the pending future against the target
@@ -88,15 +91,18 @@ class WorkflowExecutor:
             command_id = str(uuid.uuid4())
             future = manager.create_pending(command_id, agent_name=server_name)
 
-            sent = await manager.send_to_agent(server_name, {
-                "type": "workflow.step.execute",
-                "id": command_id,
-                "payload": {
-                    "command": step.command,
-                    "step_name": step.name,
-                    "execution_id": str(execution.id),
+            sent = await manager.send_to_agent(
+                server_name,
+                {
+                    "type": "workflow.step.execute",
+                    "id": command_id,
+                    "payload": {
+                        "command": step.command,
+                        "step_name": step.name,
+                        "execution_id": str(execution.id),
+                    },
                 },
-            })
+            )
 
             if not sent:
                 manager.cancel_pending(command_id, reason="send_failed")
@@ -131,17 +137,19 @@ class WorkflowExecutor:
             await self.db.commit()
 
             # Broadcast step result
-            await manager.broadcast_to_clients({
-                "type": "workflow.step.complete",
-                "payload": {
-                    "execution_id": str(execution.id),
-                    "step": step.name,
-                    "step_order": step.step_order,
-                    "server": server_name,
-                    "status": step_status,
-                    "exit_code": result.get("exit_code"),
-                },
-            })
+            await manager.broadcast_to_clients(
+                {
+                    "type": "workflow.step.complete",
+                    "payload": {
+                        "execution_id": str(execution.id),
+                        "step": step.name,
+                        "step_order": step.step_order,
+                        "server": server_name,
+                        "status": step_status,
+                        "exit_code": result.get("exit_code"),
+                    },
+                }
+            )
 
             if step_status == "failed" and not step.continue_on_error:
                 final_status = "failed"
@@ -155,14 +163,16 @@ class WorkflowExecutor:
         )
         await self.db.commit()
 
-        await manager.broadcast_to_clients({
-            "type": "workflow.execution.complete",
-            "payload": {
-                "execution_id": str(execution.id),
-                "workflow": workflow.name,
-                "server": server_name,
-                "status": final_status,
-            },
-        })
+        await manager.broadcast_to_clients(
+            {
+                "type": "workflow.execution.complete",
+                "payload": {
+                    "execution_id": str(execution.id),
+                    "workflow": workflow.name,
+                    "server": server_name,
+                    "status": final_status,
+                },
+            }
+        )
 
         return execution

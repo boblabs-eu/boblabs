@@ -120,7 +120,9 @@ class DebateStrategy(LoopStrategy):
 
         messages = [{"role": "system", "content": system}]
         messages += build_messages_from_history(
-            context, self._last_results, self._injections,
+            context,
+            self._last_results,
+            self._injections,
             prompt_suffix="Review the arguments. What's the next phase of the debate?",
             first_iter_prompt="Begin the debate. Open with proposals from all agents.",
         )

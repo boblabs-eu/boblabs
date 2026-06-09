@@ -5,10 +5,13 @@ REQUIRED ENV: (none)
 PRECONDITIONS:
     Settings → Tool Configs → TrustlessOTC filled in (api_base_url + api_key).
 """
+
 from __future__ import annotations
+
 import sys
+
 sys.path.insert(0, "/tmp/tools-deep")
-from _harness import make_executor, run_tool, passed, fail_or_skip, run  # noqa: E402
+from _harness import fail_or_skip, make_executor, passed, run, run_tool  # noqa: E402
 
 TOOL = "trustless_otc"
 

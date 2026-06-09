@@ -39,7 +39,9 @@ async def _log_llm_event(db: AsyncSession, **kwargs) -> None:
     transaction.  Sets created_at explicitly for distinct timestamps.
     """
     from datetime import datetime, timezone
+
     from app.database import async_session
+
     try:
         kwargs.setdefault("created_at", datetime.now(timezone.utc))
         async with async_session() as log_db:
@@ -61,7 +63,12 @@ def _strip_images(messages: list[dict]) -> list[dict]:
                 if isinstance(part, dict) and part.get("type") == "image_url":
                     url = (part.get("image_url") or {}).get("url", "")
                     if url.startswith("data:"):
-                        parts.append({"type": "image_url", "image_url": {"url": f"[base64 image ~{len(url)//1024}KB]"}})
+                        parts.append(
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"[base64 image ~{len(url) // 1024}KB]"},
+                            }
+                        )
                     else:
                         parts.append(part)
                 else:
@@ -70,6 +77,7 @@ def _strip_images(messages: list[dict]) -> list[dict]:
         else:
             stripped.append(msg)
     return stripped
+
 
 # Max concurrent LLM requests per provider (Ollama processes one at a time)
 _DEFAULT_CONCURRENCY = 1
@@ -153,6 +161,7 @@ class LabDispatcher:
             make_transient(prov)
 
             from app.services.pipelines import is_media_pipeline
+
             if is_media_pipeline(prov.provider_type):
                 raise RuntimeError(
                     f"Provider '{prov.name}' is a media pipeline ({prov.provider_type}), not an LLM. "
@@ -243,9 +252,7 @@ class LabDispatcher:
         servers.  Filtering here would fail when the lab's saved model_id
         points to a server that went offline, even though others host it.
         """
-        result = await self.db.execute(
-            select(AIModel).where(AIModel.id == model_id)
-        )
+        result = await self.db.execute(select(AIModel).where(AIModel.id == model_id))
         model_row = result.scalars().first()
         if model_row is None:
             raise RuntimeError(f"AI model {model_id} not found.")
@@ -272,6 +279,7 @@ class LabDispatcher:
         """
         # Block media pipelines (e.g. riffusion) — they are not LLMs
         from app.services.pipelines import is_media_pipeline
+
         result = await self.db.execute(
             select(AIModel).where(
                 AIModel.model_identifier == model_identifier,
@@ -311,14 +319,17 @@ class LabDispatcher:
         last_error = None
         tried: set[UUID] = set()
 
-        for idx, (model_row, slot) in enumerate(candidates, 1):
+        for idx, (_model_row, slot) in enumerate(candidates, 1):
             if slot.provider.id in tried:
                 continue
             tried.add(slot.provider.id)
 
             logger.info(
                 "%s: queuing on provider '%s' (queue_depth=%d) for model '%s'",
-                caller_name, slot.provider.name, slot.queue_depth, model_identifier,
+                caller_name,
+                slot.provider.name,
+                slot.queue_depth,
+                model_identifier,
             )
 
             # Resolve server name for logging (provider name may be model name for HuggingFace)
@@ -363,8 +374,12 @@ class LabDispatcher:
 
                 logger.info(
                     "%s: model=%s provider=%s tokens_in=%s tokens_out=%s duration=%dms",
-                    caller_name, model_identifier, slot.provider.name,
-                    result.get("tokens_in"), result.get("tokens_out"), duration_ms,
+                    caller_name,
+                    model_identifier,
+                    slot.provider.name,
+                    result.get("tokens_in"),
+                    result.get("tokens_out"),
+                    duration_ms,
                 )
 
                 # Log response event
@@ -399,7 +414,10 @@ class LabDispatcher:
             except Exception as e:
                 logger.warning(
                     "%s: provider '%s' failed for model '%s': %s — trying next",
-                    caller_name, slot.provider.name, model_identifier, e,
+                    caller_name,
+                    slot.provider.name,
+                    model_identifier,
+                    e,
                 )
                 last_error = e
 
@@ -444,7 +462,7 @@ class LabDispatcher:
         if lab.orchestrator_model_id is None:
             # Fall back to system-wide default model
             from app.repositories.orchestrator_repo import OrchestratorSettingsRepository
-            from app.models.orchestrator import OrchestratorSettings
+
             settings_repo = OrchestratorSettingsRepository(self.db)
             settings = await settings_repo.get()
             if not settings or not settings.orchestrator_model:

@@ -35,9 +35,7 @@ class AccessTokenRepository:
         return list(result.scalars().all())
 
     async def get_by_id(self, token_id: UUID) -> AccessToken | None:
-        result = await self.db.execute(
-            select(AccessToken).where(AccessToken.id == token_id)
-        )
+        result = await self.db.execute(select(AccessToken).where(AccessToken.id == token_id))
         return result.scalar_one_or_none()
 
     async def get_by_token(self, token: str) -> AccessToken | None:
@@ -45,17 +43,13 @@ class AccessTokenRepository:
         to the plaintext path during the dual-read deprecation window so
         tokens issued before migration 0006 keep working."""
         digest = _hash_token(token)
-        result = await self.db.execute(
-            select(AccessToken).where(AccessToken.token_hash == digest)
-        )
+        result = await self.db.execute(select(AccessToken).where(AccessToken.token_hash == digest))
         record = result.scalar_one_or_none()
         if record is not None:
             return record
         # Dual-read fallback. Will be removed once the deprecation window
         # closes and we drop the plaintext column.
-        result = await self.db.execute(
-            select(AccessToken).where(AccessToken.token == token)
-        )
+        result = await self.db.execute(select(AccessToken).where(AccessToken.token == token))
         return result.scalar_one_or_none()
 
     async def create(self, label: str, email: str, expires_at: datetime) -> AccessToken:
@@ -76,9 +70,7 @@ class AccessTokenRepository:
         token = await self.get_by_id(token_id)
         if token:
             await self.db.execute(
-                update(AccessToken)
-                .where(AccessToken.id == token_id)
-                .values(revoked=True)
+                update(AccessToken).where(AccessToken.id == token_id).values(revoked=True)
             )
             await self.db.flush()
             return True
@@ -127,12 +119,12 @@ class TrialRequestRepository:
         return list(result.scalars().all())
 
     async def get_by_id(self, request_id: UUID) -> TrialRequest | None:
-        result = await self.db.execute(
-            select(TrialRequest).where(TrialRequest.id == request_id)
-        )
+        result = await self.db.execute(select(TrialRequest).where(TrialRequest.id == request_id))
         return result.scalar_one_or_none()
 
-    async def create(self, name: str, email: str, enterprise: str, role: str, purpose: str) -> TrialRequest:
+    async def create(
+        self, name: str, email: str, enterprise: str, role: str, purpose: str
+    ) -> TrialRequest:
         trial_request = TrialRequest(
             name=name,
             email=email,
@@ -147,9 +139,7 @@ class TrialRequestRepository:
 
     async def update_status(self, request_id: UUID, status: str) -> TrialRequest | None:
         await self.db.execute(
-            update(TrialRequest)
-            .where(TrialRequest.id == request_id)
-            .values(status=status)
+            update(TrialRequest).where(TrialRequest.id == request_id).values(status=status)
         )
         await self.db.flush()
         return await self.get_by_id(request_id)
@@ -172,13 +162,17 @@ class QuoteRequestRepository:
         return list(result.scalars().all())
 
     async def get_by_id(self, request_id: UUID) -> QuoteRequest | None:
-        result = await self.db.execute(
-            select(QuoteRequest).where(QuoteRequest.id == request_id)
-        )
+        result = await self.db.execute(select(QuoteRequest).where(QuoteRequest.id == request_id))
         return result.scalar_one_or_none()
 
     async def create(
-        self, name: str, email: str, company: str, phone: str, plan: str, description: str,
+        self,
+        name: str,
+        email: str,
+        company: str,
+        phone: str,
+        plan: str,
+        description: str,
     ) -> QuoteRequest:
         quote_request = QuoteRequest(
             name=name,
@@ -195,9 +189,7 @@ class QuoteRequestRepository:
 
     async def update_status(self, request_id: UUID, status: str) -> QuoteRequest | None:
         await self.db.execute(
-            update(QuoteRequest)
-            .where(QuoteRequest.id == request_id)
-            .values(status=status)
+            update(QuoteRequest).where(QuoteRequest.id == request_id).values(status=status)
         )
         await self.db.flush()
         return await self.get_by_id(request_id)

@@ -167,3 +167,17 @@ In **Models → Feed**, every running model on every host shows up with current 
 - [Labs](?doc=LABS) — build your first multi-agent workspace
 - [Dispatcher & Model Routing](?doc=DISPATCHER_AND_MODEL_ROUTING) — how requests reach GPUs
 - [Production Install](?doc=INSTALL_PROD) — TLS, reverse proxy, backups, hardening
+
+---
+
+## Fresh-install verification
+
+We rerun the "clone → first lab agent" flow on a clean VM at every minor
+release and record the timing here. If your install is taking
+substantially longer than these baselines, please [open an issue](https://github.com/boblabs-eu/boblabs/issues/new/choose)
+with your host specs — we want the two-command install claim to stay
+honest.
+
+| Date | Release | Host | Clone → `/health` 200 | → first lab agent | Notes |
+|---|---|---|---|---|---|
+| _pending_ | 0.11.0 | Ubuntu 22.04, 4 vCPU / 16 GB | _TBD_ | _TBD_ | — |

@@ -2,11 +2,11 @@
 
 from uuid import UUID
 
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.resource import Resource, ResourceProject
-from app.services.authorization import filter_query_by_access, get_default_acl
+from app.services.authorization import filter_query_by_access
 
 
 class ResourceRepository:
@@ -37,9 +37,7 @@ class ResourceRepository:
 
     async def update(self, resource_id: UUID, **kwargs) -> Resource | None:
         """Update a resource's fields."""
-        await self.db.execute(
-            update(Resource).where(Resource.id == resource_id).values(**kwargs)
-        )
+        await self.db.execute(update(Resource).where(Resource.id == resource_id).values(**kwargs))
         await self.db.flush()
         return await self.get_by_id(resource_id)
 
@@ -56,18 +54,14 @@ class ResourceRepository:
     async def get_linked_project_ids(self, resource_id: UUID) -> list[UUID]:
         """Return project IDs linked to a resource."""
         result = await self.db.execute(
-            select(ResourceProject.project_id).where(
-                ResourceProject.resource_id == resource_id
-            )
+            select(ResourceProject.project_id).where(ResourceProject.resource_id == resource_id)
         )
         return [row[0] for row in result.all()]
 
     async def get_resource_ids_for_project(self, project_id: UUID) -> list[UUID]:
         """Return resource IDs linked to a project."""
         result = await self.db.execute(
-            select(ResourceProject.resource_id).where(
-                ResourceProject.project_id == project_id
-            )
+            select(ResourceProject.resource_id).where(ResourceProject.project_id == project_id)
         )
         return [row[0] for row in result.all()]
 

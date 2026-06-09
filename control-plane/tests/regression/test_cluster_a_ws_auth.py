@@ -16,7 +16,6 @@ tested without a full WS handshake.
 from __future__ import annotations
 
 import pytest
-
 from app.websocket.client_handler import _decode_token, _extract_token
 
 pytestmark = pytest.mark.regression
@@ -74,7 +73,9 @@ def test_decode_token_invalid_returns_none():
 def test_decode_token_wrong_secret_returns_none():
     """A token signed with a different secret must be rejected."""
     from datetime import timedelta
+
     from jose import jwt
+
     bad = jwt.encode({"sub": "x", "role": "admin"}, "other-secret", algorithm="HS256")
     assert _decode_token(bad) is None
 
@@ -90,10 +91,10 @@ async def test_ws_client_anonymous_rejected(anonymous_client):
     the close code as cleanly as the websockets library. We use the
     ASGI protocol directly via a tiny harness.
     """
-    from httpx import ASGITransport
     from app.main import app as fastapi_app
+    from httpx import ASGITransport
 
-    transport = ASGITransport(app=fastapi_app)
+    ASGITransport(app=fastapi_app)
 
     # Build a minimal ASGI WS connect scope.
     scope = {

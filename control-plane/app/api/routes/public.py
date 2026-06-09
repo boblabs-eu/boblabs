@@ -30,6 +30,7 @@ router = APIRouter(prefix="/public", tags=["public"])
 
 # ── Schemas ──────────────────────────────────────
 
+
 class TrialRequestIn(BaseModel):
     name: str
     email: str
@@ -67,6 +68,7 @@ class TokenValidateOut(BaseModel):
 
 
 # ── Endpoints ────────────────────────────────────
+
 
 @router.post("/trial-request", response_model=TrialRequestOut)
 async def submit_trial_request(payload: TrialRequestIn, db: DbSession):
@@ -120,6 +122,7 @@ async def validate_access_token(payload: TokenValidateIn, db: DbSession):
 
 # ── Quote Requests ───────────────────────────────
 
+
 @router.post("/quote-request", response_model=QuoteRequestOut)
 async def submit_quote_request(payload: QuoteRequestIn, db: DbSession):
     """Submit a request for a quote."""
@@ -154,6 +157,7 @@ async def submit_quote_request(payload: QuoteRequestIn, db: DbSession):
 
 
 # ── Admin login ──────────────────────────────────
+
 
 class AdminLoginIn(BaseModel):
     password: str
@@ -329,10 +333,12 @@ async def create_blog_post(payload: BlogPostCreateIn, response: Response, db: Db
 
 # ── Live Demo (public, sanitized) ────────────────
 
+
 @router.get("/live/labs", response_model=list)
 async def live_labs(db: DbSession):
     """List all labs with agent counts for the public live page."""
-    from sqlalchemy import select, func
+    from sqlalchemy import func, select
+
     from app.models.orchestrator import Lab, LabAgent
 
     sub = (
@@ -371,7 +377,8 @@ async def live_labs(db: DbSession):
 async def live_lab_detail(lab_id: UUID, db: DbSession):
     """Get a single lab with its agents for the public live page."""
     from sqlalchemy import select
-    from app.models.orchestrator import Lab, LabAgent, AIModel
+
+    from app.models.orchestrator import AIModel, Lab, LabAgent
 
     lab = (await db.execute(select(Lab).where(Lab.id == lab_id))).scalars().first()
     if not lab or not lab.is_public:
@@ -390,20 +397,26 @@ async def live_lab_detail(lab_id: UUID, db: DbSession):
     # Get orchestrator model name
     orch_model_name = None
     if lab.orchestrator_model_id:
-        m = (await db.execute(select(AIModel.name).where(AIModel.id == lab.orchestrator_model_id))).scalars().first()
+        m = (
+            (await db.execute(select(AIModel.name).where(AIModel.id == lab.orchestrator_model_id)))
+            .scalars()
+            .first()
+        )
         orch_model_name = m
 
     agents = []
     for agent, model_name in rows:
-        agents.append({
-            "id": str(agent.id),
-            "name": agent.name,
-            "model_id": str(agent.model_id) if agent.model_id else None,
-            "model_name": model_name,
-            "temperature": agent.temperature or 0.7,
-            "tools_count": len(agent.tools or []),
-            "is_active": agent.is_active,
-        })
+        agents.append(
+            {
+                "id": str(agent.id),
+                "name": agent.name,
+                "model_id": str(agent.model_id) if agent.model_id else None,
+                "model_name": model_name,
+                "temperature": agent.temperature or 0.7,
+                "tools_count": len(agent.tools or []),
+                "is_active": agent.is_active,
+            }
+        )
 
     return {
         "id": str(lab.id),
@@ -416,7 +429,9 @@ async def live_lab_detail(lab_id: UUID, db: DbSession):
         "agent_count": len(agents),
         "updated_at": lab.updated_at.isoformat() if lab.updated_at else None,
         "agents": agents,
-        "orchestrator_model_id": str(lab.orchestrator_model_id) if lab.orchestrator_model_id else None,
+        "orchestrator_model_id": str(lab.orchestrator_model_id)
+        if lab.orchestrator_model_id
+        else None,
         "orchestrator_model_name": orch_model_name,
     }
 
@@ -502,6 +517,7 @@ async def live_servers(db: DbSession):
 async def live_providers(db: DbSession):
     """Return AI providers (no API keys or base URLs)."""
     from sqlalchemy import select
+
     from app.models.orchestrator import AIProvider
     from app.models.server import Server
 
@@ -527,7 +543,8 @@ async def live_providers(db: DbSession):
 @router.get("/live/models")
 async def live_models(db: DbSession):
     """Return available AI models (deduplicated, only available ones)."""
-    from sqlalchemy import select, func, case, Integer
+    from sqlalchemy import Integer, case, func, select
+
     from app.models.orchestrator import AIModel, AIProvider
     from app.models.server import Server
 
@@ -586,12 +603,36 @@ async def live_resource_content(lab_id: UUID, resource_id: UUID, db: DbSession):
         raise HTTPException(404, "File not found")
 
     mime = resource.content_type or "application/octet-stream"
-    is_text = mime.startswith("text/") or mime in (
-        "application/json", "application/javascript", "application/xml",
-        "application/x-yaml", "application/x-sh",
-    ) or file_path.suffix in (
-        ".md", ".py", ".js", ".ts", ".html", ".css", ".json", ".yml", ".yaml",
-        ".sh", ".txt", ".csv", ".xml", ".toml", ".cfg", ".ini", ".log",
+    is_text = (
+        mime.startswith("text/")
+        or mime
+        in (
+            "application/json",
+            "application/javascript",
+            "application/xml",
+            "application/x-yaml",
+            "application/x-sh",
+        )
+        or file_path.suffix
+        in (
+            ".md",
+            ".py",
+            ".js",
+            ".ts",
+            ".html",
+            ".css",
+            ".json",
+            ".yml",
+            ".yaml",
+            ".sh",
+            ".txt",
+            ".csv",
+            ".xml",
+            ".toml",
+            ".cfg",
+            ".ini",
+            ".log",
+        )
     )
     is_image = mime.startswith("image/")
     is_audio = mime.startswith("audio/")
@@ -669,12 +710,36 @@ async def live_output_file_content(lab_id: UUID, path: str, db: DbSession):
     mime = mime or "application/octet-stream"
     stat = target.stat()
 
-    is_text = mime.startswith("text/") or mime in (
-        "application/json", "application/javascript", "application/xml",
-        "application/x-yaml", "application/x-sh",
-    ) or target.suffix in (
-        ".md", ".py", ".js", ".ts", ".html", ".css", ".json", ".yml", ".yaml",
-        ".sh", ".txt", ".csv", ".xml", ".toml", ".cfg", ".ini", ".log",
+    is_text = (
+        mime.startswith("text/")
+        or mime
+        in (
+            "application/json",
+            "application/javascript",
+            "application/xml",
+            "application/x-yaml",
+            "application/x-sh",
+        )
+        or target.suffix
+        in (
+            ".md",
+            ".py",
+            ".js",
+            ".ts",
+            ".html",
+            ".css",
+            ".json",
+            ".yml",
+            ".yaml",
+            ".sh",
+            ".txt",
+            ".csv",
+            ".xml",
+            ".toml",
+            ".cfg",
+            ".ini",
+            ".log",
+        )
     )
     is_image = mime.startswith("image/")
     is_audio = mime.startswith("audio/")

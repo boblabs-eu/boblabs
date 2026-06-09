@@ -3,7 +3,7 @@
 import logging
 import uuid
 
-from fastapi import WebSocket, WebSocketDisconnect, status
+from fastapi import WebSocket, WebSocketDisconnect
 from jose import JWTError, jwt
 
 from app.config import settings
@@ -22,11 +22,19 @@ def _extract_token(ws: WebSocket) -> str | None:
 
     Returns the raw token string or None.
     """
-    for proto in ws.headers.getlist("sec-websocket-protocol") if hasattr(ws.headers, "getlist") else (
-        [v.strip() for v in (ws.headers.get("sec-websocket-protocol") or "").split(",") if v.strip()]
+    for proto in (
+        ws.headers.getlist("sec-websocket-protocol")
+        if hasattr(ws.headers, "getlist")
+        else (
+            [
+                v.strip()
+                for v in (ws.headers.get("sec-websocket-protocol") or "").split(",")
+                if v.strip()
+            ]
+        )
     ):
         if proto.startswith("bob.jwt."):
-            return proto[len("bob.jwt."):]
+            return proto[len("bob.jwt.") :]
     return ws.query_params.get("token")
 
 
@@ -73,17 +81,21 @@ async def handle_client_connection(ws: WebSocket) -> None:
         await manager.register_client(client_id, ws, user=user)
         logger.info(
             "UI client connected: %s (sub=%s, role=%s)",
-            client_id, user.get("sub"), user.get("role"),
+            client_id,
+            user.get("sub"),
+            user.get("role"),
         )
 
         # Send initial state
-        await ws.send_json({
-            "type": "init",
-            "payload": {
-                "connected_agents": manager.get_connected_agents(),
-                "cached_metrics": manager.get_all_metrics(),
-            },
-        })
+        await ws.send_json(
+            {
+                "type": "init",
+                "payload": {
+                    "connected_agents": manager.get_connected_agents(),
+                    "cached_metrics": manager.get_all_metrics(),
+                },
+            }
+        )
 
         # Main message loop — relay terminal messages to agents
         while True:
@@ -101,29 +113,36 @@ async def handle_client_connection(ws: WebSocket) -> None:
                 # Map session to this client
                 manager.map_terminal_session(session_id, client_id, server_name)
 
-                sent = await manager.send_to_agent(server_name, {
-                    "type": "terminal.open",
-                    "id": session_id,
-                    "payload": {
-                        "session_id": session_id,
-                        "cols": cols,
-                        "rows": rows,
-                    },
-                })
-
-                if not sent:
-                    await ws.send_json({
-                        "type": "terminal.error",
+                sent = await manager.send_to_agent(
+                    server_name,
+                    {
+                        "type": "terminal.open",
+                        "id": session_id,
                         "payload": {
                             "session_id": session_id,
-                            "error": "Agent not connected",
+                            "cols": cols,
+                            "rows": rows,
                         },
-                    })
+                    },
+                )
+
+                if not sent:
+                    await ws.send_json(
+                        {
+                            "type": "terminal.error",
+                            "payload": {
+                                "session_id": session_id,
+                                "error": "Agent not connected",
+                            },
+                        }
+                    )
                 else:
-                    await ws.send_json({
-                        "type": "terminal.session_id",
-                        "payload": {"session_id": session_id},
-                    })
+                    await ws.send_json(
+                        {
+                            "type": "terminal.session_id",
+                            "payload": {"session_id": session_id},
+                        }
+                    )
 
             elif msg_type == "terminal.input":
                 # Cluster A — only the client that opened the session can
@@ -131,31 +150,40 @@ async def handle_client_connection(ws: WebSocket) -> None:
                 session_id = payload.get("session_id", "")
                 mapping = manager.get_terminal_mapping(session_id)
                 if mapping and mapping.get("client_id") == client_id:
-                    await manager.send_to_agent(mapping["server_name"], {
-                        "type": "terminal.input",
-                        "id": session_id,
-                        "payload": payload,
-                    })
+                    await manager.send_to_agent(
+                        mapping["server_name"],
+                        {
+                            "type": "terminal.input",
+                            "id": session_id,
+                            "payload": payload,
+                        },
+                    )
 
             elif msg_type == "terminal.resize":
                 session_id = payload.get("session_id", "")
                 mapping = manager.get_terminal_mapping(session_id)
                 if mapping and mapping.get("client_id") == client_id:
-                    await manager.send_to_agent(mapping["server_name"], {
-                        "type": "terminal.resize",
-                        "id": session_id,
-                        "payload": payload,
-                    })
+                    await manager.send_to_agent(
+                        mapping["server_name"],
+                        {
+                            "type": "terminal.resize",
+                            "id": session_id,
+                            "payload": payload,
+                        },
+                    )
 
             elif msg_type == "terminal.close":
                 session_id = payload.get("session_id", "")
                 mapping = manager.get_terminal_mapping(session_id)
                 if mapping and mapping.get("client_id") == client_id:
-                    await manager.send_to_agent(mapping["server_name"], {
-                        "type": "terminal.close",
-                        "id": session_id,
-                        "payload": {"session_id": session_id},
-                    })
+                    await manager.send_to_agent(
+                        mapping["server_name"],
+                        {
+                            "type": "terminal.close",
+                            "id": session_id,
+                            "payload": {"session_id": session_id},
+                        },
+                    )
                     manager.unmap_terminal_session(session_id)
 
             else:

@@ -11,6 +11,7 @@ Idempotent semantics:
 - Existing name AND user modified it (``updated_at`` clearly after ``created_at``)
   → leave alone.
 """
+
 from __future__ import annotations
 
 import json
@@ -84,8 +85,10 @@ async def seed_agent_templates(session_factory: async_sessionmaker) -> dict[str,
             fields = _filter_fields(payload)
 
             existing = (
-                await db.execute(select(LibraryAgent).where(LibraryAgent.name == name))
-            ).scalars().first()
+                (await db.execute(select(LibraryAgent).where(LibraryAgent.name == name)))
+                .scalars()
+                .first()
+            )
 
             if existing is None:
                 await repo.create(**fields)
@@ -119,6 +122,8 @@ async def seed_agent_templates(session_factory: async_sessionmaker) -> dict[str,
 
     logger.info(
         "agent_template_seed: done — created=%d updated=%d skipped=%d",
-        counts["created"], counts["updated"], counts["skipped"],
+        counts["created"],
+        counts["updated"],
+        counts["skipped"],
     )
     return counts

@@ -38,7 +38,9 @@ async def get_cron_job(cj_id: UUID, db: DbSession, _user: dict = Depends(require
 
 
 @router.patch("/{cj_id}", response_model=CronJobResponse)
-async def update_cron_job(cj_id: UUID, data: CronJobUpdate, db: DbSession, _user: dict = Depends(require_admin)):
+async def update_cron_job(
+    cj_id: UUID, data: CronJobUpdate, db: DbSession, _user: dict = Depends(require_admin)
+):
     updates = data.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(400, "No fields to update")
@@ -56,7 +58,9 @@ async def delete_cron_job(cj_id: UUID, db: DbSession, _user: dict = Depends(requ
     await CronJobRepository(db).delete(cj_id)
 
 
-@router.post("/{cj_id}/duplicate", response_model=CronJobResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{cj_id}/duplicate", response_model=CronJobResponse, status_code=status.HTTP_201_CREATED
+)
 async def duplicate_cron_job(cj_id: UUID, db: DbSession, _user: dict = Depends(require_admin)):
     repo = CronJobRepository(db)
     cj = await repo.get_by_id(cj_id)

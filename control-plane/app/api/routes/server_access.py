@@ -19,7 +19,9 @@ router = APIRouter(tags=["labs"])
 
 
 @router.get("/labs/{lab_id}/server-access", response_model=list[LabServerAccessResponse])
-async def list_lab_server_access(lab_id: UUID, db: DbSession, user: dict = Depends(get_current_user)):
+async def list_lab_server_access(
+    lab_id: UUID, db: DbSession, user: dict = Depends(get_current_user)
+):
     lab = await LabRepository(db).get_by_id(lab_id)
     if not lab:
         raise HTTPException(404, "Lab not found")
@@ -27,7 +29,9 @@ async def list_lab_server_access(lab_id: UUID, db: DbSession, user: dict = Depen
 
 
 @router.get("/labs/{lab_id}/server-access/candidates", response_model=list[ServerCandidateResponse])
-async def list_lab_server_candidates(lab_id: UUID, db: DbSession, user: dict = Depends(get_current_user)):
+async def list_lab_server_candidates(
+    lab_id: UUID, db: DbSession, user: dict = Depends(get_current_user)
+):
     lab = await LabRepository(db).get_by_id(lab_id)
     if not lab:
         raise HTTPException(404, "Lab not found")

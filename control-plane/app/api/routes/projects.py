@@ -5,9 +5,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.dependencies import DbSession, get_current_user
-from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse, ThemeRenameRequest
 from app.schemas.module import ThemeColorResponse, ThemeColorUpdate
-from app.services.authorization import check_permission, Permission
+from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate, ThemeRenameRequest
+from app.services.authorization import Permission, check_permission
 from app.services.project_service import ProjectService
 from app.services.resource_service import ResourceService
 
@@ -55,14 +55,18 @@ async def get_project(project_id: UUID, db: DbSession, user: dict = Depends(get_
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
-async def create_project(data: ProjectCreate, db: DbSession, user: dict = Depends(get_current_user)):
+async def create_project(
+    data: ProjectCreate, db: DbSession, user: dict = Depends(get_current_user)
+):
     """Create a new project."""
     svc = ProjectService(db)
     return await svc.create_project(data, user=user)
 
 
 @router.put("/{project_id}", response_model=ProjectResponse)
-async def update_project(project_id: UUID, data: ProjectUpdate, db: DbSession, user: dict = Depends(get_current_user)):
+async def update_project(
+    project_id: UUID, data: ProjectUpdate, db: DbSession, user: dict = Depends(get_current_user)
+):
     """Update a project."""
     svc = ProjectService(db)
     project = await svc.get_project(project_id)

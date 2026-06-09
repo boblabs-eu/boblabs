@@ -1,8 +1,7 @@
 """Bob Manager Agent — GPU metrics collector (NVIDIA)."""
 
-import json
-import subprocess
 import logging
+import subprocess
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -39,14 +38,16 @@ def get_gpu_info() -> list[dict[str, Any]]:
     for line in output.splitlines():
         parts = [p.strip() for p in line.split(",")]
         if len(parts) >= 6:
-            gpus.append({
-                "index": int(parts[0]),
-                "name": parts[1],
-                "driver_version": parts[2],
-                "memory_total_mb": int(parts[3]),
-                "memory_used_mb": int(parts[4]),
-                "memory_free_mb": int(parts[5]),
-            })
+            gpus.append(
+                {
+                    "index": int(parts[0]),
+                    "name": parts[1],
+                    "driver_version": parts[2],
+                    "memory_total_mb": int(parts[3]),
+                    "memory_used_mb": int(parts[4]),
+                    "memory_free_mb": int(parts[5]),
+                }
+            )
     return gpus
 
 
@@ -63,14 +64,16 @@ def get_gpu_metrics() -> list[dict[str, Any]]:
     for line in output.splitlines():
         parts = [p.strip() for p in line.split(",")]
         if len(parts) >= 6:
-            metrics.append({
-                "index": int(parts[0]),
-                "gpu_usage_percent": _safe_float(parts[1]),
-                "memory_usage_percent": _safe_float(parts[2]),
-                "temperature_c": _safe_float(parts[3]),
-                "power_draw_w": _safe_float(parts[4]),
-                "power_limit_w": _safe_float(parts[5]),
-            })
+            metrics.append(
+                {
+                    "index": int(parts[0]),
+                    "gpu_usage_percent": _safe_float(parts[1]),
+                    "memory_usage_percent": _safe_float(parts[2]),
+                    "temperature_c": _safe_float(parts[3]),
+                    "power_draw_w": _safe_float(parts[4]),
+                    "power_limit_w": _safe_float(parts[5]),
+                }
+            )
     return metrics
 
 
@@ -87,11 +90,13 @@ def get_gpu_processes() -> list[dict]:
     for line in output.splitlines():
         parts = [p.strip() for p in line.split(",")]
         if len(parts) >= 3:
-            processes.append({
-                "pid": int(parts[0]),
-                "process_name": parts[1],
-                "gpu_memory_mb": int(parts[2]),
-            })
+            processes.append(
+                {
+                    "pid": int(parts[0]),
+                    "process_name": parts[1],
+                    "gpu_memory_mb": int(parts[2]),
+                }
+            )
     return processes
 
 

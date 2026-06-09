@@ -121,7 +121,11 @@ class RagDocumentReingestRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_chunk_settings(self):
-        if self.chunk_size is not None and self.chunk_overlap is not None and self.chunk_overlap > self.chunk_size:
+        if (
+            self.chunk_size is not None
+            and self.chunk_overlap is not None
+            and self.chunk_overlap > self.chunk_size
+        ):
             raise ValueError("chunk_overlap cannot exceed chunk_size")
         return self
 
@@ -139,7 +143,11 @@ class RagUrlDocumentCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_chunk_settings(self):
-        if self.chunk_size is not None and self.chunk_overlap is not None and self.chunk_overlap > self.chunk_size:
+        if (
+            self.chunk_size is not None
+            and self.chunk_overlap is not None
+            and self.chunk_overlap > self.chunk_size
+        ):
             raise ValueError("chunk_overlap cannot exceed chunk_size")
         return self
 

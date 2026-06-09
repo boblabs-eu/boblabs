@@ -1,7 +1,7 @@
 """Bob Manager Agent — UFW Firewall inspector."""
 
-import subprocess
 import logging
+import subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +35,14 @@ def get_firewall_status() -> dict:
                 # Parse rule lines
                 parts = line.split()
                 if len(parts) >= 3:
-                    status["rules"].append({
-                        "to": parts[0],
-                        "action": parts[1],
-                        "from": parts[2] if len(parts) > 2 else "Anywhere",
-                        "raw": line.strip(),
-                    })
+                    status["rules"].append(
+                        {
+                            "to": parts[0],
+                            "action": parts[1],
+                            "from": parts[2] if len(parts) > 2 else "Anywhere",
+                            "raw": line.strip(),
+                        }
+                    )
 
     except FileNotFoundError:
         status["error"] = "ufw not installed"

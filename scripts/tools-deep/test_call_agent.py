@@ -8,19 +8,27 @@ an actual lab turn (the lab runner injects the handler).
 
 REQUIRED ENV: (none)
 """
+
 from __future__ import annotations
+
 import sys
+
 sys.path.insert(0, "/tmp/tools-deep")
-from _harness import make_executor, run_tool, passed, fail, skip, run  # noqa: E402
+from _harness import fail, make_executor, passed, run, run_tool, skip  # noqa: E402
 
 TOOL = "call_agent"
 
 
 async def main():
     async with make_executor(timeout_sec=30) as (db, executor):
-        res = await run_tool(executor, TOOL, {
-            "agent_name": "smoke", "instruction": "say ack",
-        })
+        res = await run_tool(
+            executor,
+            TOOL,
+            {
+                "agent_name": "smoke",
+                "instruction": "say ack",
+            },
+        )
         out = res["output"].lower()
         if "not available in this context" in out:
             skip(TOOL, "no _call_agent_handler — exercise via a real lab turn instead")

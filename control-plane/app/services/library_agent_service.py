@@ -169,7 +169,7 @@ def short_name_for_app(name: str, app_id: str) -> str | None:
     """
     prefix = f"app__{app_id}__"
     if name.startswith(prefix):
-        return name[len(prefix):]
+        return name[len(prefix) :]
     return None
 
 
@@ -181,8 +181,10 @@ async def get_app_owned_agent_by_short_name(
 
     full_name = make_app_agent_name(app_id, short_name)
     row = (
-        await db.execute(select(LibraryAgent).where(LibraryAgent.name == full_name))
-    ).scalars().first()
+        (await db.execute(select(LibraryAgent).where(LibraryAgent.name == full_name)))
+        .scalars()
+        .first()
+    )
     return row
 
 
@@ -192,10 +194,14 @@ async def list_app_owned_agents(db: AsyncSession, app_id: str) -> list[LibraryAg
 
     prefix = f"app__{app_id}__"
     rows = (
-        await db.execute(
-            select(LibraryAgent)
-            .where(LibraryAgent.name.like(f"{prefix}%"))
-            .order_by(LibraryAgent.name)
+        (
+            await db.execute(
+                select(LibraryAgent)
+                .where(LibraryAgent.name.like(f"{prefix}%"))
+                .order_by(LibraryAgent.name)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return list(rows)

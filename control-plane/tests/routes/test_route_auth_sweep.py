@@ -39,10 +39,10 @@ pytestmark = pytest.mark.route_auth
 
 # Routers whose routes are PUBLIC by design.
 PUBLIC_ROUTERS = {
-    "public",            # /admin-login, /quote, /trial, /blog read
-    "blog_seo",          # /blog/<slug>, /sitemap.xml, /rss.xml (SEO bots)
-    "internal_apps",     # HMAC-protected (not JWT) — different auth model
-    "auth",              # /login — issues JWT, can't require it
+    "public",  # /admin-login, /quote, /trial, /blog read
+    "blog_seo",  # /blog/<slug>, /sitemap.xml, /rss.xml (SEO bots)
+    "internal_apps",  # HMAC-protected (not JWT) — different auth model
+    "auth",  # /login — issues JWT, can't require it
 }
 
 # Routers where every route MUST be admin-only.
@@ -83,18 +83,18 @@ def _route_label(route) -> str:
 
 # Discover all router modules.
 import os
+
 _ROUTES_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-    "app", "api", "routes",
+    "app",
+    "api",
+    "routes",
 )
 _ALL_ROUTER_NAMES = sorted(
-    f[:-3] for f in os.listdir(_ROUTES_DIR)
-    if f.endswith(".py") and f != "__init__.py"
+    f[:-3] for f in os.listdir(_ROUTES_DIR) if f.endswith(".py") and f != "__init__.py"
 )
 
-AUTH_REQUIRED_ROUTERS = sorted(
-    set(_ALL_ROUTER_NAMES) - PUBLIC_ROUTERS - ADMIN_ONLY_ROUTERS
-)
+AUTH_REQUIRED_ROUTERS = sorted(set(_ALL_ROUTER_NAMES) - PUBLIC_ROUTERS - ADMIN_ONLY_ROUTERS)
 
 
 # ── ADMIN_ONLY assertions ──────────────────────────────────────────
@@ -264,13 +264,16 @@ def test_public_router_module_imports(router_name):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", [
-    "/api/v1/labs",
-    "/api/v1/servers",
-    "/api/v1/projects",
-    "/api/v1/rag/collections",
-    "/api/v1/access-tokens",
-])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/labs",
+        "/api/v1/servers",
+        "/api/v1/projects",
+        "/api/v1/rag/collections",
+        "/api/v1/access-tokens",
+    ],
+)
 async def test_anonymous_blocked_on_authenticated_route(anonymous_client, path):
     """Spot-check anonymous access against a handful of routes —
     confirms the dep wires up over HTTP, not just at the introspection
@@ -282,16 +285,17 @@ async def test_anonymous_blocked_on_authenticated_route(anonymous_client, path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", [
-    "/api/v1/admin/labs",
-    "/api/v1/admin/consumer-apps",
-    "/api/v1/admin/logs/requests",   # admin_logs has no root route, only sub-paths
-])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/admin/labs",
+        "/api/v1/admin/consumer-apps",
+        "/api/v1/admin/logs/requests",  # admin_logs has no root route, only sub-paths
+    ],
+)
 async def test_non_admin_blocked_on_admin_route(user_client, path):
     r = await user_client.get(path)
-    assert r.status_code == 403, (
-        f"{path} returned {r.status_code} for non-admin; expected 403"
-    )
+    assert r.status_code == 403, f"{path} returned {r.status_code} for non-admin; expected 403"
 
 
 # ── Module-level sanity ────────────────────────────────────────────

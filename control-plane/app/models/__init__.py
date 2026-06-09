@@ -48,7 +48,6 @@ from app.models.wallet import LabWeb3Access, Wallet
 from app.models.web3_settings import Web3Settings
 from app.models.workflow import Workflow, WorkflowStep
 
-
 __all__ = [
     # Base
     "Base",

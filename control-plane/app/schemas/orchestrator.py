@@ -6,7 +6,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # O05 — Single source of truth for the loop_type column. Mirrored by the
 # DB CHECK constraint added in migration 0010 and by the strategy registry
 # in ``app.services.loop_strategies.__init__``. If you add a new strategy:
@@ -240,6 +239,7 @@ class TaskResponse(BaseModel):
 
 class ActivityItem(BaseModel):
     """Combined view of messages + tasks for the activity feed."""
+
     id: UUID
     type: str  # message | task
     conversation_id: UUID
@@ -821,12 +821,15 @@ class AgentBlueprint(BaseModel):
 
 # ── Tool Config schemas ─────────────────────────────
 
+
 class ToolConfigCreate(BaseModel):
     tool_type: str
     config: dict = {}
 
+
 class ToolConfigUpdate(BaseModel):
     config: dict
+
 
 class ToolConfigResponse(BaseModel):
     id: str
@@ -840,6 +843,7 @@ class ToolConfigResponse(BaseModel):
 
 
 # ── Public Live schemas (sanitized, no secrets) ─────
+
 
 class LiveLabAgent(BaseModel):
     id: UUID

@@ -106,7 +106,9 @@ class CritiqueRefineStrategy(LoopStrategy):
 
         messages = [{"role": "system", "content": system}]
         messages += build_messages_from_history(
-            context, self._last_results, self._injections,
+            context,
+            self._last_results,
+            self._injections,
             prompt_suffix="Continue the critique & refine cycle. What's next?",
         )
         self._injections.clear()

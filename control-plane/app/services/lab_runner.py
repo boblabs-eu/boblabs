@@ -28,11 +28,10 @@ from app.repositories.lab_repo import (
     LabMessageRepository,
     LabRepository,
     LabResourceRepository,
-    LabScheduleLogRepository,
     ToolSetRepository,
 )
 from app.services.lab_dispatcher import LabDispatcher
-from app.services.loop_detection import ToolCall, get_loop_manager
+from app.services.loop_detection import get_loop_manager
 from app.services.loop_strategies import get_strategy
 from app.services.loop_strategies.base import (
     LoopContext,
@@ -45,15 +44,19 @@ from app.services.loop_strategies.plan_execute import (
     _PendingLLMCall,
     parse_orchestrator_response,
 )
+from app.services.pipelines import (
+    extract_pipeline_names,
+    extract_subtool_permissions,
+    normalize_tool_names,
+)
+from app.services.rag_service import augment_tool_names_with_rag_access
+from app.services.server_access_service import augment_tool_names_with_server_access
 from app.services.tool_executor import (
     ToolExecutor,
     build_native_tools_schema,
     format_tool_descriptions,
     parse_tool_calls,
 )
-from app.services.pipelines import extract_pipeline_names, extract_subtool_permissions, normalize_tool_names
-from app.services.rag_service import augment_tool_names_with_rag_access
-from app.services.server_access_service import augment_tool_names_with_server_access
 from app.services.web3_access_service import augment_tool_names_with_web3_access
 from app.websocket.hub import manager
 
@@ -62,13 +65,13 @@ logger = logging.getLogger(__name__)
 LAB_RESOURCES_ROOT = Path(os.environ.get("LAB_RESOURCES_PATH", "/data/lab_resources"))
 
 # Regex to find base64 image data in agent responses
-_B64_IMAGE_RE = re.compile(
-    r'data:image/(png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=]{100,})'
-)
+_B64_IMAGE_RE = re.compile(r"data:image/(png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=]{100,})")
 
 
 def _extract_and_save_images(
-    content: str, lab_id: UUID, iteration: int,
+    content: str,
+    lab_id: UUID,
+    iteration: int,
 ) -> list[dict]:
     """Detect base64 images in agent response text, save to disk, return metadata.
 
@@ -84,9 +87,13 @@ def _extract_and_save_images(
             # O04 — surface decode failures so corrupted agent output is
             # debuggable instead of silently dropped.
             logger.warning(
-                "Skipping malformed base64 image #%d in lab %s iter %s: %s "
-                "(len=%d, head=%r)",
-                i, lab_id, iteration, exc, len(b64data), b64data[:40],
+                "Skipping malformed base64 image #%d in lab %s iter %s: %s (len=%d, head=%r)",
+                i,
+                lab_id,
+                iteration,
+                exc,
+                len(b64data),
+                b64data[:40],
             )
             continue
 
@@ -95,14 +102,16 @@ def _extract_and_save_images(
         fname = f"gen_iter{iteration}_{i}.{ext}"
         (lab_dir / fname).write_bytes(raw)
 
-        saved.append({
-            "filename": fname,
-            "original_name": fname,
-            "content_type": f"image/{ext}",
-            "size_bytes": len(raw),
-            "resource_type": "image",
-            "data_uri": match.group(0),  # full data:image/...;base64,... string
-        })
+        saved.append(
+            {
+                "filename": fname,
+                "original_name": fname,
+                "content_type": f"image/{ext}",
+                "size_bytes": len(raw),
+                "resource_type": "image",
+                "data_uri": match.group(0),  # full data:image/...;base64,... string
+            }
+        )
     return saved
 
 
@@ -226,11 +235,15 @@ class LabRunner:
             try:
                 async with self.session_factory() as db:
                     await LabRepository(db).update(
-                        self.lab_id, status="failed", failure_reason=reason,
+                        self.lab_id,
+                        status="failed",
+                        failure_reason=reason,
                     )
                     await db.commit()
                 await _broadcast_lab_event(
-                    self.lab_id, "lab.error", {"error": reason},
+                    self.lab_id,
+                    "lab.error",
+                    {"error": reason},
                 )
             except Exception:
                 logger.error("Failed to mark lab %s as failed after crash", self.lab_id)
@@ -245,10 +258,12 @@ class LabRunner:
                 pass
             # Clear dispatcher affinity for this lab
             from app.services.lab_dispatcher import clear_lab_affinity
+
             clear_lab_affinity(self.lab_id)
             # Stop (not destroy) the per-lab sandbox container to save resources
             try:
                 from app.services.container_manager import stop_sandbox
+
                 await stop_sandbox(self.lab_id)
             except Exception:
                 pass
@@ -292,7 +307,8 @@ class LabRunner:
             logger.warning(
                 "LabRunner.stop(lab=%s) timed out after %ss waiting for "
                 "loop to exit; returning to caller",
-                self.lab_id, wait_timeout,
+                self.lab_id,
+                wait_timeout,
             )
 
     async def inject(self, message: str) -> None:
@@ -352,14 +368,25 @@ class LabRunner:
             ts_repo = ToolSetRepository(db)
 
             # Resolve orchestrator tools (from tool_set or manual list)
-            orch_tool_names = await self._resolve_tools(ts_repo, lab.orchestrator_tools, lab.orchestrator_tool_set_id, getattr(lab, 'orchestrator_tool_set_ids', None))
+            orch_tool_names = await self._resolve_tools(
+                ts_repo,
+                lab.orchestrator_tools,
+                lab.orchestrator_tool_set_id,
+                getattr(lab, "orchestrator_tool_set_ids", None),
+            )
             orch_tool_names = await augment_tool_names_with_rag_access(db, lab.id, orch_tool_names)
             orch_tool_names = await augment_tool_names_with_web3_access(db, lab.id, orch_tool_names)
-            orch_tool_names = await augment_tool_names_with_server_access(db, lab.id, orch_tool_names)
+            orch_tool_names = await augment_tool_names_with_server_access(
+                db, lab.id, orch_tool_names
+            )
             # Auto-add handle_memory when auto_sweep_memory is enabled
-            if getattr(lab, 'auto_sweep_memory', False) and 'handle_memory' not in (orch_tool_names or []):
-                orch_tool_names = list(orch_tool_names or []) + ['handle_memory']
-            orch_native_tools = build_native_tools_schema(orch_tool_names) if orch_tool_names else None
+            if getattr(lab, "auto_sweep_memory", False) and "handle_memory" not in (
+                orch_tool_names or []
+            ):
+                orch_tool_names = list(orch_tool_names or []) + ["handle_memory"]
+            orch_native_tools = (
+                build_native_tools_schema(orch_tool_names) if orch_tool_names else None
+            )
 
             # Mark running (clear any previous failure reason)
             await lab_repo.update(lab.id, status="running", started_at=_now(), failure_reason=None)
@@ -387,7 +414,9 @@ class LabRunner:
                 if lab.max_iterations and lab.current_iteration >= lab.max_iterations:
                     await lab_repo.update(lab.id, status="completed", completed_at=_now())
                     await db.commit()
-                    await _broadcast_lab_event(lab.id, "lab.completed", {"reason": "max_iterations"})
+                    await _broadcast_lab_event(
+                        lab.id, "lab.completed", {"reason": "max_iterations"}
+                    )
                     return
 
                 elapsed = time.monotonic() - start_time
@@ -410,11 +439,14 @@ class LabRunner:
                         seen_injection_ids.add(inj.id)
                         await strategy.on_inject(
                             LoopContext(
-                                lab=lab, agents=agents,
+                                lab=lab,
+                                agents=agents,
                                 iteration=lab.current_iteration,
                                 elapsed_sec=time.monotonic() - start_time,
-                                messages=messages, lab_memories=lab_memories,
-                                user_injections=[], resources=lab_resources,
+                                messages=messages,
+                                lab_memories=lab_memories,
+                                user_injections=[],
+                                resources=lab_resources,
                                 orch_tool_names=orch_tool_names or [],
                             ),
                             inj.content,
@@ -444,7 +476,9 @@ class LabRunner:
                 if isinstance(action, _PendingLLMCall):
                     action_messages = action.messages
                     try:
-                        orch_result = await dispatcher.call_orchestrator(lab, action_messages, tools=orch_native_tools)
+                        orch_result = await dispatcher.call_orchestrator(
+                            lab, action_messages, tools=orch_native_tools
+                        )
                     except Exception as e:
                         logger.exception("Orchestrator LLM call failed for lab %s", lab.id)
                         await self._fail(lab_repo, db, lab.id, str(e))
@@ -484,17 +518,21 @@ class LabRunner:
                     except Exception:
                         logger.exception("Loop observe failed (orchestrator)")
 
-                    await _broadcast_lab_event(lab.id, "lab.orchestrator.message", {
-                        "content": (orch_content or "")[:500],
-                        "iteration": lab.current_iteration,
-                        "sender_type": "orchestrator",
-                        "sender_name": "orchestrator",
-                        "model_used": orch_result.get("model"),
-                        "tokens_in": orch_result.get("tokens_in", 0),
-                        "tokens_out": orch_result.get("tokens_out", 0),
-                        "duration_ms": orch_result.get("duration_ms", 0),
-                        "message_type": "message",
-                    })
+                    await _broadcast_lab_event(
+                        lab.id,
+                        "lab.orchestrator.message",
+                        {
+                            "content": (orch_content or "")[:500],
+                            "iteration": lab.current_iteration,
+                            "sender_type": "orchestrator",
+                            "sender_name": "orchestrator",
+                            "model_used": orch_result.get("model"),
+                            "tokens_in": orch_result.get("tokens_in", 0),
+                            "tokens_out": orch_result.get("tokens_out", 0),
+                            "duration_ms": orch_result.get("duration_ms", 0),
+                            "message_type": "message",
+                        },
+                    )
 
                     # ── Orchestrator tool call loop ──
                     if orch_tool_names:
@@ -514,10 +552,17 @@ class LabRunner:
                         while orch_tc_total < orch_tc_max:
                             native_tc = orch_result.get("tool_calls")
                             if native_tc:
-                                orch_tool_calls = [{"name": tc["name"], "arguments": tc["arguments"]} for tc in native_tc]
-                                logger.info("Orchestrator native tool calls (%d)", len(orch_tool_calls))
+                                orch_tool_calls = [
+                                    {"name": tc["name"], "arguments": tc["arguments"]}
+                                    for tc in native_tc
+                                ]
+                                logger.info(
+                                    "Orchestrator native tool calls (%d)", len(orch_tool_calls)
+                                )
                             else:
-                                orch_tool_calls = parse_tool_calls(orch_result["content"], agent_tools=orch_tool_names)
+                                orch_tool_calls = parse_tool_calls(
+                                    orch_result["content"], agent_tools=orch_tool_names
+                                )
                             if not orch_tool_calls:
                                 break
 
@@ -527,11 +572,15 @@ class LabRunner:
                                 if orch_tc_total >= orch_tc_max:
                                     break
                                 if tc["name"] not in orch_normalized_tools:
-                                    tool_output = f"Tool '{tc['name']}' is not assigned to orchestrator."
+                                    tool_output = (
+                                        f"Tool '{tc['name']}' is not assigned to orchestrator."
+                                    )
                                     success = False
                                     file_event = None
                                 else:
-                                    tr = await orch_tool_executor.execute(tc["name"], tc["arguments"])
+                                    tr = await orch_tool_executor.execute(
+                                        tc["name"], tc["arguments"]
+                                    )
                                     tool_output = tr["output"]
                                     success = tr["success"]
                                     file_event = tr.get("file_event")
@@ -561,32 +610,62 @@ class LabRunner:
                                         sender_name="orchestrator",
                                         content=f"📄 File {fe_action}: **{fe_path}** ({fe_size} bytes)",
                                         message_type="file_event",
-                                        extra={"file_action": fe_action, "file_path": fe_path, "size_bytes": fe_size},
+                                        extra={
+                                            "file_action": fe_action,
+                                            "file_path": fe_path,
+                                            "size_bytes": fe_size,
+                                        },
                                     )
                                     await db.commit()
 
                                 tool_results_parts.append(
-                                    f"<tool_result name=\"{tc['name']}\">\n{tool_output}\n</tool_result>"
+                                    f'<tool_result name="{tc["name"]}">\n{tool_output}\n</tool_result>'
                                 )
-                                tc_id = native_tc[i].get("id", f"call_{i}") if native_tc and i < len(native_tc) else f"call_{i}"
-                                tool_results_data.append({"tool_call_id": tc_id, "output": tool_output})
+                                tc_id = (
+                                    native_tc[i].get("id", f"call_{i}")
+                                    if native_tc and i < len(native_tc)
+                                    else f"call_{i}"
+                                )
+                                tool_results_data.append(
+                                    {"tool_call_id": tc_id, "output": tool_output}
+                                )
 
                             if not tool_results_parts:
                                 break
 
                             # Build follow-up messages
                             if native_tc:
-                                action_messages.append({"role": "assistant", "content": orch_result["content"], "tool_calls": native_tc})
+                                action_messages.append(
+                                    {
+                                        "role": "assistant",
+                                        "content": orch_result["content"],
+                                        "tool_calls": native_tc,
+                                    }
+                                )
                                 for td in tool_results_data:
-                                    action_messages.append({"role": "tool", "tool_call_id": td["tool_call_id"], "content": td["output"]})
+                                    action_messages.append(
+                                        {
+                                            "role": "tool",
+                                            "tool_call_id": td["tool_call_id"],
+                                            "content": td["output"],
+                                        }
+                                    )
                             else:
-                                action_messages.append({"role": "assistant", "content": orch_result["content"]})
-                                action_messages.append({"role": "user", "content": "\n".join(tool_results_parts)})
+                                action_messages.append(
+                                    {"role": "assistant", "content": orch_result["content"]}
+                                )
+                                action_messages.append(
+                                    {"role": "user", "content": "\n".join(tool_results_parts)}
+                                )
 
                             try:
-                                orch_result = await dispatcher.call_orchestrator(lab, action_messages, tools=orch_native_tools)
-                            except Exception as e:
-                                logger.exception("Orchestrator tool follow-up failed for lab %s", lab.id)
+                                orch_result = await dispatcher.call_orchestrator(
+                                    lab, action_messages, tools=orch_native_tools
+                                )
+                            except Exception:
+                                logger.exception(
+                                    "Orchestrator tool follow-up failed for lab %s", lab.id
+                                )
                                 break
 
                             followup_content = orch_result["content"]
@@ -626,7 +705,10 @@ class LabRunner:
                         logger.warning("Orchestrator produced bad JSON, retrying (lab %s)", lab.id)
                         retry_msgs = action_messages + [
                             {"role": "assistant", "content": orch_result["content"]},
-                            {"role": "user", "content": "Your previous response was not valid JSON. Respond ONLY with valid JSON matching the schema. No extra text, no markdown fences."},
+                            {
+                                "role": "user",
+                                "content": "Your previous response was not valid JSON. Respond ONLY with valid JSON matching the schema. No extra text, no markdown fences.",
+                            },
                         ]
                         try:
                             retry_result = await dispatcher.call_orchestrator(lab, retry_msgs)
@@ -653,11 +735,20 @@ class LabRunner:
                                 )
                                 await db.commit()
                         except Exception:
-                            logger.warning("Retry also failed for lab %s, keeping PauseAction", lab.id)
+                            logger.warning(
+                                "Retry also failed for lab %s, keeping PauseAction", lab.id
+                            )
 
                     # Retry if orchestrator tried to finish without dispatching after inject
-                    if isinstance(action, PauseAction) and "dispatch" in (action.reason or "").lower() and has_inject:
-                        logger.warning("Orchestrator skipped inject task, retrying with correction (lab %s)", lab.id)
+                    if (
+                        isinstance(action, PauseAction)
+                        and "dispatch" in (action.reason or "").lower()
+                        and has_inject
+                    ):
+                        logger.warning(
+                            "Orchestrator skipped inject task, retrying with correction (lab %s)",
+                            lab.id,
+                        )
                         if orch_tool_names:
                             correction = (
                                 "You said done without performing the requested work. "
@@ -738,7 +829,9 @@ class LabRunner:
                         message_type="synthesis",
                     )
                     # Store final synthesis as a lab memory
-                    summary_content = action.summary[:2000] if len(action.summary) > 2000 else action.summary
+                    summary_content = (
+                        action.summary[:2000] if len(action.summary) > 2000 else action.summary
+                    )
                     await mem_repo.create(
                         lab_id=lab.id,
                         agent_id=None,
@@ -752,18 +845,21 @@ class LabRunner:
                     # If any agent has a cron_expression, keep the runner
                     # alive in a paused state so future CRON injections
                     # can wake it up instead of exiting permanently.
-                    has_cron_agents = any(
-                        getattr(a, "cron_expression", None)
-                        for a in agents
-                    )
+                    has_cron_agents = any(getattr(a, "cron_expression", None) for a in agents)
                     if has_cron_agents:
                         await lab_repo.update(lab.id, status="paused", paused_at=_now())
                         await db.commit()
-                        await _broadcast_lab_event(lab.id, "lab.paused", {
-                            "reason": "Synthesis complete — waiting for next CRON trigger",
-                            "summary": action.summary[:500],
-                        })
-                        logger.info("Lab %s paused after synthesis — waiting for CRON wake-up", lab.id)
+                        await _broadcast_lab_event(
+                            lab.id,
+                            "lab.paused",
+                            {
+                                "reason": "Synthesis complete — waiting for next CRON trigger",
+                                "summary": action.summary[:500],
+                            },
+                        )
+                        logger.info(
+                            "Lab %s paused after synthesis — waiting for CRON wake-up", lab.id
+                        )
                         self._paused.clear()
                         await self._paused.wait()
                         if self._stop_requested:
@@ -775,7 +871,9 @@ class LabRunner:
                         try:
                             await db.execute(text("SELECT 1"))
                         except Exception:
-                            logger.warning("Lab %s: DB connection stale after pause, reconnecting", lab.id)
+                            logger.warning(
+                                "Lab %s: DB connection stale after pause, reconnecting", lab.id
+                            )
                             await db.rollback()
                         await lab_repo.update(lab.id, status="running", paused_at=None)
                         await db.commit()
@@ -783,10 +881,14 @@ class LabRunner:
                     else:
                         await lab_repo.update(lab.id, status="completed", completed_at=_now())
                         await db.commit()
-                        await _broadcast_lab_event(lab.id, "lab.completed", {
-                            "reason": "done",
-                            "summary": action.summary[:500],
-                        })
+                        await _broadcast_lab_event(
+                            lab.id,
+                            "lab.completed",
+                            {
+                                "reason": "done",
+                                "summary": action.summary[:500],
+                            },
+                        )
                         return
 
                 elif isinstance(action, PauseAction):
@@ -804,7 +906,9 @@ class LabRunner:
                     try:
                         await db.execute(text("SELECT 1"))
                     except Exception:
-                        logger.warning("Lab %s: DB connection stale after pause, reconnecting", lab.id)
+                        logger.warning(
+                            "Lab %s: DB connection stale after pause, reconnecting", lab.id
+                        )
                         await db.rollback()
                     await lab_repo.update(lab.id, status="running", paused_at=None)
                     await db.commit()
@@ -839,12 +943,14 @@ class LabRunner:
         for task_item in plan.tasks:
             agent = agent_map.get(task_item.agent_name)
             if agent is None:
-                results.append(TaskResult(
-                    agent_name=task_item.agent_name,
-                    instruction=task_item.instruction,
-                    response="",
-                    error=f"Agent '{task_item.agent_name}' not found in this lab.",
-                ))
+                results.append(
+                    TaskResult(
+                        agent_name=task_item.agent_name,
+                        instruction=task_item.instruction,
+                        response="",
+                        error=f"Agent '{task_item.agent_name}' not found in this lab.",
+                    )
+                )
                 continue
             tasks_to_run.append((task_item, agent))
 
@@ -867,16 +973,20 @@ class LabRunner:
 
         # Dispatch calls concurrently
         async def _call_agent(task_item, agent: LabAgent) -> TaskResult:
-            await _broadcast_lab_event(lab.id, "lab.task.start", {
-                "agent": agent.name,
-                "instruction": task_item.instruction[:200],
-                "iteration": lab.current_iteration,
-                "sender_type": "orchestrator",
-                "sender_name": "orchestrator",
-                "target_name": agent.name,
-                "content": task_item.instruction[:200],
-                "message_type": "task",
-            })
+            await _broadcast_lab_event(
+                lab.id,
+                "lab.task.start",
+                {
+                    "agent": agent.name,
+                    "instruction": task_item.instruction[:200],
+                    "iteration": lab.current_iteration,
+                    "sender_type": "orchestrator",
+                    "sender_name": "orchestrator",
+                    "target_name": agent.name,
+                    "content": task_item.instruction[:200],
+                    "message_type": "task",
+                },
+            )
             try:
                 # Determine whether this agent should see shared memories
                 should_share = agent.share_memory
@@ -896,20 +1006,29 @@ class LabRunner:
                     # Only this lab's memories
                     agent_memories = await mem_repo.get_by_lab(lab.id, limit=30)
                 # Filter hidden memories
-                agent_memories = [m for m in agent_memories if not getattr(m, 'is_hidden', False)]
+                agent_memories = [m for m in agent_memories if not getattr(m, "is_hidden", False)]
 
                 # Load uploaded resources for this lab
                 res_repo = LabResourceRepository(db)
                 lab_resources = await res_repo.get_by_lab(lab.id)
 
                 # Build native tool schema for hybrid tool calling
-                agent_tools = await self._resolve_tools(ts_repo, agent.tools, agent.tool_set_id, getattr(agent, 'tool_set_ids', None))
+                agent_tools = await self._resolve_tools(
+                    ts_repo, agent.tools, agent.tool_set_id, getattr(agent, "tool_set_ids", None)
+                )
                 agent_tools = await augment_tool_names_with_rag_access(db, lab.id, agent_tools)
                 agent_tools = await augment_tool_names_with_web3_access(db, lab.id, agent_tools)
                 agent_tools = await augment_tool_names_with_server_access(db, lab.id, agent_tools)
                 native_tools = build_native_tools_schema(agent_tools) if agent_tools else None
 
-                msgs = self._build_agent_messages(agent, task_item.instruction, lab, memories=agent_memories, resources=lab_resources, resolved_tools=agent_tools)
+                msgs = self._build_agent_messages(
+                    agent,
+                    task_item.instruction,
+                    lab,
+                    memories=agent_memories,
+                    resources=lab_resources,
+                    resolved_tools=agent_tools,
+                )
                 result = await dispatcher.call_agent(agent, msgs, lab_id=lab.id, tools=native_tools)
 
                 # ── Tool call loop (hybrid: native + text fallback) ──
@@ -953,15 +1072,25 @@ class LabRunner:
                         try:
                             await db.refresh(agent)
                             agent_tools = await self._resolve_tools(
-                                ts_repo, agent.tools, agent.tool_set_id,
+                                ts_repo,
+                                agent.tools,
+                                agent.tool_set_id,
                                 getattr(agent, "tool_set_ids", None),
                             )
-                            agent_tools = await augment_tool_names_with_rag_access(db, lab.id, agent_tools)
-                            agent_tools = await augment_tool_names_with_web3_access(db, lab.id, agent_tools)
-                            agent_tools = await augment_tool_names_with_server_access(db, lab.id, agent_tools)
+                            agent_tools = await augment_tool_names_with_rag_access(
+                                db, lab.id, agent_tools
+                            )
+                            agent_tools = await augment_tool_names_with_web3_access(
+                                db, lab.id, agent_tools
+                            )
+                            agent_tools = await augment_tool_names_with_server_access(
+                                db, lab.id, agent_tools
+                            )
                             agent_normalized_tools = set(normalize_tool_names(agent_tools))
                             tool_executor.allowed_pipelines = extract_pipeline_names(agent_tools)
-                            tool_executor.subtool_permissions = extract_subtool_permissions(agent_tools)
+                            tool_executor.subtool_permissions = extract_subtool_permissions(
+                                agent_tools
+                            )
                         except Exception:
                             logger.exception(
                                 "A02 — tool-set re-resolve failed for agent=%s; "
@@ -972,17 +1101,24 @@ class LabRunner:
                         # Hybrid parsing: try native tool_calls first, then text fallback
                         native_tc = result.get("tool_calls")
                         if native_tc:
-                            tool_calls = [{"name": tc["name"], "arguments": tc["arguments"]} for tc in native_tc]
+                            tool_calls = [
+                                {"name": tc["name"], "arguments": tc["arguments"]}
+                                for tc in native_tc
+                            ]
                             logger.info("Native tool calls detected (%d)", len(tool_calls))
                         else:
-                            tool_calls = parse_tool_calls(result["content"], agent_tools=agent_tools)
+                            tool_calls = parse_tool_calls(
+                                result["content"], agent_tools=agent_tools
+                            )
                         if not tool_calls:
                             break
 
                         # Save agent's intermediate LLM response (reasoning before/between tool calls)
                         msg_content = result.get("content", "")
                         if not msg_content and result.get("tool_calls"):
-                            msg_content = json.dumps({"tool_calls": [tc["name"] for tc in result["tool_calls"]]})
+                            msg_content = json.dumps(
+                                {"tool_calls": [tc["name"] for tc in result["tool_calls"]]}
+                            )
                         if msg_content:
                             agent_msg = await msg_repo.create(
                                 lab_id=lab.id,
@@ -1003,8 +1139,10 @@ class LabRunner:
                             try:
                                 get_loop_manager().observe_message(
                                     lab_id=lab.id,
-                                    anti_loop_enabled=bool(getattr(lab, "anti_loop_enabled", False)
-                                                            or getattr(agent, "anti_loop_enabled", False)),
+                                    anti_loop_enabled=bool(
+                                        getattr(lab, "anti_loop_enabled", False)
+                                        or getattr(agent, "anti_loop_enabled", False)
+                                    ),
                                     message_id=agent_msg.id,
                                     actor_key=f"agent:{agent.name}",
                                     content=msg_content,
@@ -1013,17 +1151,21 @@ class LabRunner:
                             except Exception:
                                 logger.exception("Loop observe failed (agent.message)")
 
-                            await _broadcast_lab_event(lab.id, "lab.agent.message", {
-                                "content": (msg_content or "")[:500],
-                                "iteration": lab.current_iteration,
-                                "sender_type": "agent",
-                                "sender_name": agent.name,
-                                "model_used": result.get("model"),
-                                "tokens_in": result.get("tokens_in", 0),
-                                "tokens_out": result.get("tokens_out", 0),
-                                "duration_ms": result.get("duration_ms", 0),
-                                "message_type": "message",
-                            })
+                            await _broadcast_lab_event(
+                                lab.id,
+                                "lab.agent.message",
+                                {
+                                    "content": (msg_content or "")[:500],
+                                    "iteration": lab.current_iteration,
+                                    "sender_type": "agent",
+                                    "sender_name": agent.name,
+                                    "model_used": result.get("model"),
+                                    "tokens_in": result.get("tokens_in", 0),
+                                    "tokens_out": result.get("tokens_out", 0),
+                                    "duration_ms": result.get("duration_ms", 0),
+                                    "message_type": "message",
+                                },
+                            )
 
                         tool_results_parts = []
                         tool_results_data = []
@@ -1031,12 +1173,16 @@ class LabRunner:
                             if total_tool_calls >= max_calls:
                                 limit_msg = f"Tool call limit reached ({max_calls}). No more tool calls allowed this turn."
                                 tool_results_parts.append(
-                                    f"<tool_result name=\"{tc['name']}\">\n{limit_msg}\n</tool_result>"
+                                    f'<tool_result name="{tc["name"]}">\n{limit_msg}\n</tool_result>'
                                 )
-                                tool_results_data.append({
-                                    "tool_call_id": native_tc[i].get("id", f"call_{i}") if native_tc and i < len(native_tc) else f"call_{i}",
-                                    "output": limit_msg,
-                                })
+                                tool_results_data.append(
+                                    {
+                                        "tool_call_id": native_tc[i].get("id", f"call_{i}")
+                                        if native_tc and i < len(native_tc)
+                                        else f"call_{i}",
+                                        "output": limit_msg,
+                                    }
+                                )
                                 break
 
                             # Validate tool is assigned to this agent
@@ -1067,17 +1213,21 @@ class LabRunner:
                             )
                             await db.commit()
 
-                            await _broadcast_lab_event(lab.id, "lab.tool.result", {
-                                "agent": agent.name,
-                                "tool": tc["name"],
-                                "success": success,
-                                "iteration": lab.current_iteration,
-                                "sender_type": "agent",
-                                "sender_name": agent.name,
-                                "content": f"Tool call: {tc['name']}({', '.join(f'{k}={str(v)[:50]}' for k,v in tc['arguments'].items()) if isinstance(tc['arguments'], dict) else '...'})",
-                                "message_type": "tool_call",
-                                "tool_name": tc["name"],
-                            })
+                            await _broadcast_lab_event(
+                                lab.id,
+                                "lab.tool.result",
+                                {
+                                    "agent": agent.name,
+                                    "tool": tc["name"],
+                                    "success": success,
+                                    "iteration": lab.current_iteration,
+                                    "sender_type": "agent",
+                                    "sender_name": agent.name,
+                                    "content": f"Tool call: {tc['name']}({', '.join(f'{k}={str(v)[:50]}' for k, v in tc['arguments'].items()) if isinstance(tc['arguments'], dict) else '...'})",
+                                    "message_type": "tool_call",
+                                    "tool_name": tc["name"],
+                                },
+                            )
 
                             # Notify file creation/edit events
                             if file_event:
@@ -1093,54 +1243,74 @@ class LabRunner:
                                     sender_name=agent.name,
                                     content=file_msg,
                                     message_type="file_event",
-                                    extra={"file_action": fe_action, "file_path": fe_path, "size_bytes": fe_size},
+                                    extra={
+                                        "file_action": fe_action,
+                                        "file_path": fe_path,
+                                        "size_bytes": fe_size,
+                                    },
                                 )
                                 await db.commit()
-                                await _broadcast_lab_event(lab.id, "lab.file.event", {
-                                    "agent": agent.name,
-                                    "action": fe_action,
-                                    "path": fe_path,
-                                    "size_bytes": fe_size,
-                                    "iteration": lab.current_iteration,
-                                })
+                                await _broadcast_lab_event(
+                                    lab.id,
+                                    "lab.file.event",
+                                    {
+                                        "agent": agent.name,
+                                        "action": fe_action,
+                                        "path": fe_path,
+                                        "size_bytes": fe_size,
+                                        "iteration": lab.current_iteration,
+                                    },
+                                )
 
                             tool_results_parts.append(
-                                f"<tool_result name=\"{tc['name']}\" success=\"{success}\">\n"
+                                f'<tool_result name="{tc["name"]}" success="{success}">\n'
                                 f"{tool_output}\n"
                                 f"</tool_result>"
                             )
-                            tool_results_data.append({
-                                "tool_call_id": native_tc[i].get("id", f"call_{i}") if native_tc and i < len(native_tc) else f"call_{i}",
-                                "output": tool_output,
-                            })
+                            tool_results_data.append(
+                                {
+                                    "tool_call_id": native_tc[i].get("id", f"call_{i}")
+                                    if native_tc and i < len(native_tc)
+                                    else f"call_{i}",
+                                    "output": tool_output,
+                                }
+                            )
 
                         # Re-call agent with tool results
                         if native_tc:
                             # Native format: assistant message with tool_calls + tool result messages
-                            msgs.append({
-                                "role": "assistant",
-                                "content": result.get("content", ""),
-                                "tool_calls": native_tc,
-                            })
+                            msgs.append(
+                                {
+                                    "role": "assistant",
+                                    "content": result.get("content", ""),
+                                    "tool_calls": native_tc,
+                                }
+                            )
                             for trd in tool_results_data:
-                                msgs.append({
-                                    "role": "tool",
-                                    "tool_call_id": trd["tool_call_id"],
-                                    "content": trd["output"],
-                                })
+                                msgs.append(
+                                    {
+                                        "role": "tool",
+                                        "tool_call_id": trd["tool_call_id"],
+                                        "content": trd["output"],
+                                    }
+                                )
                             # Send results for any remaining unexecuted tool calls
                             for j in range(len(tool_results_data), len(native_tc)):
-                                msgs.append({
-                                    "role": "tool",
-                                    "tool_call_id": native_tc[j].get("id", f"call_{j}"),
-                                    "content": f"Tool call limit reached ({max_calls}). Call was not executed.",
-                                })
+                                msgs.append(
+                                    {
+                                        "role": "tool",
+                                        "tool_call_id": native_tc[j].get("id", f"call_{j}"),
+                                        "content": f"Tool call limit reached ({max_calls}). Call was not executed.",
+                                    }
+                                )
                         else:
                             # Text-based fallback format
                             tool_results_block = "\n".join(tool_results_parts)
                             msgs.append({"role": "assistant", "content": result["content"]})
                             msgs.append({"role": "user", "content": tool_results_block})
-                        result = await dispatcher.call_agent(agent, msgs, lab_id=lab.id, tools=native_tools)
+                        result = await dispatcher.call_agent(
+                            agent, msgs, lab_id=lab.id, tools=native_tools
+                        )
 
                 # Extract & save any generated images
                 extra = {}
@@ -1159,19 +1329,25 @@ class LabRunner:
                             size_bytes=img_meta["size_bytes"],
                             resource_type="image",
                         )
-                        img_refs.append({
-                            "resource_id": str(res_obj.id),
-                            "filename": img_meta["filename"],
-                            "content_type": img_meta["content_type"],
-                        })
+                        img_refs.append(
+                            {
+                                "resource_id": str(res_obj.id),
+                                "filename": img_meta["filename"],
+                                "content_type": img_meta["content_type"],
+                            }
+                        )
                     extra["images"] = img_refs
-                    logger.info("Saved %d generated images from agent '%s'", len(img_refs), agent.name)
+                    logger.info(
+                        "Saved %d generated images from agent '%s'", len(img_refs), agent.name
+                    )
 
                 # Build result content with fallback for empty responses
                 result_content = result["content"]
                 if not result_content:
                     if result.get("tool_calls"):
-                        result_content = json.dumps({"tool_calls": [tc["name"] for tc in result["tool_calls"]]})
+                        result_content = json.dumps(
+                            {"tool_calls": [tc["name"] for tc in result["tool_calls"]]}
+                        )
                     else:
                         result_content = "(no text output)"
 
@@ -1196,8 +1372,10 @@ class LabRunner:
                 try:
                     get_loop_manager().observe_message(
                         lab_id=lab.id,
-                        anti_loop_enabled=bool(getattr(lab, "anti_loop_enabled", False)
-                                                or getattr(agent, "anti_loop_enabled", False)),
+                        anti_loop_enabled=bool(
+                            getattr(lab, "anti_loop_enabled", False)
+                            or getattr(agent, "anti_loop_enabled", False)
+                        ),
                         message_id=final_msg.id,
                         actor_key=f"agent:{agent.name}",
                         content=result_content or "",
@@ -1206,18 +1384,22 @@ class LabRunner:
                 except Exception:
                     logger.exception("Loop observe failed (agent.result)")
 
-                await _broadcast_lab_event(lab.id, "lab.task.complete", {
-                    "agent": agent.name,
-                    "iteration": lab.current_iteration,
-                    "sender_type": "agent",
-                    "sender_name": agent.name,
-                    "content": (result_content or "")[:500],
-                    "message_type": "result",
-                    "model_used": result.get("model"),
-                    "tokens_in": result.get("tokens_in", 0),
-                    "tokens_out": result.get("tokens_out", 0),
-                    "duration_ms": result.get("duration_ms", 0),
-                })
+                await _broadcast_lab_event(
+                    lab.id,
+                    "lab.task.complete",
+                    {
+                        "agent": agent.name,
+                        "iteration": lab.current_iteration,
+                        "sender_type": "agent",
+                        "sender_name": agent.name,
+                        "content": (result_content or "")[:500],
+                        "message_type": "result",
+                        "model_used": result.get("model"),
+                        "tokens_in": result.get("tokens_in", 0),
+                        "tokens_out": result.get("tokens_out", 0),
+                        "duration_ms": result.get("duration_ms", 0),
+                    },
+                )
 
                 return TaskResult(
                     agent_name=agent.name,
@@ -1231,10 +1413,14 @@ class LabRunner:
                 )
             except Exception as e:
                 logger.exception("Agent '%s' failed in lab %s", agent.name, lab.id)
-                await _broadcast_lab_event(lab.id, "lab.task.error", {
-                    "agent": agent.name,
-                    "error": str(e),
-                })
+                await _broadcast_lab_event(
+                    lab.id,
+                    "lab.task.error",
+                    {
+                        "agent": agent.name,
+                        "error": str(e),
+                    },
+                )
                 return TaskResult(
                     agent_name=agent.name,
                     instruction=task_item.instruction,
@@ -1272,7 +1458,7 @@ class LabRunner:
             # Run ready wave concurrently
             coros = [_call_agent(ti, ag) for ti, ag in ready]
             wave_results = await asyncio.gather(*coros, return_exceptions=False)
-            for (ti, ag), res in zip(ready, wave_results):
+            for (_ti, ag), res in zip(ready, wave_results):
                 results.append(res)
                 completed_agents.add(ag.name)
                 result_map[ag.name] = res
@@ -1322,7 +1508,9 @@ class LabRunner:
             if image_resources:
                 system += "\n\n<images>\n"
                 for img in image_resources:
-                    system += f"- {img.original_name} ({img.content_type}, {img.size_bytes} bytes)\n"
+                    system += (
+                        f"- {img.original_name} ({img.content_type}, {img.size_bytes} bytes)\n"
+                    )
                 system += "Note: Image files are available as resources. Describe what you see if relevant.\n</images>"
 
         # Inject tool descriptions if agent has tools assigned
@@ -1333,10 +1521,12 @@ class LabRunner:
         # Inject memories (tiered: Level-0 index with key + preview)
         if memories:
             from app.services.loop_strategies.base import inject_memory_index
+
             system = inject_memory_index(system, memories)
 
         # Inject output files listing
         from app.services.loop_strategies.base import inject_output_files
+
         system = inject_output_files(system, lab.id)
 
         user_msg: dict[str, Any] = {"role": "user", "content": instruction}
@@ -1363,7 +1553,9 @@ class LabRunner:
             user_msg,
         ]
 
-    async def _fail(self, lab_repo: LabRepository, db: AsyncSession, lab_id: UUID, error: str) -> None:
+    async def _fail(
+        self, lab_repo: LabRepository, db: AsyncSession, lab_id: UUID, error: str
+    ) -> None:
         reason = error[:500] or "Unknown error"
         await lab_repo.update(lab_id, status="failed", failure_reason=reason)
         await db.commit()
@@ -1449,12 +1641,16 @@ class LabRunner:
             )
             await db.commit()
 
-            await _broadcast_lab_event(lab.id, "lab.agent.call", {
-                "caller": caller_agent.name,
-                "target": target.name,
-                "instruction": instruction[:200],
-                "iteration": lab.current_iteration,
-            })
+            await _broadcast_lab_event(
+                lab.id,
+                "lab.agent.call",
+                {
+                    "caller": caller_agent.name,
+                    "target": target.name,
+                    "instruction": instruction[:200],
+                    "iteration": lab.current_iteration,
+                },
+            )
 
             # Build messages and call the target agent
             should_share = target.share_memory
@@ -1473,14 +1669,18 @@ class LabRunner:
             res_repo = LabResourceRepository(db)
             lab_resources = await res_repo.get_by_lab(lab.id)
 
-            target_tools = await self._resolve_tools(ts_repo, target.tools, target.tool_set_id, getattr(target, 'tool_set_ids', None))
+            target_tools = await self._resolve_tools(
+                ts_repo, target.tools, target.tool_set_id, getattr(target, "tool_set_ids", None)
+            )
             target_tools = await augment_tool_names_with_rag_access(db, lab.id, target_tools)
             target_tools = await augment_tool_names_with_web3_access(db, lab.id, target_tools)
             target_tools = await augment_tool_names_with_server_access(db, lab.id, target_tools)
             native_tools = build_native_tools_schema(target_tools) if target_tools else None
 
             msgs = self._build_agent_messages(
-                target, instruction, lab,
+                target,
+                instruction,
+                lab,
                 memories=target_memories,
                 resources=lab_resources,
                 resolved_tools=target_tools,
@@ -1506,7 +1706,9 @@ class LabRunner:
                 while total_tc < max_tc:
                     native_tc = result.get("tool_calls")
                     if native_tc:
-                        tool_calls = [{"name": tc["name"], "arguments": tc["arguments"]} for tc in native_tc]
+                        tool_calls = [
+                            {"name": tc["name"], "arguments": tc["arguments"]} for tc in native_tc
+                        ]
                     else:
                         tool_calls = parse_tool_calls(result["content"], agent_tools=target_tools)
                     if not tool_calls:
@@ -1539,7 +1741,11 @@ class LabRunner:
                                     sender_name=target.name,
                                     content=f"📄 File {file_event['action']}: **{file_event['path']}** ({file_event.get('size_bytes', 0)} bytes)",
                                     message_type="file_event",
-                                    extra={"file_action": file_event["action"], "file_path": file_event["path"], "size_bytes": file_event.get("size_bytes", 0)},
+                                    extra={
+                                        "file_action": file_event["action"],
+                                        "file_path": file_event["path"],
+                                        "size_bytes": file_event.get("size_bytes", 0),
+                                    },
                                 )
                                 await db.commit()
 
@@ -1558,27 +1764,49 @@ class LabRunner:
                         )
                         await db.commit()
 
-                        tool_results_parts.append(f"<tool_result name=\"{tc['name']}\" success=\"{success}\">\n{tool_output}\n</tool_result>")
-                        tc_id = native_tc[i].get("id", f"call_{i}") if native_tc and i < len(native_tc) else f"call_{i}"
+                        tool_results_parts.append(
+                            f'<tool_result name="{tc["name"]}" success="{success}">\n{tool_output}\n</tool_result>'
+                        )
+                        tc_id = (
+                            native_tc[i].get("id", f"call_{i}")
+                            if native_tc and i < len(native_tc)
+                            else f"call_{i}"
+                        )
                         tool_results_data.append({"tool_call_id": tc_id, "output": tool_output})
 
                     if not tool_results_parts:
                         break
 
                     if native_tc:
-                        msgs.append({"role": "assistant", "content": result.get("content", ""), "tool_calls": native_tc})
+                        msgs.append(
+                            {
+                                "role": "assistant",
+                                "content": result.get("content", ""),
+                                "tool_calls": native_tc,
+                            }
+                        )
                         for trd in tool_results_data:
-                            msgs.append({"role": "tool", "tool_call_id": trd["tool_call_id"], "content": trd["output"]})
+                            msgs.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": trd["tool_call_id"],
+                                    "content": trd["output"],
+                                }
+                            )
                     else:
                         msgs.append({"role": "assistant", "content": result["content"]})
                         msgs.append({"role": "user", "content": "\n".join(tool_results_parts)})
-                    result = await dispatcher.call_agent(target, msgs, lab_id=lab.id, tools=native_tools)
+                    result = await dispatcher.call_agent(
+                        target, msgs, lab_id=lab.id, tools=native_tools
+                    )
 
             # Store the result
             inter_content = result["content"]
             if not inter_content:
                 if result.get("tool_calls"):
-                    inter_content = json.dumps({"tool_calls": [tc["name"] for tc in result["tool_calls"]]})
+                    inter_content = json.dumps(
+                        {"tool_calls": [tc["name"] for tc in result["tool_calls"]]}
+                    )
                 else:
                     inter_content = "(no text output)"
             await msg_repo.create(
@@ -1604,12 +1832,15 @@ class LabRunner:
 
 # ── Helpers ──────────────────────────────────────
 
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
 async def _broadcast_lab_event(lab_id: UUID, event_type: str, payload: dict) -> None:
-    await manager.broadcast_to_clients({
-        "type": event_type,
-        "payload": {"lab_id": str(lab_id), **payload},
-    })
+    await manager.broadcast_to_clients(
+        {
+            "type": event_type,
+            "payload": {"lab_id": str(lab_id), **payload},
+        }
+    )

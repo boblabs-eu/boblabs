@@ -12,14 +12,13 @@ core unit suite:
 from __future__ import annotations
 
 import pytest
-from fastapi import HTTPException
-
 from app.services.authorization import (
     Permission,
     check_permission,
     filter_query_by_access,
     require_infra_access,
 )
+from fastapi import HTTPException
 
 pytestmark = pytest.mark.service
 
@@ -62,10 +61,13 @@ async def test_require_infra_access_no_settings_denies_non_admin(db):
 async def test_require_infra_access_user_in_allowlist_passes(db):
     """User in the allowlist passes."""
     from app.models.platform_settings import PlatformSettings
-    db.add(PlatformSettings(
-        key="infra_access",
-        value={"emails": ["allowed@x"]},
-    ))
+
+    db.add(
+        PlatformSettings(
+            key="infra_access",
+            value={"emails": ["allowed@x"]},
+        )
+    )
     await db.commit()
 
     user = await require_infra_access(
@@ -77,8 +79,9 @@ async def test_require_infra_access_user_in_allowlist_passes(db):
 
 def test_filter_query_by_access_admin_returns_original_query():
     """Admin path returns the query untouched."""
-    from sqlalchemy import select
     from app.models.orchestrator import Lab
+    from sqlalchemy import select
+
     q = select(Lab)
     result = filter_query_by_access(q, Lab, {"sub": "a@x", "role": "admin"})
     assert result is q  # identity — no where clause appended

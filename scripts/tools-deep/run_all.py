@@ -12,6 +12,7 @@ Exit code:
     0  — every test was PASS or SKIPPED.
     1  — at least one test FAILed.
 """
+
 from __future__ import annotations
 
 import re
@@ -56,8 +57,14 @@ def _copy_into_container() -> None:
 
 
 _FORWARDED_ENV_PREFIXES = (
-    "MAIL_", "TWITTER_", "MEDIA_POST_", "TRADING_TEST_", "RAG_TEST_",
-    "PIPELINE_", "AUDIO_GEN_", "BOB_ALLOW_",
+    "MAIL_",
+    "TWITTER_",
+    "MEDIA_POST_",
+    "TRADING_TEST_",
+    "RAG_TEST_",
+    "PIPELINE_",
+    "AUDIO_GEN_",
+    "BOB_ALLOW_",
 )
 
 
@@ -66,13 +73,14 @@ def _run_one(script: str) -> tuple[str, str]:
     # Forward any test-relevant env from host into the container.
     env_args: list[str] = ["-e", f"PYTHONPATH=/app:{CONTAINER_DIR}"]
     import os as _os
+
     for k, v in _os.environ.items():
         if any(k.startswith(p) for p in _FORWARDED_ENV_PREFIXES):
             env_args += ["-e", f"{k}={v}"]
     cp = _docker(
-        ["exec", "-T", *env_args, "bob-api",
-         "python", f"{CONTAINER_DIR}/{script}"],
-        capture_output=True, text=True,
+        ["exec", "-T", *env_args, "bob-api", "python", f"{CONTAINER_DIR}/{script}"],
+        capture_output=True,
+        text=True,
     )
     output = (cp.stdout or "").strip().splitlines()
     result_line = next((l for l in reversed(output) if l.startswith(("RESULT:", "MISSING"))), "")

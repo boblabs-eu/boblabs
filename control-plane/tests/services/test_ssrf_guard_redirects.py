@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-
 from app.services.ssrf_guard import (
     PrivateHostError,
     RedirectLoopError,
@@ -40,6 +39,7 @@ def _mock(handler) -> httpx.AsyncClient:
 @pytest.mark.asyncio
 async def test_safe_get_rejects_redirect_to_private_ip():
     """A 302 → 127.0.0.1 must raise PrivateHostError, not silently follow."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(302, headers={"location": "http://127.0.0.1/internal"})
 
@@ -51,10 +51,14 @@ async def test_safe_get_rejects_redirect_to_private_ip():
 @pytest.mark.asyncio
 async def test_safe_get_rejects_redirect_to_metadata_endpoint():
     """A 302 → 169.254.169.254 (AWS metadata) must raise."""
+
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(302, headers={
-            "location": "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
-        })
+        return httpx.Response(
+            302,
+            headers={
+                "location": "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+            },
+        )
 
     async with _mock(handler) as client:
         with pytest.raises(PrivateHostError):
@@ -68,6 +72,7 @@ async def test_safe_get_rejects_redirect_loop():
     Uses public hostnames that pass the real-DNS guard; the loop is
     enforced by the safe_get hop counter, not by the targets.
     """
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(302, headers={"location": "https://www.iana.org/"})
 
@@ -85,6 +90,7 @@ async def test_safe_get_rejects_redirect_loop():
 @pytest.mark.asyncio
 async def test_safe_get_rejects_initial_private_url():
     """The first-hop check is enforced too — not just redirects."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=b"ok")
 

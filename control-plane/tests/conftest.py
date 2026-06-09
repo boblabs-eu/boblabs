@@ -27,7 +27,7 @@ from typing import AsyncIterator, Callable
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
 # Fail fast if the test env wasn't set up (Makefile target sets these).
@@ -66,17 +66,17 @@ _test_engine = create_async_engine(
     poolclass=pool.NullPool,
 )
 _test_async_session = async_sessionmaker(
-    _test_engine, expire_on_commit=False,
+    _test_engine,
+    expire_on_commit=False,
 )
 _db_mod.engine = _test_engine
 _db_mod.async_session = _test_async_session
 
 from app.api.dependencies import create_access_token  # noqa: E402
 from app.database import async_session, engine  # noqa: E402
+from app.main import app as fastapi_app  # noqa: E402
 from app.models.base import Base  # noqa: E402
 from app.models.orchestrator import Lab  # noqa: E402
-from app.main import app as fastapi_app  # noqa: E402
-
 
 # ── Truncate-between-tests isolation ───────────────────────────────────
 
@@ -95,10 +95,9 @@ async def _truncate_all_tables() -> AsyncIterator[None]:
     table_names = [t.name for t in reversed(Base.metadata.sorted_tables)]
     if table_names:
         async with async_session() as session:
-            await session.execute(text(
-                f"TRUNCATE TABLE {', '.join(table_names)} "
-                f"RESTART IDENTITY CASCADE"
-            ))
+            await session.execute(
+                text(f"TRUNCATE TABLE {', '.join(table_names)} RESTART IDENTITY CASCADE")
+            )
             await session.commit()
     yield
 

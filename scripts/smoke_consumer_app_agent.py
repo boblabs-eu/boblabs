@@ -42,7 +42,6 @@ import uuid
 
 import httpx
 
-
 BOB_API_URL = os.environ.get("BOB_API_URL", "http://127.0.0.1:8888").rstrip("/")
 BOB_APP_ID = os.environ.get("BOB_APP_ID", "smoke_recreate_test")
 BOB_APP_SECRET = os.environ.get("BOB_APP_SECRET")
@@ -104,22 +103,30 @@ def main() -> None:
     smoke_model = RUN_AGENT_MODEL or models["models"][0]["model_identifier"]
     print(f"INFO: using model '{smoke_model}' for agent creation")
 
-    a1 = _call("/create_agent", {
-        "name": agent_a,
-        "system_prompt": "Echo what you are told.",
-        "model": smoke_model,
-        "temperature": 0.1,
-        "max_tokens": 256,
-    })
-    print(f"PASS: create_agent {agent_a} → id={a1['agent_id']} library_name={a1['library_agent_name']}")
+    a1 = _call(
+        "/create_agent",
+        {
+            "name": agent_a,
+            "system_prompt": "Echo what you are told.",
+            "model": smoke_model,
+            "temperature": 0.1,
+            "max_tokens": 256,
+        },
+    )
+    print(
+        f"PASS: create_agent {agent_a} → id={a1['agent_id']} library_name={a1['library_agent_name']}"
+    )
     assert a1["name"] == agent_a, a1
     assert a1["library_agent_name"] == f"app__{BOB_APP_ID}__{agent_a}", a1
 
-    a1b = _call("/create_agent", {
-        "name": agent_a,
-        "system_prompt": "should be ignored on idempotent path",
-        "model": smoke_model,
-    })
+    a1b = _call(
+        "/create_agent",
+        {
+            "name": agent_a,
+            "system_prompt": "should be ignored on idempotent path",
+            "model": smoke_model,
+        },
+    )
     if a1b["agent_id"] != a1["agent_id"]:
         print(f"FAIL: create_agent not idempotent — got {a1b['agent_id']} vs {a1['agent_id']}")
         sys.exit(1)
@@ -167,35 +174,50 @@ def main() -> None:
 
     # ── Phase 4: RAG document lifecycle ────────────────────────────────
 
-    doc1 = _call("/ingest_rag_document", {
-        "name": rag_name,
-        "filename": f"smoke_{suffix}.txt",
-        "content": "Lorem ipsum dolor sit amet. " * 30,
-    })
-    print(f"PASS: ingest_rag_document → status={doc1['status']} chunks={doc1['chunk_count']} replaced={doc1['replaced_previous']}")
+    doc1 = _call(
+        "/ingest_rag_document",
+        {
+            "name": rag_name,
+            "filename": f"smoke_{suffix}.txt",
+            "content": "Lorem ipsum dolor sit amet. " * 30,
+        },
+    )
+    print(
+        f"PASS: ingest_rag_document → status={doc1['status']} chunks={doc1['chunk_count']} replaced={doc1['replaced_previous']}"
+    )
     assert not doc1["replaced_previous"], doc1
 
-    doc2 = _call("/ingest_rag_document", {
-        "name": rag_name,
-        "filename": f"smoke_{suffix}.txt",
-        "content": "Replacement content. " * 50,
-    })
+    doc2 = _call(
+        "/ingest_rag_document",
+        {
+            "name": rag_name,
+            "filename": f"smoke_{suffix}.txt",
+            "content": "Replacement content. " * 50,
+        },
+    )
     if not doc2["replaced_previous"]:
         print(f"FAIL: second ingest_rag_document should have replaced_previous=true, got {doc2}")
         sys.exit(1)
-    print(f"PASS: ingest_rag_document replaces by filename (chunks {doc1['chunk_count']} → {doc2['chunk_count']})")
+    print(
+        f"PASS: ingest_rag_document replaces by filename (chunks {doc1['chunk_count']} → {doc2['chunk_count']})"
+    )
 
     listed_docs = _call("/list_rag_documents", {"name": rag_name})
     matching = [d for d in listed_docs["documents"] if d["filename"] == f"smoke_{suffix}.txt"]
     if len(matching) != 1:
-        print(f"FAIL: expected exactly 1 doc with smoke filename, found {len(matching)}: {matching}")
+        print(
+            f"FAIL: expected exactly 1 doc with smoke filename, found {len(matching)}: {matching}"
+        )
         sys.exit(1)
-    print(f"PASS: list_rag_documents shows 1 doc for smoke filename (replace worked)")
+    print("PASS: list_rag_documents shows 1 doc for smoke filename (replace worked)")
 
-    deleted = _call("/delete_rag_document", {
-        "name": rag_name,
-        "filename": f"smoke_{suffix}.txt",
-    })
+    deleted = _call(
+        "/delete_rag_document",
+        {
+            "name": rag_name,
+            "filename": f"smoke_{suffix}.txt",
+        },
+    )
     if deleted["deleted"] != 1:
         print(f"FAIL: delete_rag_document expected 1 deleted, got {deleted}")
         sys.exit(1)
@@ -203,23 +225,29 @@ def main() -> None:
 
     # ── Phase 5: update_rag ────────────────────────────────────────────
 
-    updated = _call("/update_rag", {
-        "name": rag_name,
-        "display_name": f"Smoke updated {suffix}",
-        "description": "Updated description",
-    })
+    updated = _call(
+        "/update_rag",
+        {
+            "name": rag_name,
+            "display_name": f"Smoke updated {suffix}",
+            "description": "Updated description",
+        },
+    )
     assert updated["display_name"] == f"Smoke updated {suffix}", updated
     print(f"PASS: update_rag changed display_name → '{updated['display_name']}'")
 
     # ── Phase 6: run_agent (only when CALLBACK_URL is provided) ────────
 
     if CALLBACK_URL:
-        run = _call("/run_agent", {
-            "name": agent_a,
-            "generation_id": str(uuid.uuid4()),
-            "callback_url": CALLBACK_URL,
-            "user_message": "Say 'pong' and stop.",
-        })
+        run = _call(
+            "/run_agent",
+            {
+                "name": agent_a,
+                "generation_id": str(uuid.uuid4()),
+                "callback_url": CALLBACK_URL,
+                "user_message": "Say 'pong' and stop.",
+            },
+        )
         print(f"PASS: run_agent dispatched lab={run['lab_id']} status={run['status']}")
 
         # Poll list_agent_runs briefly to see the lab appear
@@ -231,7 +259,9 @@ def main() -> None:
                 seen = True
                 break
             time.sleep(2)
-        print(f"{'PASS' if seen else 'INFO'}: list_agent_runs {'saw' if seen else 'did not yet see'} the dispatched run")
+        print(
+            f"{'PASS' if seen else 'INFO'}: list_agent_runs {'saw' if seen else 'did not yet see'} the dispatched run"
+        )
     else:
         print("INFO: skipping /run_agent (set BOB_SMOKE_CALLBACK_URL to exercise)")
 

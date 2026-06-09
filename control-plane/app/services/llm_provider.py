@@ -11,11 +11,8 @@ Message format:
   The "images" key is optional. Providers convert it to their native format.
 """
 
-import base64
 import json
 import logging
-import mimetypes
-import time
 from abc import ABC, abstractmethod
 from typing import AsyncGenerator
 
@@ -40,11 +37,13 @@ def _convert_messages_openai(messages: list[dict]) -> list[dict]:
 
         # Tool result messages
         if role == "tool":
-            converted.append({
-                "role": "tool",
-                "tool_call_id": msg.get("tool_call_id", ""),
-                "content": msg.get("content", ""),
-            })
+            converted.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": msg.get("tool_call_id", ""),
+                    "content": msg.get("content", ""),
+                }
+            )
             continue
 
         out: dict = {"role": role}
@@ -58,10 +57,12 @@ def _convert_messages_openai(messages: list[dict]) -> list[dict]:
                     url = img_b64
                 else:
                     url = f"data:image/png;base64,{img_b64}"
-                content_parts.append({
-                    "type": "image_url",
-                    "image_url": {"url": url},
-                })
+                content_parts.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": url},
+                    }
+                )
             out["content"] = content_parts
         else:
             out["content"] = msg.get("content", "")
@@ -74,7 +75,9 @@ def _convert_messages_openai(messages: list[dict]) -> list[dict]:
                     "type": "function",
                     "function": {
                         "name": tc["name"],
-                        "arguments": json.dumps(tc["arguments"]) if isinstance(tc["arguments"], dict) else tc["arguments"],
+                        "arguments": json.dumps(tc["arguments"])
+                        if isinstance(tc["arguments"], dict)
+                        else tc["arguments"],
                     },
                 }
                 for i, tc in enumerate(msg["tool_calls"])
@@ -215,7 +218,9 @@ class LLMProvider(ABC):
         """
         parts: list[str] = []
         meta: dict = {}
-        async for chunk in self.chat_completion(messages, model, temperature, max_tokens, tools=tools, think=think):
+        async for chunk in self.chat_completion(
+            messages, model, temperature, max_tokens, tools=tools, think=think
+        ):
             if chunk.get("done"):
                 meta = chunk
             elif chunk.get("token"):
@@ -275,9 +280,7 @@ class OllamaProvider(LLMProvider):
             payload["think"] = think
         accumulated_tool_calls: list = []
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            async with client.stream(
-                "POST", f"{self.base_url}/api/chat", json=payload
-            ) as response:
+            async with client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if not line.strip():
@@ -301,7 +304,11 @@ class OllamaProvider(LLMProvider):
                             "model": data.get("model", model),
                         }
                         # Tool calls may arrive in non-done or done messages
-                        raw_tc = data.get("message", {}).get("tool_calls") or accumulated_tool_calls or None
+                        raw_tc = (
+                            data.get("message", {}).get("tool_calls")
+                            or accumulated_tool_calls
+                            or None
+                        )
                         if raw_tc:
                             done_data["tool_calls"] = _normalize_ollama_tool_calls(raw_tc)
                         yield done_data
@@ -349,9 +356,7 @@ class OllamaProvider(LLMProvider):
                                 break
             except Exception:
                 pass  # Non-critical — context_length is informational only
-            models.append(
-                {"name": name, "identifier": name, "parameters": params}
-            )
+            models.append({"name": name, "identifier": name, "parameters": params})
         return models
 
     async def health_check(self) -> bool:
@@ -444,9 +449,13 @@ class HuggingFaceProvider(LLMProvider):
                     if response.status_code >= 400:
                         body = await response.aread()
                         error_text = body.decode(errors="replace")[:2000]
-                        logger.error("HuggingFace/vLLM error %s: %s", response.status_code, error_text)
+                        logger.error(
+                            "HuggingFace/vLLM error %s: %s", response.status_code, error_text
+                        )
                         if "tools" in payload and "tool" in error_text.lower():
-                            logger.warning("Provider does not support native tool calling; retrying without tools")
+                            logger.warning(
+                                "Provider does not support native tool calling; retrying without tools"
+                            )
                             payload.pop("tools", None)
                             continue  # retry without tools
                         response.raise_for_status()
@@ -456,7 +465,13 @@ class HuggingFaceProvider(LLMProvider):
                             continue
                         raw = line[6:]
                         if raw == "[DONE]":
-                            done_data = {"token": "", "done": True, "tokens_in": total_tokens_in, "tokens_out": total_tokens_out, "model": model}
+                            done_data = {
+                                "token": "",
+                                "done": True,
+                                "tokens_in": total_tokens_in,
+                                "tokens_out": total_tokens_out,
+                                "model": model,
+                            }
                             tool_calls = _finalize_openai_tool_calls(tc_acc)
                             if tool_calls:
                                 done_data["tool_calls"] = tool_calls
@@ -475,7 +490,13 @@ class HuggingFaceProvider(LLMProvider):
                 # Streamed successfully — exit retry loop
                 break
 
-        done_data = {"token": "", "done": True, "tokens_in": total_tokens_in, "tokens_out": total_tokens_out, "model": model}
+        done_data = {
+            "token": "",
+            "done": True,
+            "tokens_in": total_tokens_in,
+            "tokens_out": total_tokens_out,
+            "model": model,
+        }
         tool_calls = _finalize_openai_tool_calls(tc_acc)
         if tool_calls:
             done_data["tool_calls"] = tool_calls
@@ -654,10 +675,18 @@ def _convert_messages_anthropic(messages: list[dict]) -> tuple[str | None, list[
             system_prompt = msg.get("content", "")
             continue
         if role == "tool":
-            converted.append({
-                "role": "user",
-                "content": [{"type": "tool_result", "tool_use_id": msg.get("tool_call_id", ""), "content": msg.get("content", "")}],
-            })
+            converted.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": msg.get("tool_call_id", ""),
+                            "content": msg.get("content", ""),
+                        }
+                    ],
+                }
+            )
             continue
 
         images = msg.get("images")
@@ -670,10 +699,12 @@ def _convert_messages_anthropic(messages: list[dict]) -> tuple[str | None, list[
                 else:
                     media_type = "image/png"
                     b64data = img_b64
-                content_parts.append({
-                    "type": "image",
-                    "source": {"type": "base64", "media_type": media_type, "data": b64data},
-                })
+                content_parts.append(
+                    {
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": media_type, "data": b64data},
+                    }
+                )
             content_parts.append({"type": "text", "text": msg.get("content", "")})
             out = {"role": role, "content": content_parts}
         else:
@@ -682,12 +713,16 @@ def _convert_messages_anthropic(messages: list[dict]) -> tuple[str | None, list[
         if role == "assistant" and msg.get("tool_calls"):
             tool_use_blocks = []
             for tc in msg["tool_calls"]:
-                tool_use_blocks.append({
-                    "type": "tool_use",
-                    "id": tc.get("id", ""),
-                    "name": tc["name"],
-                    "input": tc["arguments"] if isinstance(tc["arguments"], dict) else json.loads(tc["arguments"]),
-                })
+                tool_use_blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": tc.get("id", ""),
+                        "name": tc["name"],
+                        "input": tc["arguments"]
+                        if isinstance(tc["arguments"], dict)
+                        else json.loads(tc["arguments"]),
+                    }
+                )
             if isinstance(out["content"], list):
                 out["content"].extend(tool_use_blocks)
             else:
@@ -748,11 +783,13 @@ class AnthropicProvider(LLMProvider):
             anthropic_tools = []
             for t in tools:
                 fn = t.get("function", t)
-                anthropic_tools.append({
-                    "name": fn["name"],
-                    "description": fn.get("description", ""),
-                    "input_schema": fn.get("parameters", {}),
-                })
+                anthropic_tools.append(
+                    {
+                        "name": fn["name"],
+                        "description": fn.get("description", ""),
+                        "input_schema": fn.get("parameters", {}),
+                    }
+                )
             payload["tools"] = anthropic_tools
 
         total_tokens_in = 0
@@ -807,11 +844,13 @@ class AnthropicProvider(LLMProvider):
                                 args = json.loads(args_str) if args_str else {}
                             except json.JSONDecodeError:
                                 args = {"raw_arguments": args_str}
-                            tool_calls.append({
-                                "id": current_tool["id"],
-                                "name": current_tool["name"],
-                                "arguments": args,
-                            })
+                            tool_calls.append(
+                                {
+                                    "id": current_tool["id"],
+                                    "name": current_tool["name"],
+                                    "arguments": args,
+                                }
+                            )
                             current_tool = None
 
                     elif event_type == "message_delta":
@@ -842,16 +881,17 @@ class AnthropicProvider(LLMProvider):
                     models = data.get("data", [])
                     if models:
                         return [
-                            {"name": m.get("id", ""), "identifier": m.get("id", ""), "parameters": {}}
+                            {
+                                "name": m.get("id", ""),
+                                "identifier": m.get("id", ""),
+                                "parameters": {},
+                            }
                             for m in models
                         ]
         except Exception:
             pass
         # Fallback to known models
-        return [
-            {"name": m, "identifier": m, "parameters": {}}
-            for m in self.KNOWN_MODELS
-        ]
+        return [{"name": m, "identifier": m, "parameters": {}} for m in self.KNOWN_MODELS]
 
     async def health_check(self) -> bool:
         try:
@@ -876,9 +916,7 @@ _OPENAI_COMPATIBLE_PRESETS = {
 }
 
 
-def create_provider(
-    provider_type: str, base_url: str, api_key: str | None = None
-) -> LLMProvider:
+def create_provider(provider_type: str, base_url: str, api_key: str | None = None) -> LLMProvider:
     """Create an LLM provider instance from type string."""
     if provider_type == "ollama":
         return OllamaProvider(base_url)

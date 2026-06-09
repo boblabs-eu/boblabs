@@ -41,31 +41,31 @@ _SKIP_PREFIXES: tuple[str, ...] = (
 
 # Ordered (longest-first) list of (regex, module-name) pairs.
 _MODULE_RULES: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"^/api/v1/auth(/|$)"),                "auth"),
-    (re.compile(r"^/api/v1/access-tokens(/|$)"),       "tokens"),
-    (re.compile(r"^/api/v1/library-agents(/|$)"),      "library-agents"),
-    (re.compile(r"^/api/v1/labs(/|$)"),                "labs"),
-    (re.compile(r"^/api/v1/orchestrator(/|$)"),        "orchestrator"),
-    (re.compile(r"^/api/v1/tool-sets(/|$)"),           "tool-sets"),
-    (re.compile(r"^/api/v1/prompt-templates(/|$)"),    "prompt-templates"),
-    (re.compile(r"^/api/v1/cron-jobs(/|$)"),           "cron-jobs"),
-    (re.compile(r"^/api/v1/rag(/|$)"),                 "rag"),
-    (re.compile(r"^/api/v1/web3(/|$)"),                "web3"),
-    (re.compile(r"^/api/v1/projects(/|$)"),            "projects"),
-    (re.compile(r"^/api/v1/servers(/|$)"),             "servers"),
-    (re.compile(r"^/api/v1/workflows(/|$)"),           "workflows"),
-    (re.compile(r"^/api/v1/commands(/|$)"),            "commands"),
-    (re.compile(r"^/api/v1/modules(/|$)"),             "modules"),
-    (re.compile(r"^/api/v1/resources(/|$)"),           "resources"),
-    (re.compile(r"^/api/v1/news(/|$)"),                "news"),
-    (re.compile(r"^/api/v1/metrics(/|$)"),             "metrics"),
-    (re.compile(r"^/api/v1/internal/apps(/|$)"),       "internal-apps"),
-    (re.compile(r"^/api/v1/outreach(/|$)"),            "outreach"),
-    (re.compile(r"^/api/v1/server-access(/|$)"),       "server-access"),
-    (re.compile(r"^/api/v1/tool-configs(/|$)"),        "tool-configs"),
-    (re.compile(r"^/api/v1/public(/|$)"),              "public"),
-    (re.compile(r"^/api/"),                            "api"),
-    (re.compile(r"^/ws/"),                             "websocket"),
+    (re.compile(r"^/api/v1/auth(/|$)"), "auth"),
+    (re.compile(r"^/api/v1/access-tokens(/|$)"), "tokens"),
+    (re.compile(r"^/api/v1/library-agents(/|$)"), "library-agents"),
+    (re.compile(r"^/api/v1/labs(/|$)"), "labs"),
+    (re.compile(r"^/api/v1/orchestrator(/|$)"), "orchestrator"),
+    (re.compile(r"^/api/v1/tool-sets(/|$)"), "tool-sets"),
+    (re.compile(r"^/api/v1/prompt-templates(/|$)"), "prompt-templates"),
+    (re.compile(r"^/api/v1/cron-jobs(/|$)"), "cron-jobs"),
+    (re.compile(r"^/api/v1/rag(/|$)"), "rag"),
+    (re.compile(r"^/api/v1/web3(/|$)"), "web3"),
+    (re.compile(r"^/api/v1/projects(/|$)"), "projects"),
+    (re.compile(r"^/api/v1/servers(/|$)"), "servers"),
+    (re.compile(r"^/api/v1/workflows(/|$)"), "workflows"),
+    (re.compile(r"^/api/v1/commands(/|$)"), "commands"),
+    (re.compile(r"^/api/v1/modules(/|$)"), "modules"),
+    (re.compile(r"^/api/v1/resources(/|$)"), "resources"),
+    (re.compile(r"^/api/v1/news(/|$)"), "news"),
+    (re.compile(r"^/api/v1/metrics(/|$)"), "metrics"),
+    (re.compile(r"^/api/v1/internal/apps(/|$)"), "internal-apps"),
+    (re.compile(r"^/api/v1/outreach(/|$)"), "outreach"),
+    (re.compile(r"^/api/v1/server-access(/|$)"), "server-access"),
+    (re.compile(r"^/api/v1/tool-configs(/|$)"), "tool-configs"),
+    (re.compile(r"^/api/v1/public(/|$)"), "public"),
+    (re.compile(r"^/api/"), "api"),
+    (re.compile(r"^/ws/"), "websocket"),
 ]
 
 
@@ -108,9 +108,7 @@ def _decode_user(request: Request) -> tuple[str | None, str | None]:
     if not token:
         return None, None
     try:
-        payload = jwt.decode(
-            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
-        )
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
     except JWTError:
         return None, None
     return payload.get("sub"), payload.get("role")
@@ -189,16 +187,18 @@ def _trunc(value: str | None, limit: int) -> str | None:
 # request_log.query. Values are replaced with the literal "<redacted>"
 # while the key is kept so admins can still see which parameter was
 # present.
-_SENSITIVE_QUERY_KEYS: frozenset[str] = frozenset({
-    "token",
-    "access_token",
-    "admin_secret",
-    "password",
-    "secret",
-    "api_key",
-    "apikey",
-    "bob_app_secret",
-})
+_SENSITIVE_QUERY_KEYS: frozenset[str] = frozenset(
+    {
+        "token",
+        "access_token",
+        "admin_secret",
+        "password",
+        "secret",
+        "api_key",
+        "apikey",
+        "bob_app_secret",
+    }
+)
 
 
 def _scrub_query(query: str | None) -> str | None:
@@ -213,8 +213,5 @@ def _scrub_query(query: str | None) -> str | None:
         # Malformed query string — fall back to redacting the whole thing
         # rather than logging something we couldn't parse.
         return "<unparseable>"
-    cleaned = [
-        (k, "<redacted>" if k.lower() in _SENSITIVE_QUERY_KEYS else v)
-        for k, v in pairs
-    ]
+    cleaned = [(k, "<redacted>" if k.lower() in _SENSITIVE_QUERY_KEYS else v) for k, v in pairs]
     return urlencode(cleaned, doseq=False)

@@ -6,15 +6,6 @@ from datetime import datetime
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repositories._paginate import DEFAULT_LIMIT, MAX_LIMIT, clamp_limit
-# D05 — shared sanitiser moved to app.repositories._sanitize so every
-# repo gets the same NULL-byte / lone-surrogate handling. Aliased back
-# to the old private names so existing call sites keep working.
-from app.repositories._sanitize import (
-    sanitize_json as _sanitize_json,
-    sanitize_text as _sanitize,
-)
-from app.services.authorization import filter_query_by_access, get_default_acl
 from app.models.orchestrator import (
     CronJob,
     Lab,
@@ -28,15 +19,26 @@ from app.models.orchestrator import (
     PromptTemplate,
     ToolSet,
 )
+from app.repositories._paginate import MAX_LIMIT, clamp_limit
+
+# D05 — shared sanitiser moved to app.repositories._sanitize so every
+# repo gets the same NULL-byte / lone-surrogate handling. Aliased back
+# to the old private names so existing call sites keep working.
+from app.repositories._sanitize import (
+    sanitize_json as _sanitize_json,
+)
+from app.repositories._sanitize import (
+    sanitize_text as _sanitize,
+)
+from app.services.authorization import filter_query_by_access, get_default_acl
+
 
 class LibraryAgentRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
     async def get_all(self) -> list[LibraryAgent]:
-        result = await self.db.execute(
-            select(LibraryAgent).order_by(LibraryAgent.name)
-        )
+        result = await self.db.execute(select(LibraryAgent).order_by(LibraryAgent.name))
         return list(result.scalars().all())
 
     async def get_by_id(self, agent_id: uuid.UUID) -> LibraryAgent | None:
@@ -66,9 +68,7 @@ class PromptTemplateRepository:
         self.db = db
 
     async def get_all(self) -> list[PromptTemplate]:
-        result = await self.db.execute(
-            select(PromptTemplate).order_by(PromptTemplate.name)
-        )
+        result = await self.db.execute(select(PromptTemplate).order_by(PromptTemplate.name))
         return list(result.scalars().all())
 
     async def get_by_id(self, pt_id: uuid.UUID) -> PromptTemplate | None:
@@ -98,9 +98,7 @@ class CronJobRepository:
         self.db = db
 
     async def get_all(self) -> list[CronJob]:
-        result = await self.db.execute(
-            select(CronJob).order_by(CronJob.name)
-        )
+        result = await self.db.execute(select(CronJob).order_by(CronJob.name))
         return list(result.scalars().all())
 
     async def get_by_id(self, cj_id: uuid.UUID) -> CronJob | None:
@@ -139,15 +137,13 @@ class CronJobRepository:
         # the query plan can use a GIN index if one is created.
         from sqlalchemy import cast
         from sqlalchemy.dialects.postgresql import JSONB
+
         result = await self.db.execute(
             select(Lab.id, Lab.name, Lab.status).where(
                 Lab.cron_job_ids.op("@>")(cast([str(cj_id)], JSONB))
             )
         )
-        return [
-            {"id": str(row.id), "name": row.name, "status": row.status}
-            for row in result.all()
-        ]
+        return [{"id": str(row.id), "name": row.name, "status": row.status} for row in result.all()]
 
 
 class ToolSetRepository:
@@ -155,9 +151,7 @@ class ToolSetRepository:
         self.db = db
 
     async def get_all(self) -> list[ToolSet]:
-        result = await self.db.execute(
-            select(ToolSet).order_by(ToolSet.name)
-        )
+        result = await self.db.execute(select(ToolSet).order_by(ToolSet.name))
         return list(result.scalars().all())
 
     async def get_by_id(self, ts_id: uuid.UUID) -> ToolSet | None:
@@ -187,8 +181,10 @@ class LabRepository:
         self.db = db
 
     async def get_all(
-        self, user: dict | None = None,
-        limit: int = MAX_LIMIT, offset: int = 0,
+        self,
+        user: dict | None = None,
+        limit: int = MAX_LIMIT,
+        offset: int = 0,
     ) -> list[Lab]:
         # P01/P04 — bound the unfiltered scan; the Labs UI typically
         # paginates client-side, so MAX_LIMIT is generous enough.
@@ -236,8 +232,10 @@ class LabAgentRepository:
         return list(result.scalars().all())
 
     async def get_all(
-        self, user: dict | None = None,
-        limit: int = MAX_LIMIT, offset: int = 0,
+        self,
+        user: dict | None = None,
+        limit: int = MAX_LIMIT,
+        offset: int = 0,
     ) -> list[LabAgent]:
         """Return all agents across all labs (for the agent library UI).
 
@@ -377,7 +375,9 @@ class LabMessageRepository:
         return msg
 
     async def get_injections(
-        self, lab_id: uuid.UUID, since: datetime | None = None,
+        self,
+        lab_id: uuid.UUID,
+        since: datetime | None = None,
         limit: int = MAX_LIMIT,
     ) -> list[LabMessage]:
         # P03 — was unbounded; an adversarial inject loop could materialise
@@ -404,7 +404,10 @@ class LabMemoryRepository:
         self.db = db
 
     async def get_by_lab(
-        self, lab_id: uuid.UUID, scope: str | None = None, limit: int = 50,
+        self,
+        lab_id: uuid.UUID,
+        scope: str | None = None,
+        limit: int = 50,
         agent_id: uuid.UUID | None = None,
     ) -> list[LabMemory]:
         stmt = select(LabMemory).where(LabMemory.lab_id == lab_id)
@@ -413,7 +416,8 @@ class LabMemoryRepository:
         if agent_id is not None:
             stmt = stmt.where(LabMemory.agent_id == agent_id)
         stmt = stmt.order_by(
-            LabMemory.importance.desc(), LabMemory.updated_at.desc(),
+            LabMemory.importance.desc(),
+            LabMemory.updated_at.desc(),
         ).limit(clamp_limit(limit))
         result = await self.db.execute(stmt)
         return list(result.scalars().all())

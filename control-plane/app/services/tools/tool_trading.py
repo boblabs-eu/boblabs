@@ -7,8 +7,6 @@ Private keys from TRADING_PRIVATE_KEYS env var. Safety: max_tx_usd, confirmation
 from __future__ import annotations
 
 import logging
-import uuid
-from datetime import datetime, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -45,30 +43,100 @@ TOOLS = {
                 ),
                 "required": True,
             },
-            "chain": {"type": "string", "description": "Chain: ethereum, base, bnb (default: ethereum)", "required": False},
-            "wallet": {"type": "string", "description": "Wallet address (from list_wallets)", "required": False},
-            "to": {"type": "string", "description": "Recipient address (for send_native/send_token)", "required": False},
-            "amount": {"type": "string", "description": "Amount in human-readable units (e.g. '0.1' for 0.1 ETH)", "required": False},
-            "token": {"type": "string", "description": "Token contract address (for send_token/approve/swap)", "required": False},
-            "from_token": {"type": "string", "description": "Source token address or 'native' for ETH/BNB (for quote/swap)", "required": False},
-            "to_token": {"type": "string", "description": "Destination token address or 'native' (for quote/swap)", "required": False},
-            "spender": {"type": "string", "description": "Spender address (for approve_token/token_allowance)", "required": False},
-            "position_id": {"type": "string", "description": "Position UUID (for close_position)", "required": False},
-            "token_symbol": {"type": "string", "description": "Token symbol (for open_position)", "required": False},
-            "entry_price": {"type": "string", "description": "Entry price in USD (for open_position)", "required": False},
-            "stop_loss": {"type": "string", "description": "Stop-loss price USD (for open_position)", "required": False},
-            "take_profit": {"type": "string", "description": "Take-profit price USD (for open_position)", "required": False},
+            "chain": {
+                "type": "string",
+                "description": "Chain: ethereum, base, bnb (default: ethereum)",
+                "required": False,
+            },
+            "wallet": {
+                "type": "string",
+                "description": "Wallet address (from list_wallets)",
+                "required": False,
+            },
+            "to": {
+                "type": "string",
+                "description": "Recipient address (for send_native/send_token)",
+                "required": False,
+            },
+            "amount": {
+                "type": "string",
+                "description": "Amount in human-readable units (e.g. '0.1' for 0.1 ETH)",
+                "required": False,
+            },
+            "token": {
+                "type": "string",
+                "description": "Token contract address (for send_token/approve/swap)",
+                "required": False,
+            },
+            "from_token": {
+                "type": "string",
+                "description": "Source token address or 'native' for ETH/BNB (for quote/swap)",
+                "required": False,
+            },
+            "to_token": {
+                "type": "string",
+                "description": "Destination token address or 'native' (for quote/swap)",
+                "required": False,
+            },
+            "spender": {
+                "type": "string",
+                "description": "Spender address (for approve_token/token_allowance)",
+                "required": False,
+            },
+            "position_id": {
+                "type": "string",
+                "description": "Position UUID (for close_position)",
+                "required": False,
+            },
+            "token_symbol": {
+                "type": "string",
+                "description": "Token symbol (for open_position)",
+                "required": False,
+            },
+            "entry_price": {
+                "type": "string",
+                "description": "Entry price in USD (for open_position)",
+                "required": False,
+            },
+            "stop_loss": {
+                "type": "string",
+                "description": "Stop-loss price USD (for open_position)",
+                "required": False,
+            },
+            "take_profit": {
+                "type": "string",
+                "description": "Take-profit price USD (for open_position)",
+                "required": False,
+            },
             "notes": {"type": "string", "description": "Position notes", "required": False},
-            "limit": {"type": "integer", "description": "Max results (default 20)", "required": False},
+            "limit": {
+                "type": "integer",
+                "description": "Max results (default 20)",
+                "required": False,
+            },
         },
     },
 }
 
 _SUPPORTED_CHAINS = {"ethereum", "base", "bnb"}
-_READ_ACTIONS = {"list_wallets", "wallet_balance", "gas_price", "token_allowance", "quote",
-                 "list_positions", "trade_history", "portfolio_pnl"}
-_WRITE_ACTIONS = {"send_native", "send_token", "approve_token", "swap",
-                  "open_position", "close_position"}
+_READ_ACTIONS = {
+    "list_wallets",
+    "wallet_balance",
+    "gas_price",
+    "token_allowance",
+    "quote",
+    "list_positions",
+    "trade_history",
+    "portfolio_pnl",
+}
+_WRITE_ACTIONS = {
+    "send_native",
+    "send_token",
+    "approve_token",
+    "swap",
+    "open_position",
+    "close_position",
+}
 
 NATIVE_TOKEN_ADDRESS = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
 
@@ -76,11 +144,10 @@ NATIVE_TOKEN_ADDRESS = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
 async def _get_trading_config(executor) -> dict:
     """Load trading ToolConfig from DB. Returns defaults if not configured."""
     from sqlalchemy import select
+
     from app.models.orchestrator import ToolConfig
 
-    result = await executor.db.execute(
-        select(ToolConfig).where(ToolConfig.tool_type == "trading")
-    )
+    result = await executor.db.execute(select(ToolConfig).where(ToolConfig.tool_type == "trading"))
     tc = result.scalar_one_or_none()
     if tc and tc.config:
         return tc.config
@@ -93,9 +160,15 @@ async def _get_trading_config(executor) -> dict:
     }
 
 
-async def _check_write_safety(executor, action: str, chain: str, config: dict,
-                                usd_value: float | None = None,
-                                *, requires_usd_estimate: bool = True) -> str | None:
+async def _check_write_safety(
+    executor,
+    action: str,
+    chain: str,
+    config: dict,
+    usd_value: float | None = None,
+    *,
+    requires_usd_estimate: bool = True,
+) -> str | None:
     """Check if a write action is allowed. Returns error message or None.
 
     Fail-closed contract (cluster D):
@@ -124,8 +197,10 @@ async def _check_write_safety(executor, action: str, chain: str, config: dict,
                     f"config to opt out of value-based capping."
                 )
         elif usd_value > max_usd:
-            return (f"Transaction value ~${usd_value:.2f} exceeds max_tx_usd ${max_usd:.2f}. "
-                    f"Update trading config to increase limit.")
+            return (
+                f"Transaction value ~${usd_value:.2f} exceeds max_tx_usd ${max_usd:.2f}. "
+                f"Update trading config to increase limit."
+            )
 
     return None
 
@@ -146,11 +221,17 @@ async def trading(executor: ToolExecutor, args: dict) -> dict:
     # Subtool permission check
     allowed = executor._subtool_permissions.get("trading", [])
     if allowed and action not in allowed:
-        return {"success": False, "output": f"Action '{action}' not permitted. Allowed: {', '.join(allowed)}"}
+        return {
+            "success": False,
+            "output": f"Action '{action}' not permitted. Allowed: {', '.join(allowed)}",
+        }
 
     chain = (args.get("chain") or "ethereum").strip().lower()
     if chain not in _SUPPORTED_CHAINS:
-        return {"success": False, "output": f"Unsupported chain: {chain}. Use: {', '.join(_SUPPORTED_CHAINS)}"}
+        return {
+            "success": False,
+            "output": f"Unsupported chain: {chain}. Use: {', '.join(_SUPPORTED_CHAINS)}",
+        }
 
     try:
         if action == "list_wallets":
@@ -192,11 +273,16 @@ async def trading(executor: ToolExecutor, args: dict) -> dict:
 
 # ── Read-only actions ────────────────────────────────────────────────────
 
+
 async def _list_wallets(executor, args: dict) -> dict:
-    from app.services.trading_service import list_hot_wallets, get_native_balance, CHAIN_CONFIG
+    from app.services.trading_service import list_hot_wallets
+
     wallets = list_hot_wallets()
     if not wallets:
-        return {"success": True, "output": "No hot wallets loaded. Set TRADING_PRIVATE_KEYS env var."}
+        return {
+            "success": True,
+            "output": "No hot wallets loaded. Set TRADING_PRIVATE_KEYS env var.",
+        }
 
     lines = [f"**Hot Wallets** ({len(wallets)}):"]
     for w in wallets:
@@ -206,8 +292,9 @@ async def _list_wallets(executor, args: dict) -> dict:
 
 
 async def _wallet_balance(executor, args: dict, chain: str) -> dict:
-    from app.services.trading_service import get_native_balance, get_w3, CHAIN_CONFIG, ERC20_ABI
     import httpx
+
+    from app.services.trading_service import CHAIN_CONFIG, get_native_balance
 
     wallet = args.get("wallet", "").strip()
     if not wallet:
@@ -232,7 +319,7 @@ async def _wallet_balance(executor, args: dict, chain: str) -> dict:
                         symbol = tok.get("symbol", "???")
                         decimals = int(tok.get("decimals", 18) or 18)
                         raw = int(t.get("value", "0") or "0")
-                        bal = float(Decimal(raw) / Decimal(10 ** decimals))
+                        bal = float(Decimal(raw) / Decimal(10**decimals))
                         rate = tok.get("exchange_rate")
                         usd = ""
                         if rate and bal > 0:
@@ -248,12 +335,14 @@ async def _wallet_balance(executor, args: dict, chain: str) -> dict:
 
 async def _gas_price(chain: str) -> dict:
     from app.services.trading_service import get_gas_price
+
     result = await get_gas_price(chain)
     return {"success": True, "output": f"Gas price on {chain}: {result['gas_price_gwei']:.2f} Gwei"}
 
 
 async def _token_allowance(executor, args: dict, chain: str) -> dict:
     from app.services.trading_service import get_token_allowance
+
     token = args.get("token", "").strip()
     owner = args.get("wallet", "").strip()
     spender = args.get("spender", "").strip()
@@ -261,16 +350,23 @@ async def _token_allowance(executor, args: dict, chain: str) -> dict:
         return {"success": False, "output": "token_allowance requires 'token', 'wallet', 'spender'"}
 
     result = await get_token_allowance(chain, owner, spender, token)
-    return {"success": True, "output": (
-        f"Allowance: {result['allowance']:.6f} {result['symbol']} "
-        f"(owner: {owner[:10]}… → spender: {spender[:10]}…)"
-    )}
+    return {
+        "success": True,
+        "output": (
+            f"Allowance: {result['allowance']:.6f} {result['symbol']} "
+            f"(owner: {owner[:10]}… → spender: {spender[:10]}…)"
+        ),
+    }
 
 
 async def _quote(executor, args: dict, chain: str) -> dict:
     from app.services.trading_service import (
-        get_swap_quote, get_v2_quote, get_w3,
-        CHAIN_CONFIG, ERC20_ABI, NATIVE_TOKEN_ADDRESS,
+        CHAIN_CONFIG,
+        ERC20_ABI,
+        NATIVE_TOKEN_ADDRESS,
+        get_swap_quote,
+        get_v2_quote,
+        get_w3,
     )
 
     from_token = _resolve_token(args.get("from_token", ""), chain)
@@ -299,21 +395,21 @@ async def _quote(executor, args: dict, chain: str) -> dict:
         to_decimals = contract.functions.decimals().call()
         to_symbol = contract.functions.symbol().call()
 
-    amount_raw = int(Decimal(amount_str) * Decimal(10 ** decimals))
+    amount_raw = int(Decimal(amount_str) * Decimal(10**decimals))
 
     # Try 1inch first, fallback to V2 router
     lines = [f"**Swap Quote** on {chain}: {amount_str} {from_symbol} → {to_symbol}"]
     try:
         quote_data = await get_swap_quote(chain, from_token, to_token, amount_raw)
         dst_amount = int(quote_data.get("dstAmount", quote_data.get("toAmount", 0)))
-        out = float(Decimal(dst_amount) / Decimal(10 ** to_decimals))
+        out = float(Decimal(dst_amount) / Decimal(10**to_decimals))
         lines.append(f"  1inch: {out:.8f} {to_symbol}")
     except Exception as e:
         lines.append(f"  1inch: unavailable ({e})")
 
     try:
         v2_data = await get_v2_quote(chain, from_token, to_token, amount_raw)
-        v2_out = float(Decimal(int(v2_data["amount_out"])) / Decimal(10 ** to_decimals))
+        v2_out = float(Decimal(int(v2_data["amount_out"])) / Decimal(10**to_decimals))
         lines.append(f"  {v2_data['router']}: {v2_out:.8f} {to_symbol}")
     except Exception as e:
         lines.append(f"  V2 Router: unavailable ({e})")
@@ -323,8 +419,14 @@ async def _quote(executor, args: dict, chain: str) -> dict:
 
 # ── Write actions ────────────────────────────────────────────────────────
 
+
 async def _send_native(executor, args: dict, chain: str) -> dict:
-    from app.services.trading_service import send_native, estimate_usd_value, NATIVE_TOKEN_ADDRESS, get_w3
+    from app.services.trading_service import (
+        NATIVE_TOKEN_ADDRESS,
+        estimate_usd_value,
+        get_w3,
+        send_native,
+    )
 
     wallet = args.get("wallet", "").strip()
     to = args.get("to", "").strip()
@@ -354,25 +456,41 @@ async def _send_native(executor, args: dict, chain: str) -> dict:
 
     # Confirmation mode
     if config.get("confirmation_mode") == "confirm":
-        symbol = config.get("native_symbol", "ETH")
-        return {"success": True, "output": (
-            f"**CONFIRMATION REQUIRED** — send_native\n"
-            f"  From: {wallet}\n  To: {to}\n  Amount: {amount} {chain.upper()}\n"
-            f"  Est. USD: ${usd_value or '?'}\n"
-            f"  Set confirmation_mode to 'autonomous' in trading config to execute directly."
-        )}
+        config.get("native_symbol", "ETH")
+        return {
+            "success": True,
+            "output": (
+                f"**CONFIRMATION REQUIRED** — send_native\n"
+                f"  From: {wallet}\n  To: {to}\n  Amount: {amount} {chain.upper()}\n"
+                f"  Est. USD: ${usd_value or '?'}\n"
+                f"  Set confirmation_mode to 'autonomous' in trading config to execute directly."
+            ),
+        }
 
     result = await send_native(chain, wallet, to, amount, gas_mult)
-    await _record_trade(executor, chain, wallet, result["tx_hash"], "send",
-                        NATIVE_TOKEN_ADDRESS, str(amount), "", "0", usd_value)
-    return {"success": True, "output": (
-        f"Sent {amount} on {chain}.\n"
-        f"  TX: {result['tx_hash']}\n  Explorer: {result['explorer_url']}"
-    )}
+    await _record_trade(
+        executor,
+        chain,
+        wallet,
+        result["tx_hash"],
+        "send",
+        NATIVE_TOKEN_ADDRESS,
+        str(amount),
+        "",
+        "0",
+        usd_value,
+    )
+    return {
+        "success": True,
+        "output": (
+            f"Sent {amount} on {chain}.\n"
+            f"  TX: {result['tx_hash']}\n  Explorer: {result['explorer_url']}"
+        ),
+    }
 
 
 async def _send_token(executor, args: dict, chain: str) -> dict:
-    from app.services.trading_service import send_token, estimate_usd_value, get_w3, ERC20_ABI
+    from app.services.trading_service import ERC20_ABI, estimate_usd_value, get_w3, send_token
 
     wallet = args.get("wallet", "").strip()
     to = args.get("to", "").strip()
@@ -390,7 +508,7 @@ async def _send_token(executor, args: dict, chain: str) -> dict:
     contract = w3.eth.contract(address=Web3.to_checksum_address(token), abi=ERC20_ABI)
     decimals = contract.functions.decimals().call()
     symbol = contract.functions.symbol().call()
-    amount_raw = int(Decimal(amount_str) * Decimal(10 ** decimals))
+    amount_raw = int(Decimal(amount_str) * Decimal(10**decimals))
     usd_value = await estimate_usd_value(chain, token, amount_raw)
 
     err = await _check_write_safety(executor, "send_token", chain, config, usd_value)
@@ -398,25 +516,35 @@ async def _send_token(executor, args: dict, chain: str) -> dict:
         return {"success": False, "output": err}
 
     if config.get("confirmation_mode") == "confirm":
-        return {"success": True, "output": (
-            f"**CONFIRMATION REQUIRED** — send_token\n"
-            f"  From: {wallet}\n  To: {to}\n  Token: {symbol} ({token[:10]}…)\n"
-            f"  Amount: {amount} {symbol}\n  Est. USD: ${usd_value or '?'}\n"
-            f"  Set confirmation_mode to 'autonomous' in trading config to execute directly."
-        )}
+        return {
+            "success": True,
+            "output": (
+                f"**CONFIRMATION REQUIRED** — send_token\n"
+                f"  From: {wallet}\n  To: {to}\n  Token: {symbol} ({token[:10]}…)\n"
+                f"  Amount: {amount} {symbol}\n  Est. USD: ${usd_value or '?'}\n"
+                f"  Set confirmation_mode to 'autonomous' in trading config to execute directly."
+            ),
+        }
 
     result = await send_token(chain, wallet, token, to, amount, gas_mult)
-    await _record_trade(executor, chain, wallet, result["tx_hash"], "send",
-                        token, amount_str, "", "0", usd_value)
-    return {"success": True, "output": (
-        f"Sent {amount} {symbol} on {chain}.\n"
-        f"  TX: {result['tx_hash']}\n  Explorer: {result['explorer_url']}"
-    )}
+    await _record_trade(
+        executor, chain, wallet, result["tx_hash"], "send", token, amount_str, "", "0", usd_value
+    )
+    return {
+        "success": True,
+        "output": (
+            f"Sent {amount} {symbol} on {chain}.\n"
+            f"  TX: {result['tx_hash']}\n  Explorer: {result['explorer_url']}"
+        ),
+    }
 
 
 async def _approve_token(executor, args: dict, chain: str) -> dict:
     from app.services.trading_service import (
-        approve_token, estimate_usd_value, get_w3, ERC20_ABI,
+        ERC20_ABI,
+        approve_token,
+        estimate_usd_value,
+        get_w3,
     )
 
     wallet = args.get("wallet", "").strip()
@@ -439,21 +567,25 @@ async def _approve_token(executor, args: dict, chain: str) -> dict:
     unlimited = amount_str is None
     if unlimited:
         if confirmation_mode != "autonomous" or not config.get("allow_unlimited_approval"):
-            return {"success": True, "output": (
-                f"**CONFIRMATION REQUIRED** — approve_token (unlimited)\n"
-                f"  Wallet: {wallet}\n  Token: {token}\n  Spender: {spender}\n"
-                f"  Approving max-uint256 lets the spender drain this token from the wallet.\n"
-                f"  To execute non-interactively set BOTH confirmation_mode='autonomous' AND\n"
-                f"  allow_unlimited_approval=true in trading config, or call again with a\n"
-                f"  bounded 'amount'."
-            )}
+            return {
+                "success": True,
+                "output": (
+                    f"**CONFIRMATION REQUIRED** — approve_token (unlimited)\n"
+                    f"  Wallet: {wallet}\n  Token: {token}\n  Spender: {spender}\n"
+                    f"  Approving max-uint256 lets the spender drain this token from the wallet.\n"
+                    f"  To execute non-interactively set BOTH confirmation_mode='autonomous' AND\n"
+                    f"  allow_unlimited_approval=true in trading config, or call again with a\n"
+                    f"  bounded 'amount'."
+                ),
+            }
         # Operator opted into unbounded approvals; cap-check still runs but
         # no USD estimate is possible so we ask _check_write_safety not to
         # require one. Operators who keep max_tx_usd set effectively block
         # unbounded approvals (the bypass below only kicks in once they've
         # explicitly turned off the cap).
-        err = await _check_write_safety(executor, "approve_token", chain, config,
-                                         usd_value=None, requires_usd_estimate=False)
+        err = await _check_write_safety(
+            executor, "approve_token", chain, config, usd_value=None, requires_usd_estimate=False
+        )
         if err:
             return {"success": False, "output": err}
         notional_usd = None
@@ -466,39 +598,63 @@ async def _approve_token(executor, args: dict, chain: str) -> dict:
             return {"success": False, "output": f"Invalid amount: {amount_str!r}"}
         w3 = get_w3(chain)
         contract = w3.eth.contract(
-            address=Web3.to_checksum_address(token), abi=ERC20_ABI,
+            address=Web3.to_checksum_address(token),
+            abi=ERC20_ABI,
         )
         decimals = contract.functions.decimals().call()
-        amount_raw = int(amount_dec * Decimal(10 ** decimals))
+        amount_raw = int(amount_dec * Decimal(10**decimals))
         notional_usd = await estimate_usd_value(chain, token, amount_raw)
-        err = await _check_write_safety(executor, "approve_token", chain, config,
-                                         usd_value=notional_usd)
+        err = await _check_write_safety(
+            executor, "approve_token", chain, config, usd_value=notional_usd
+        )
         if err:
             return {"success": False, "output": err}
         if confirmation_mode == "confirm":
-            return {"success": True, "output": (
-                f"**CONFIRMATION REQUIRED** — approve_token\n"
-                f"  Wallet: {wallet}\n  Token: {token}\n  Spender: {spender}\n"
-                f"  Allowance: {amount_dec}\n  Est. USD: ${notional_usd or '?'}\n"
-                f"  Set confirmation_mode to 'autonomous' in trading config to execute directly."
-            )}
+            return {
+                "success": True,
+                "output": (
+                    f"**CONFIRMATION REQUIRED** — approve_token\n"
+                    f"  Wallet: {wallet}\n  Token: {token}\n  Spender: {spender}\n"
+                    f"  Allowance: {amount_dec}\n  Est. USD: ${notional_usd or '?'}\n"
+                    f"  Set confirmation_mode to 'autonomous' in trading config to execute directly."
+                ),
+            }
 
     amount = float(amount_str) if amount_str else None
     result = await approve_token(chain, wallet, token, spender, amount, gas_mult)
     limit_str = f"{amount}" if amount else "unlimited"
-    await _record_trade(executor, chain, wallet, result["tx_hash"], "approve",
-                        token, limit_str, "", "0", notional_usd)
-    return {"success": True, "output": (
-        f"Approved {limit_str} spending on {chain}.\n"
-        f"  TX: {result['tx_hash']}\n  Explorer: {result['explorer_url']}"
-    )}
+    await _record_trade(
+        executor,
+        chain,
+        wallet,
+        result["tx_hash"],
+        "approve",
+        token,
+        limit_str,
+        "",
+        "0",
+        notional_usd,
+    )
+    return {
+        "success": True,
+        "output": (
+            f"Approved {limit_str} spending on {chain}.\n"
+            f"  TX: {result['tx_hash']}\n  Explorer: {result['explorer_url']}"
+        ),
+    }
 
 
 async def _swap(executor, args: dict, chain: str) -> dict:
     from app.services.trading_service import (
-        build_swap_tx, estimate_and_send, get_v2_quote, execute_v2_swap,
-        estimate_usd_value, get_w3, CHAIN_CONFIG, ERC20_ABI,
-        NATIVE_TOKEN_ADDRESS, get_token_allowance,
+        CHAIN_CONFIG,
+        ERC20_ABI,
+        NATIVE_TOKEN_ADDRESS,
+        build_swap_tx,
+        estimate_and_send,
+        estimate_usd_value,
+        execute_v2_swap,
+        get_v2_quote,
+        get_w3,
     )
 
     wallet = args.get("wallet", "").strip()
@@ -507,7 +663,10 @@ async def _swap(executor, args: dict, chain: str) -> dict:
     amount_str = args.get("amount", "").strip()
 
     if not all([wallet, from_token, to_token, amount_str]):
-        return {"success": False, "output": "swap requires 'wallet', 'from_token', 'to_token', 'amount'"}
+        return {
+            "success": False,
+            "output": "swap requires 'wallet', 'from_token', 'to_token', 'amount'",
+        }
 
     config = await _get_trading_config(executor)
     gas_mult = float(config.get("gas_multiplier", 1.1))
@@ -533,7 +692,7 @@ async def _swap(executor, args: dict, chain: str) -> dict:
         to_decimals = c.functions.decimals().call()
         to_symbol = c.functions.symbol().call()
 
-    amount_raw = int(Decimal(amount_str) * Decimal(10 ** from_decimals))
+    amount_raw = int(Decimal(amount_str) * Decimal(10**from_decimals))
 
     # Estimate USD value
     usd_value = await estimate_usd_value(chain, from_token, amount_raw)
@@ -545,13 +704,16 @@ async def _swap(executor, args: dict, chain: str) -> dict:
 
     # Confirmation mode
     if config.get("confirmation_mode") == "confirm":
-        return {"success": True, "output": (
-            f"**CONFIRMATION REQUIRED** — swap\n"
-            f"  Chain: {chain}\n  From: {amount_str} {from_symbol}\n  To: {to_symbol}\n"
-            f"  Wallet: {wallet}\n  Slippage: {slippage_pct}%\n"
-            f"  Est. USD: ${usd_value or '?'}\n"
-            f"  Set confirmation_mode to 'autonomous' in trading config to execute directly."
-        )}
+        return {
+            "success": True,
+            "output": (
+                f"**CONFIRMATION REQUIRED** — swap\n"
+                f"  Chain: {chain}\n  From: {amount_str} {from_symbol}\n  To: {to_symbol}\n"
+                f"  Wallet: {wallet}\n  Slippage: {slippage_pct}%\n"
+                f"  Est. USD: ${usd_value or '?'}\n"
+                f"  Set confirmation_mode to 'autonomous' in trading config to execute directly."
+            ),
+        }
 
     # Try 1inch first, then V2 router fallback
     result = None
@@ -559,7 +721,9 @@ async def _swap(executor, args: dict, chain: str) -> dict:
     to_amount_str = "?"
 
     try:
-        swap_data = await build_swap_tx(chain, from_token, to_token, amount_raw, wallet, slippage_pct)
+        swap_data = await build_swap_tx(
+            chain, from_token, to_token, amount_raw, wallet, slippage_pct
+        )
         tx_dict = swap_data.get("tx", {})
         if tx_dict:
             # A01 — verify the upstream-supplied target is on our per-chain
@@ -567,6 +731,7 @@ async def _swap(executor, args: dict, chain: str) -> dict:
             # compromised / MITM'd 1inch response that swaps the
             # aggregator address for an attacker contract is refused.
             from app.services.trading_service import assert_swap_router_allowed
+
             assert_swap_router_allowed(chain, tx_dict["to"])
             tx = {
                 "from": Web3.to_checksum_address(wallet),
@@ -577,7 +742,7 @@ async def _swap(executor, args: dict, chain: str) -> dict:
             result = await estimate_and_send(chain, wallet, tx, gas_mult)
             method = "1inch"
             dst = swap_data.get("dstAmount", swap_data.get("toAmount", "0"))
-            to_amount_str = str(float(Decimal(int(dst)) / Decimal(10 ** to_decimals)))
+            to_amount_str = str(float(Decimal(int(dst)) / Decimal(10**to_decimals)))
     except Exception as e:
         logger.info("1inch swap failed, trying V2 router: %s", e)
 
@@ -587,25 +752,40 @@ async def _swap(executor, args: dict, chain: str) -> dict:
             v2_quote = await get_v2_quote(chain, from_token, to_token, amount_raw)
             amount_out = int(v2_quote["amount_out"])
             min_out = int(amount_out * (1 - slippage_pct / 100))
-            result = await execute_v2_swap(chain, wallet, from_token, to_token,
-                                           amount_raw, min_out, gas_mult)
+            result = await execute_v2_swap(
+                chain, wallet, from_token, to_token, amount_raw, min_out, gas_mult
+            )
             method = v2_quote["router"]
-            to_amount_str = str(float(Decimal(amount_out) / Decimal(10 ** to_decimals)))
+            to_amount_str = str(float(Decimal(amount_out) / Decimal(10**to_decimals)))
         except Exception as e:
             return {"success": False, "output": f"Swap failed on both 1inch and V2 router: {e}"}
 
     # Record trade
-    await _record_trade(executor, chain, wallet, result["tx_hash"], "swap",
-                        from_token, amount_str, to_token, to_amount_str, usd_value)
+    await _record_trade(
+        executor,
+        chain,
+        wallet,
+        result["tx_hash"],
+        "swap",
+        from_token,
+        amount_str,
+        to_token,
+        to_amount_str,
+        usd_value,
+    )
 
-    return {"success": True, "output": (
-        f"Swap executed via {method} on {chain}.\n"
-        f"  {amount_str} {from_symbol} → ~{to_amount_str} {to_symbol}\n"
-        f"  TX: {result['tx_hash']}\n  Explorer: {result['explorer_url']}"
-    )}
+    return {
+        "success": True,
+        "output": (
+            f"Swap executed via {method} on {chain}.\n"
+            f"  {amount_str} {from_symbol} → ~{to_amount_str} {to_symbol}\n"
+            f"  TX: {result['tx_hash']}\n  Explorer: {result['explorer_url']}"
+        ),
+    }
 
 
 # ── Position tracking actions ────────────────────────────────────────────
+
 
 async def _open_position(executor, args: dict, chain: str) -> dict:
     from app.repositories.trading_repo import TradingRepo
@@ -634,10 +814,13 @@ async def _open_position(executor, args: dict, chain: str) -> dict:
         notes=args.get("notes", ""),
         lab_id=executor.lab_id,
     )
-    return {"success": True, "output": (
-        f"Position opened: {amount_str} {token_symbol or '???'} on {chain}\n"
-        f"  ID: {pos['id']}\n  Entry: ${entry_price or '?'}"
-    )}
+    return {
+        "success": True,
+        "output": (
+            f"Position opened: {amount_str} {token_symbol or '???'} on {chain}\n"
+            f"  ID: {pos['id']}\n  Entry: ${entry_price or '?'}"
+        ),
+    }
 
 
 async def _close_position(executor, args: dict) -> dict:
@@ -656,17 +839,24 @@ async def _close_position(executor, args: dict) -> dict:
     )
     if not pos:
         return {"success": False, "output": f"Position {position_id} not found or already closed."}
-    return {"success": True, "output": (
-        f"Position closed: {pos['token_symbol']} on {pos['chain']}\n"
-        f"  Entry: ${pos.get('entry_price_usd', '?')} → Exit: ${pos.get('exit_price_usd', '?')}"
-    )}
+    return {
+        "success": True,
+        "output": (
+            f"Position closed: {pos['token_symbol']} on {pos['chain']}\n"
+            f"  Entry: ${pos.get('entry_price_usd', '?')} → Exit: ${pos.get('exit_price_usd', '?')}"
+        ),
+    }
 
 
 async def _list_positions(executor, args: dict) -> dict:
     from app.repositories.trading_repo import TradingRepo
 
     wallet = args.get("wallet", "").strip() or None
-    status = args.get("notes", "").strip().lower() if args.get("notes", "").strip().lower() in ("open", "closed", "all") else "open"
+    status = (
+        args.get("notes", "").strip().lower()
+        if args.get("notes", "").strip().lower() in ("open", "closed", "all")
+        else "open"
+    )
     limit = min(int(args.get("limit", 20)), 100)
 
     repo = TradingRepo(executor.db)
@@ -725,18 +915,31 @@ async def _portfolio_pnl(executor, args: dict) -> dict:
     lines.append(f"  Total entry value: ${pnl['total_entry_value']:.2f}")
     if pnl.get("positions"):
         for p in pnl["positions"]:
-            lines.append(f"  {p['token_symbol']} on {p['chain']}: {p['amount']:.6f} @ ${p['entry_price_usd']:.2f}")
+            lines.append(
+                f"  {p['token_symbol']} on {p['chain']}: {p['amount']:.6f} @ ${p['entry_price_usd']:.2f}"
+            )
     return {"success": True, "output": "\n".join(lines)}
 
 
 # ── Trade recording helper ───────────────────────────────────────────────
 
-async def _record_trade(executor, chain: str, wallet: str, tx_hash: str,
-                         tx_type: str, from_token: str, from_amount: str,
-                         to_token: str, to_amount: str, value_usd: float | None) -> None:
+
+async def _record_trade(
+    executor,
+    chain: str,
+    wallet: str,
+    tx_hash: str,
+    tx_type: str,
+    from_token: str,
+    from_amount: str,
+    to_token: str,
+    to_amount: str,
+    value_usd: float | None,
+) -> None:
     """Record a trade in the trade_history table."""
     try:
         from app.repositories.trading_repo import TradingRepo
+
         repo = TradingRepo(executor.db)
         await repo.record_trade(
             wallet_address=wallet,

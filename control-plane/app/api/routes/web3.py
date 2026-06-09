@@ -10,20 +10,20 @@ from app.api.dependencies import get_current_user
 from app.database import get_db
 from app.services.authorization import Permission
 from app.services.web3_service import (
-    get_crypto_prices,
-    get_wallet_for_user,
-    get_wallet_balances,
-    get_portfolio_total,
-    list_wallets,
     add_wallet,
-    remove_wallet,
-    get_wallet_transactions,
-    get_wallet_token_transfers,
-    get_web3_settings,
-    update_web3_settings,
-    record_portfolio_snapshot,
-    get_portfolio_history,
     cleanup_old_snapshots,
+    get_crypto_prices,
+    get_portfolio_history,
+    get_portfolio_total,
+    get_wallet_balances,
+    get_wallet_for_user,
+    get_wallet_token_transfers,
+    get_wallet_transactions,
+    get_web3_settings,
+    list_wallets,
+    record_portfolio_snapshot,
+    remove_wallet,
+    update_web3_settings,
 )
 
 router = APIRouter(prefix="/web3", tags=["web3"])
@@ -77,7 +77,9 @@ async def settings_get(db: AsyncSession = Depends(get_db), user: dict = Depends(
 
 
 @router.put("/settings")
-async def settings_update(body: SettingsUpdate, db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
+async def settings_update(
+    body: SettingsUpdate, db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)
+):
     """Update Web3 settings (refresh_interval, retention_full_hours, retention_step_hours)."""
     _require_admin(user)
     return await update_web3_settings(
@@ -98,7 +100,9 @@ async def wallets_list(db: AsyncSession = Depends(get_db), user: dict = Depends(
 
 
 @router.post("/wallets", status_code=201)
-async def wallets_add(body: WalletCreate, db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
+async def wallets_add(
+    body: WalletCreate, db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)
+):
     """Add a wallet address to track."""
     try:
         wallet = await add_wallet(db, body.address, body.label, user=user)
@@ -108,7 +112,9 @@ async def wallets_add(body: WalletCreate, db: AsyncSession = Depends(get_db), us
 
 
 @router.delete("/wallets/{wallet_id}")
-async def wallets_remove(wallet_id: str, db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
+async def wallets_remove(
+    wallet_id: str, db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)
+):
     """Remove a tracked wallet."""
     removed = await remove_wallet(db, wallet_id, user=user)
     if not removed:
@@ -120,7 +126,9 @@ async def wallets_remove(wallet_id: str, db: AsyncSession = Depends(get_db), use
 
 
 @router.get("/wallets/{wallet_id}/balances")
-async def wallet_balances(wallet_id: str, db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
+async def wallet_balances(
+    wallet_id: str, db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)
+):
     """Get native balances for a wallet across all chains."""
     wallet = await get_wallet_for_user(db, wallet_id, user, permission=Permission.VIEW)
     if not wallet:
@@ -177,14 +185,18 @@ async def portfolio_history(
 
 
 @router.post("/portfolio/snapshot")
-async def portfolio_snapshot(db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
+async def portfolio_snapshot(
+    db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)
+):
     """Manually trigger a portfolio snapshot."""
     _require_admin(user)
     return await record_portfolio_snapshot(db)
 
 
 @router.post("/portfolio/cleanup")
-async def portfolio_cleanup(db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
+async def portfolio_cleanup(
+    db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)
+):
     """Manually trigger old snapshot cleanup/downsampling."""
     _require_admin(user)
     return await cleanup_old_snapshots(db)

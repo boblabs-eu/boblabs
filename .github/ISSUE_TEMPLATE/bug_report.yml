@@ -1,0 +1,97 @@
+name: Bug report
+description: A reproducible problem in Bob Labs.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. The more concrete the
+        repro, the faster we can land a fix. For security vulnerabilities,
+        please follow [SECURITY.md](https://github.com/boblabs-eu/boblabs/blob/main/SECURITY.md)
+        instead — do not open a public issue.
+
+  - type: input
+    id: version
+    attributes:
+      label: Bob Labs version
+      description: Output of `curl localhost:8888/api/v1/health | jq .version` — or the tag you checked out.
+      placeholder: e.g. 0.11.0
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Host OS
+      placeholder: e.g. Ubuntu 22.04 / Debian 12 / macOS 14.5
+    validations:
+      required: true
+
+  - type: input
+    id: docker
+    attributes:
+      label: Docker / Compose version
+      description: Output of `docker --version && docker compose version`
+      placeholder: e.g. Docker 25.0.3, Compose v2.24.5
+    validations:
+      required: true
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU (if relevant)
+      description: NVIDIA driver + card model, or "none" / "CPU-only".
+      placeholder: e.g. NVIDIA 550.78 / RTX 4090, or "CPU only"
+    validations:
+      required: false
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: The exact sequence of commands or clicks that triggers the bug.
+      placeholder: |
+        1. Spin up a fresh stack: `docker compose up -d --build`
+        2. Log in as admin
+        3. Create a lab with config X
+        4. Click "Run"
+        5. Bug appears
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      placeholder: The lab runs to completion.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happens
+      description: Include any error messages verbatim. If the failure is server-side, paste relevant `docker logs bob-api` lines.
+      placeholder: |
+        The lab status flips to "failed" after 3 seconds.
+        bob-api logs show: `<error here>`
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Optional, but very welcome. Use a code fence for log output.
+      render: shell
+
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Sanity check
+      options:
+        - label: I searched [open issues](https://github.com/boblabs-eu/boblabs/issues) and didn't find this one.
+          required: true
+        - label: This is not a security vulnerability (those go through SECURITY.md).
+          required: true

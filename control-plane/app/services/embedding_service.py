@@ -29,7 +29,9 @@ class EmbeddingService:
         return model
 
     @classmethod
-    async def embed_texts(cls, texts: Sequence[str], model_name: str | None = None) -> list[list[float]]:
+    async def embed_texts(
+        cls, texts: Sequence[str], model_name: str | None = None
+    ) -> list[list[float]]:
         if not texts:
             return []
 

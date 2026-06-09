@@ -1,0 +1,51 @@
+name: Feature request
+description: Suggest a capability or improvement.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for thinking about how to make Bob Labs better. The most
+        useful feature requests describe the *problem you're hitting*,
+        not just the solution you have in mind — that gives us room to
+        propose the cleanest fit.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Concrete scenarios beat abstract wishes. "When I do X, Y is awkward because Z."
+      placeholder: |
+        I run 30+ labs across two GPU servers. Right now I have no way to
+        tag labs by purpose (production / experimental / archived), so the
+        dashboard is a wall of names and finding a specific lab takes
+        minutes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What you'd build, at whatever level of detail you have. Don't worry if it's rough.
+      placeholder: |
+        Add a `tags: list[str]` field on the lab blueprint, filterable
+        from the dashboard via a tag-chip selector.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else did you think about? Why didn't those work?
+      placeholder: |
+        - Using lab name prefixes: works but is fragile and rename-hostile.
+        - A separate "projects" concept: too heavyweight for the use case.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, mockups, links to related issues, scale of impact (just me / my team / many users).

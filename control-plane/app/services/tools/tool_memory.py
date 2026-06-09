@@ -11,15 +11,31 @@ TOOLS = {
     "think": {
         "description": "Private reasoning step. Use this to think through a problem before acting. Output is not shown to other agents.",
         "parameters": {
-            "thought": {"type": "string", "description": "Your private reasoning", "required": True},
+            "thought": {
+                "type": "string",
+                "description": "Your private reasoning",
+                "required": True,
+            },
         },
     },
     "memory_save": {
         "description": "Save a fact or result to lab memory for later retrieval.",
         "parameters": {
-            "key": {"type": "string", "description": "Short identifier for this memory", "required": True},
-            "content": {"type": "string", "description": "The content to remember", "required": True},
-            "importance": {"type": "integer", "description": "Importance 1-10 (default: 5)", "required": False},
+            "key": {
+                "type": "string",
+                "description": "Short identifier for this memory",
+                "required": True,
+            },
+            "content": {
+                "type": "string",
+                "description": "The content to remember",
+                "required": True,
+            },
+            "importance": {
+                "type": "integer",
+                "description": "Importance 1-10 (default: 5)",
+                "required": False,
+            },
         },
     },
     "memory_search": {
@@ -31,9 +47,21 @@ TOOLS = {
     "handle_memory": {
         "description": "Manage agent memories. Use action='list' to see all memories for an agent (with hidden status). Use action='hide' or action='show' with memory_ids to change visibility. Hidden memories are excluded from agent prompts.",
         "parameters": {
-            "agent_name": {"type": "string", "description": "Name of the agent whose memories to manage", "required": True},
-            "action": {"type": "string", "description": "Action: 'list', 'hide', or 'show'", "required": True},
-            "memory_ids": {"type": "string", "description": "Comma-separated memory IDs to hide/show (required for hide/show actions)", "required": False},
+            "agent_name": {
+                "type": "string",
+                "description": "Name of the agent whose memories to manage",
+                "required": True,
+            },
+            "action": {
+                "type": "string",
+                "description": "Action: 'list', 'hide', or 'show'",
+                "required": True,
+            },
+            "memory_ids": {
+                "type": "string",
+                "description": "Comma-separated memory IDs to hide/show (required for hide/show actions)",
+                "required": False,
+            },
         },
     },
 }
@@ -77,10 +105,7 @@ async def memory_search(executor: ToolExecutor, args: dict) -> dict:
 
     mem_repo = LabMemoryRepository(executor.db)
     memories = await mem_repo.get_by_lab(executor.lab_id, limit=50)
-    matches = [
-        m for m in memories
-        if query in m.key.lower() or query in m.content.lower()
-    ]
+    matches = [m for m in memories if query in m.key.lower() or query in m.content.lower()]
     if not matches:
         return {"success": True, "output": "No matching memories found."}
 
@@ -94,7 +119,8 @@ async def handle_memory(executor: ToolExecutor, args: dict) -> dict:
     """List / hide / show memories for a specific agent."""
     import uuid
 
-    from sqlalchemy import select, update as sql_update
+    from sqlalchemy import select
+    from sqlalchemy import update as sql_update
 
     from app.models.orchestrator import LabAgent, LabMemory
 
@@ -151,7 +177,10 @@ async def handle_memory(executor: ToolExecutor, args: dict) -> dict:
         .values(is_hidden=new_hidden)
     )
     await executor.db.commit()
-    return {"success": True, "output": f"{'Hid' if new_hidden else 'Showed'} {len(ids)} memory(ies) for agent '{agent_name}'."}
+    return {
+        "success": True,
+        "output": f"{'Hid' if new_hidden else 'Showed'} {len(ids)} memory(ies) for agent '{agent_name}'.",
+    }
 
 
 HANDLERS = {

@@ -20,7 +20,6 @@ import os
 from unittest.mock import patch
 
 import pytest
-
 from app.api.dependencies import get_current_user
 from fastapi.security import HTTPAuthorizationCredentials
 
@@ -29,18 +28,24 @@ pytestmark = pytest.mark.regression
 
 @pytest.mark.asyncio
 async def test_admin_login_wrong_password_401(anonymous_client):
-    r = await anonymous_client.post("/api/v1/public/admin-login", json={
-        "password": "definitely-not-the-admin-secret",
-    })
+    r = await anonymous_client.post(
+        "/api/v1/public/admin-login",
+        json={
+            "password": "definitely-not-the-admin-secret",
+        },
+    )
     assert r.status_code == 401, r.text
 
 
 @pytest.mark.asyncio
 async def test_admin_login_correct_password_returns_jwt(anonymous_client):
     secret = os.environ["ADMIN_SECRET"]
-    r = await anonymous_client.post("/api/v1/public/admin-login", json={
-        "password": secret,
-    })
+    r = await anonymous_client.post(
+        "/api/v1/public/admin-login",
+        json={
+            "password": secret,
+        },
+    )
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["token_type"] == "bearer"
@@ -56,6 +61,7 @@ async def test_admin_login_correct_password_returns_jwt(anonymous_client):
 async def test_admin_login_uses_compare_digest(anonymous_client):
     """Patch hmac.compare_digest and assert the route called it."""
     import hmac
+
     original = hmac.compare_digest
     called = {"count": 0}
 
@@ -76,7 +82,10 @@ async def test_admin_login_uses_compare_digest(anonymous_client):
 @pytest.mark.asyncio
 async def test_admin_login_length_mismatch_still_401(anonymous_client):
     """Length-mismatched password must still 401, not 500."""
-    r = await anonymous_client.post("/api/v1/public/admin-login", json={
-        "password": "x",  # short
-    })
+    r = await anonymous_client.post(
+        "/api/v1/public/admin-login",
+        json={
+            "password": "x",  # short
+        },
+    )
     assert r.status_code == 401, r.text

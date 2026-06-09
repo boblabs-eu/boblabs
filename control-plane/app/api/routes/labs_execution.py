@@ -6,12 +6,12 @@ ACL. Admins bypass via ``check_permission``. Mirrors the pattern in
 """
 
 import shutil
-from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
 from app.api.dependencies import DbSession, get_current_user
+from app.api.routes.labs import LAB_RESOURCES_ROOT
 from app.database import async_session
 from app.repositories.lab_repo import (
     LabMemoryRepository,
@@ -19,9 +19,8 @@ from app.repositories.lab_repo import (
     LabRepository,
 )
 from app.schemas.orchestrator import LabInject
-from app.services.authorization import check_permission, Permission
-from app.services.lab_runner import LabRunner, get_runner, is_runner_reserved, reserve_runner
-from app.api.routes.labs import LAB_RESOURCES_ROOT
+from app.services.authorization import Permission, check_permission
+from app.services.lab_runner import get_runner, is_runner_reserved, reserve_runner
 
 router = APIRouter(tags=["labs"])
 
@@ -49,7 +48,11 @@ async def run_lab(
 
     if not lab.orchestrator_model_id:
         # Fall back to the system-wide default model from OrchestratorSettings
-        from app.repositories.orchestrator_repo import OrchestratorSettingsRepository, AIModelRepository
+        from app.repositories.orchestrator_repo import (
+            AIModelRepository,
+            OrchestratorSettingsRepository,
+        )
+
         settings_repo = OrchestratorSettingsRepository(db)
         settings = await settings_repo.get()
         if not settings or not settings.orchestrator_model:
@@ -62,7 +65,9 @@ async def run_lab(
                 resolved_id = m.id
                 break
         if not resolved_id:
-            raise HTTPException(422, f"Default model '{settings.orchestrator_model}' not found in AI models")
+            raise HTTPException(
+                422, f"Default model '{settings.orchestrator_model}' not found in AI models"
+            )
         lab.orchestrator_model_id = resolved_id
         await repo.update(lab_id, orchestrator_model_id=resolved_id)
         await db.commit()
@@ -80,6 +85,7 @@ async def run_lab(
             output_dir.mkdir(exist_ok=True)
         # Recreate sandbox container
         from app.services.container_manager import destroy_sandbox
+
         await destroy_sandbox(lab_id)
         await repo.update(
             lab_id,
@@ -97,6 +103,7 @@ async def run_lab(
 
     # Pre-warm sandbox container before starting runner
     from app.services.container_manager import ensure_sandbox
+
     await ensure_sandbox(lab_id, memory_mb=lab.tool_container_memory_mb)
 
     # Cluster B — atomic reserve. If another request slipped in after the
@@ -141,6 +148,7 @@ async def reset_lab(lab_id: UUID, db: DbSession, user: dict = Depends(get_curren
     await db.commit()
     # Recreate sandbox container for clean state
     from app.services.container_manager import destroy_sandbox
+
     await destroy_sandbox(lab_id)
     return {"status": "created", "lab_id": str(lab_id)}
 
@@ -168,6 +176,7 @@ async def pause_lab(lab_id: UUID, db: DbSession, user: dict = Depends(get_curren
     # O06 — every status="paused" transition must also set paused_at so the
     # UI duration column and the CRON wake-up dedup never see stale values.
     from datetime import datetime, timezone
+
     await repo.update(lab_id, status="paused", paused_at=datetime.now(timezone.utc))
     await db.commit()
     return {"status": "paused"}
@@ -218,6 +227,7 @@ async def stop_lab(lab_id: UUID, db: DbSession, user: dict = Depends(get_current
         return {"status": "stopped"}
     # No runner in memory — just update DB status
     from datetime import datetime, timezone
+
     await repo.update(lab_id, status="completed", completed_at=datetime.now(timezone.utc))
     await db.commit()
     return {"status": "stopped"}
@@ -271,11 +281,11 @@ async def inject_message(
     # solo instances built from templates where ``model_id`` was left null
     # (e.g. seeded openclaw/hermes presets) — without this, the runner spawns
     # but the dispatcher fails with "no model_id configured" on first call.
+    from app.repositories.lab_repo import LabAgentRepository
     from app.repositories.orchestrator_repo import (
         AIModelRepository,
         OrchestratorSettingsRepository,
     )
-    from app.repositories.lab_repo import LabAgentRepository
 
     lab_agents = await LabAgentRepository(db).get_by_lab(lab.id, active_only=True)
     agents_missing_model = [a for a in lab_agents if not a.model_id]

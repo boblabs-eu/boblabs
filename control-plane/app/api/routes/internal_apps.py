@@ -14,8 +14,8 @@ gate must allow-list these two identifiers in this file.
 """
 
 import asyncio
-import hmac
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -89,7 +89,8 @@ async def _send_callback(
     if not record or record.revoked_at is not None:
         logger.error(
             "%s no active consumer-app secret for app_id=%s; dropping callback",
-            log_prefix, app_id,
+            log_prefix,
+            app_id,
         )
         return
 
@@ -107,15 +108,18 @@ async def _send_callback(
                 resp.raise_for_status()
                 logger.info(
                     "%s callback delivered (status=%s)",
-                    log_prefix, payload.get("status"),
+                    log_prefix,
+                    payload.get("status"),
                 )
                 return
         except Exception as exc:
             logger.warning(
                 "%s callback attempt %d failed: %r",
-                log_prefix, attempt + 1, exc,
+                log_prefix,
+                attempt + 1,
+                exc,
             )
-            await asyncio.sleep(2 ** attempt)
+            await asyncio.sleep(2**attempt)
     logger.error("%s callback gave up", log_prefix)
 
 
@@ -163,7 +167,10 @@ async def _pick_healthy_comfyui_provider(db) -> AIProvider:
     chosen = min(zip(healthy, depths), key=lambda pd: pd[1])[0]
     logger.info(
         "ComfyUI dispatcher picked %s (%s) — healthy=%d/%d",
-        chosen.name, chosen.base_url, len(healthy), len(providers),
+        chosen.name,
+        chosen.base_url,
+        len(healthy),
+        len(providers),
     )
     return chosen
 
@@ -325,7 +332,6 @@ async def import_template_lab(
     imported through the standard /labs/import path.
     """
     from app.api.routes.labs_blueprint import import_lab as _import_lab
-    from app.repositories.lab_repo import LabRepository
     from app.schemas.orchestrator import LabBlueprint
 
     body, app_id = await _auth(request, db)
@@ -343,14 +349,17 @@ async def import_template_lab(
 
     # Idempotency: reuse existing lab with this name if present (unless force_refresh).
     from app.models.orchestrator import Lab
-    existing = (
-        await db.execute(select(Lab).where(Lab.name == target_name))
-    ).scalars().first()
+
+    existing = (await db.execute(select(Lab).where(Lab.name == target_name))).scalars().first()
     if existing and not payload.force_refresh:
         logger.info("[app] import_lab reusing existing lab '%s' (id=%s)", target_name, existing.id)
         return ImportLabOut(lab_id=str(existing.id))
     if existing and payload.force_refresh:
-        logger.warning("[app] import_lab force_refresh: deleting existing lab '%s' (id=%s) and re-importing", target_name, existing.id)
+        logger.warning(
+            "[app] import_lab force_refresh: deleting existing lab '%s' (id=%s) and re-importing",
+            target_name,
+            existing.id,
+        )
         await db.delete(existing)
         await db.flush()
 
@@ -363,6 +372,7 @@ async def import_template_lab(
     # Operator-UI blueprints can reference any collection; consumer apps cannot.
     if bp.lab.rag_access:
         from app.services.rag_service import RagService
+
         svc = RagService(db)
         for ref in bp.lab.rag_access:
             try:
@@ -395,7 +405,7 @@ def _collection_to_rag_out(collection, app_id: str) -> RagOut:
     short = full
     expected_prefix = f"app__{app_id}__"
     if full.startswith(expected_prefix):
-        short = full[len(expected_prefix):]
+        short = full[len(expected_prefix) :]
     return RagOut(
         collection_id=str(collection.id),
         name=short,
@@ -467,7 +477,9 @@ async def delete_app_rag(request: Request, db: DbSession):
     svc = RagService(db)
     collection = await svc.get_app_collection_by_name(app_id, name)
     if not collection:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"RAG '{name}' not found for app '{app_id}'.")
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, f"RAG '{name}' not found for app '{app_id}'."
+        )
 
     await svc.delete_collection(collection.id)
     await db.commit()
@@ -475,9 +487,7 @@ async def delete_app_rag(request: Request, db: DbSession):
     return DeleteRagOut(deleted=True)
 
 
-async def _resolve_owned_lab_and_rag(
-    db, app_id: str, lab_id_str: str, rag_name: str
-):
+async def _resolve_owned_lab_and_rag(db, app_id: str, lab_id_str: str, rag_name: str):
     """Look up a lab + RAG; both must be owned by ``app_id``. Returns tuple."""
     from app.models.orchestrator import Lab
     from app.services.rag_service import RagService
@@ -515,7 +525,10 @@ async def grant_rag_access(request: Request, db: DbSession):
     payload = GrantRagAccessIn.model_validate_json(body)
 
     lab, collection = await _resolve_owned_lab_and_rag(
-        db, app_id, payload.lab_id, payload.rag_name,
+        db,
+        app_id,
+        payload.lab_id,
+        payload.rag_name,
     )
 
     svc = RagService(db)
@@ -530,7 +543,11 @@ async def grant_rag_access(request: Request, db: DbSession):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
     logger.info(
         "[app:%s] granted RAG '%s' to lab '%s' (read=%s write=%s)",
-        app_id, collection.name, lab.id, payload.can_read, payload.can_write,
+        app_id,
+        collection.name,
+        lab.id,
+        payload.can_read,
+        payload.can_write,
     )
     return GrantRagAccessOut(
         lab_id=str(lab.id),
@@ -550,13 +567,19 @@ async def revoke_rag_access(request: Request, db: DbSession):
     payload = RevokeRagAccessIn.model_validate_json(body)
 
     lab, collection = await _resolve_owned_lab_and_rag(
-        db, app_id, payload.lab_id, payload.rag_name,
+        db,
+        app_id,
+        payload.lab_id,
+        payload.rag_name,
     )
 
     removed = await RagService(db).revoke_lab_access(lab.id, collection.id)
     logger.info(
         "[app:%s] revoked RAG '%s' from lab '%s' (removed=%s)",
-        app_id, collection.name, lab.id, removed,
+        app_id,
+        collection.name,
+        lab.id,
+        removed,
     )
     return RevokeRagAccessOut(revoked=bool(removed))
 
@@ -698,22 +721,26 @@ async def list_app_rag_documents(request: Request, db: DbSession):
         )
 
     documents = await svc.list_documents(collection.id)
-    return ListRagDocumentsOut(documents=[
-        RagDocumentSummary(
-            document_id=str(d.id),
-            filename=d.filename,
-            status=d.status,
-            chunk_count=d.chunk_count or 0,
-            size_bytes=d.size_bytes or 0,
-            content_type=d.content_type or "",
-            created_at=d.created_at.isoformat() if d.created_at else "",
-            ingested_at=d.ingested_at.isoformat() if d.ingested_at else None,
-        )
-        for d in documents
-    ])
+    return ListRagDocumentsOut(
+        documents=[
+            RagDocumentSummary(
+                document_id=str(d.id),
+                filename=d.filename,
+                status=d.status,
+                chunk_count=d.chunk_count or 0,
+                size_bytes=d.size_bytes or 0,
+                content_type=d.content_type or "",
+                created_at=d.created_at.isoformat() if d.created_at else "",
+                ingested_at=d.ingested_at.isoformat() if d.ingested_at else None,
+            )
+            for d in documents
+        ]
+    )
 
 
-@router.post("/ingest_rag_document", response_model=IngestRagDocumentOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/ingest_rag_document", response_model=IngestRagDocumentOut, status_code=status.HTTP_201_CREATED
+)
 async def ingest_app_rag_document(request: Request, db: DbSession):
     """Ingest a text document into an app-owned RAG collection.
 
@@ -747,8 +774,7 @@ async def ingest_app_rag_document(request: Request, db: DbSession):
 
     # Pre-count matches so we can report whether we replaced anything.
     existing = [
-        d for d in await svc.list_documents(collection.id)
-        if d.filename == payload.filename
+        d for d in await svc.list_documents(collection.id) if d.filename == payload.filename
     ]
     replaced = bool(existing) and payload.replace_if_exists
 
@@ -769,7 +795,11 @@ async def ingest_app_rag_document(request: Request, db: DbSession):
 
     logger.info(
         "[app:%s] ingested doc '%s' into RAG '%s' (status=%s replaced=%s)",
-        app_id, payload.filename, collection.name, document.status, replaced,
+        app_id,
+        payload.filename,
+        collection.name,
+        document.status,
+        replaced,
     )
     return IngestRagDocumentOut(
         document_id=str(document.id),
@@ -827,7 +857,9 @@ async def delete_app_rag_document(request: Request, db: DbSession):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No matching document(s) found.")
     logger.info(
         "[app:%s] deleted %d doc(s) from RAG '%s' (key=%s)",
-        app_id, deleted, collection.name,
+        app_id,
+        deleted,
+        collection.name,
         payload.document_id or payload.filename,
     )
     return DeleteRagDocumentOut(deleted=deleted)
@@ -1026,9 +1058,7 @@ async def create_app_agent(request: Request, db: DbSession):
     body, app_id = await _auth(request, db)
     payload = CreateAgentIn.model_validate_json(body)
 
-    name_ok = bool(payload.name) and all(
-        c.isalnum() or c in "_-" for c in payload.name
-    )
+    name_ok = bool(payload.name) and all(c.isalnum() or c in "_-" for c in payload.name)
     if not name_ok:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
@@ -1161,11 +1191,13 @@ async def import_app_agent(request: Request, db: DbSession):
     # strips this entry before resolving real callable_agents.
     callable_agents = list(bp.agent.callable_agents or [])
     if bp.agent.rag_access:
-        callable_agents.append({
-            "__app_meta__": {
-                "rag_access": [r.model_dump() for r in bp.agent.rag_access],
-            },
-        })
+        callable_agents.append(
+            {
+                "__app_meta__": {
+                    "rag_access": [r.model_dump() for r in bp.agent.rag_access],
+                },
+            }
+        )
 
     repo = LibraryAgentRepository(db)
     agent = await repo.create(
@@ -1192,7 +1224,7 @@ def _load_app_agent_rag_access(agent) -> list:
     """Pull the ``rag_access`` list stashed in ``callable_agents`` by import_agent."""
     from app.schemas.orchestrator import RagAccessRef
 
-    for entry in (agent.callable_agents or []):
+    for entry in agent.callable_agents or []:
         if isinstance(entry, dict) and "__app_meta__" in entry:
             raw = entry["__app_meta__"].get("rag_access") or []
             return [RagAccessRef(**r) for r in raw]
@@ -1201,10 +1233,7 @@ def _load_app_agent_rag_access(agent) -> list:
 
 def _strip_app_meta_callables(callable_agents: list) -> list:
     """Return ``callable_agents`` with the ``__app_meta__`` sentinel filtered out."""
-    return [
-        e for e in (callable_agents or [])
-        if not (isinstance(e, dict) and "__app_meta__" in e)
-    ]
+    return [e for e in (callable_agents or []) if not (isinstance(e, dict) and "__app_meta__" in e)]
 
 
 @router.post("/delete_agent", response_model=DeleteAgentOut)
@@ -1298,9 +1327,7 @@ async def run_app_agent(request: Request, db: DbSession):
     from app.models.orchestrator import LabAgent
     from app.repositories.lab_repo import LabAgentRepository
 
-    rows = (
-        await db.execute(select(LabAgent).where(LabAgent.lab_id == lab.id))
-    ).scalars().all()
+    rows = (await db.execute(select(LabAgent).where(LabAgent.lab_id == lab.id))).scalars().all()
     if rows:
         await LabAgentRepository(db).update(
             rows[0].id,
@@ -1371,12 +1398,13 @@ async def _drive_app_agent(
     expected output of an agent is structured (final assistant text + tool
     calls) rather than an artifact file, so we return it inline.
     """
+    from sqlalchemy import desc
+
     from app.database import async_session
     from app.models.orchestrator import LabMessage
     from app.repositories.lab_repo import LabRepository
     from app.services.container_manager import ensure_sandbox
     from app.services.lab_runner import LabRunner
-    from sqlalchemy import desc
 
     final_status = "failed"
     error_msg: str | None = None
@@ -1398,7 +1426,8 @@ async def _drive_app_agent(
         except asyncio.TimeoutError:
             logger.warning(
                 "[app-agent %s] timed out after %ds; stopping",
-                generation_id, AGENT_RUN_TIMEOUT_SEC,
+                generation_id,
+                AGENT_RUN_TIMEOUT_SEC,
             )
             await runner.stop()
             raise RuntimeError(f"Agent run exceeded {AGENT_RUN_TIMEOUT_SEC}s timeout")
@@ -1411,13 +1440,17 @@ async def _drive_app_agent(
             # Pull the most recent assistant/agent message — that's the
             # agent's final output for the callback.
             rows = (
-                await db.execute(
-                    select(LabMessage)
-                    .where(LabMessage.lab_id == lab_id)
-                    .order_by(desc(LabMessage.created_at))
-                    .limit(20)
+                (
+                    await db.execute(
+                        select(LabMessage)
+                        .where(LabMessage.lab_id == lab_id)
+                        .order_by(desc(LabMessage.created_at))
+                        .limit(20)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
         if lab_status == "failed":
             raise RuntimeError(failure_reason or "Agent run failed")
@@ -1444,10 +1477,12 @@ async def _drive_app_agent(
         else:
             tool_calls = []
             if final_msg.tool_name and final_msg.tool_input is not None:
-                tool_calls.append({
-                    "name": final_msg.tool_name,
-                    "arguments": final_msg.tool_input,
-                })
+                tool_calls.append(
+                    {
+                        "name": final_msg.tool_name,
+                        "arguments": final_msg.tool_input,
+                    }
+                )
             output = {
                 "content": final_msg.content,
                 "tool_calls": tool_calls,
@@ -1460,7 +1495,9 @@ async def _drive_app_agent(
         final_status = "completed"
         logger.info(
             "[app-agent %s] DONE lab=%s content_len=%d",
-            generation_id, lab_id, len(output.get("content") or ""),
+            generation_id,
+            lab_id,
+            len(output.get("content") or ""),
         )
     except Exception as exc:
         logger.exception("[app-agent %s] failed", generation_id)
@@ -1492,8 +1529,9 @@ async def list_app_agent_runs(request: Request, db: DbSession):
     along with the agent's final output for each. Pass ``name=""`` to list
     across every agent owned by this app.
     """
-    from app.models.orchestrator import Lab, LabMessage
     from sqlalchemy import desc
+
+    from app.models.orchestrator import Lab, LabMessage
 
     body, app_id = await _auth(request, db)
     payload = ListAgentRunsIn.model_validate_json(body) if body else ListAgentRunsIn(name="")
@@ -1519,13 +1557,17 @@ async def list_app_agent_runs(request: Request, db: DbSession):
         )
         # Pull the agent's last substantive message for the summary.
         rows = (
-            await db.execute(
-                select(LabMessage)
-                .where(LabMessage.lab_id == lab.id)
-                .order_by(desc(LabMessage.created_at))
-                .limit(15)
+            (
+                await db.execute(
+                    select(LabMessage)
+                    .where(LabMessage.lab_id == lab.id)
+                    .order_by(desc(LabMessage.created_at))
+                    .limit(15)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         final_output: str | None = None
         for m in rows:
             sender = (m.sender_type or "").lower()
@@ -1533,17 +1575,19 @@ async def list_app_agent_runs(request: Request, db: DbSession):
                 final_output = (m.content or "")[:4000]
                 break
 
-        runs.append(AgentRunSummary(
-            lab_id=str(lab.id),
-            agent_name=acl.get("short_name") or "",
-            triggered_by=triggered_by,
-            generation_id=acl.get("generation_id"),
-            cron_tick=acl.get("cron_tick"),
-            status=lab.status,
-            final_output=final_output,
-            created_at=lab.created_at.isoformat() if lab.created_at else "",
-            completed_at=lab.completed_at.isoformat() if lab.completed_at else None,
-        ))
+        runs.append(
+            AgentRunSummary(
+                lab_id=str(lab.id),
+                agent_name=acl.get("short_name") or "",
+                triggered_by=triggered_by,
+                generation_id=acl.get("generation_id"),
+                cron_tick=acl.get("cron_tick"),
+                status=lab.status,
+                final_output=final_output,
+                created_at=lab.created_at.isoformat() if lab.created_at else "",
+                completed_at=lab.completed_at.isoformat() if lab.completed_at else None,
+            )
+        )
 
     return ListAgentRunsOut(runs=runs)
 
@@ -1603,7 +1647,9 @@ async def run_comfyui_dispatch(
             logger.error("[app%s] task crashed: %r", generation_id, exc, exc_info=exc)
 
     task.add_done_callback(_surface)
-    logger.info("[app%s] DIRECT dispatch base=%s callback=%s", generation_id, base_url, payload.callback_url)
+    logger.info(
+        "[app%s] DIRECT dispatch base=%s callback=%s", generation_id, base_url, payload.callback_url
+    )
     return RunOut(lab_id=str(generation_id), status="started")
 
 
@@ -1649,13 +1695,17 @@ async def _run_comfyui(
         prompt_id = await _queue_workflow(base_url, wf)
         logger.info("[app%s] queued prompt_id=%s", generation_id, prompt_id)
         history = await _wait_for_history(base_url, prompt_id, COMFYUI_TIMEOUT_SEC)
-        logger.info("[app%s] history status=%s", generation_id, history.get("status", {}).get("status_str"))
+        logger.info(
+            "[app%s] history status=%s", generation_id, history.get("status", {}).get("status_str")
+        )
 
         status_info = history.get("status", {})
         if status_info.get("status_str") == "error":
             messages = status_info.get("messages", [])
             err_msgs = [m for m in messages if m and m[0] == "execution_error"]
-            detail = json.dumps(err_msgs[0][1]) if err_msgs and len(err_msgs[0]) > 1 else str(messages)
+            detail = (
+                json.dumps(err_msgs[0][1]) if err_msgs and len(err_msgs[0]) > 1 else str(messages)
+            )
             raise RuntimeError(f"ComfyUI execution error: {detail[:400]}")
 
         outputs = history.get("outputs", {})
@@ -1737,7 +1787,9 @@ async def _queue_workflow(base_url: str, workflow: dict) -> str:
     data = resp.json()
     if "error" in data:
         node_errors = data.get("node_errors", {})
-        raise RuntimeError(f"ComfyUI workflow validation error: {json.dumps(node_errors)[:400] or data['error']}")
+        raise RuntimeError(
+            f"ComfyUI workflow validation error: {json.dumps(node_errors)[:400] or data['error']}"
+        )
     prompt_id = data.get("prompt_id")
     if not prompt_id:
         raise RuntimeError(f"ComfyUI did not return prompt_id: {data}")
@@ -1765,7 +1817,9 @@ async def _wait_for_history(base_url: str, prompt_id: str, timeout_sec: int) -> 
                 if running_deadline is None:
                     running_deadline = now + timeout_sec
                 if now > running_deadline:
-                    raise RuntimeError(f"ComfyUI workflow exceeded running timeout after {timeout_sec}s")
+                    raise RuntimeError(
+                        f"ComfyUI workflow exceeded running timeout after {timeout_sec}s"
+                    )
                 continue
 
             if queue_state == "pending":
@@ -1824,6 +1878,7 @@ def _queue_item_prompt_id(item: Any) -> str | None:
 
 class RunFluxText2ImgIn(BaseModel):
     """Direct ComfyUI Flux.1-Dev text-to-image driver, no agent involved."""
+
     generation_id: str  # ID used purely for logging / callback bookkeeping
     prompt: str
     workflow_json: dict[str, Any]
@@ -1906,7 +1961,9 @@ async def _run_flux_text2img(
         if status_info.get("status_str") == "error":
             messages = status_info.get("messages", [])
             err_msgs = [m for m in messages if m and m[0] == "execution_error"]
-            detail = json.dumps(err_msgs[0][1]) if err_msgs and len(err_msgs[0]) > 1 else str(messages)
+            detail = (
+                json.dumps(err_msgs[0][1]) if err_msgs and len(err_msgs[0]) > 1 else str(messages)
+            )
             raise RuntimeError(f"ComfyUI execution error: {detail[:400]}")
 
         outputs = history.get("outputs", {})
@@ -1956,6 +2013,7 @@ async def _run_flux_text2img(
 # Lab-driven consumer-app runner (generic)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @router.post("/run_lab", response_model=RunLabOut)
 async def run_lab(
     request: Request,
@@ -1974,7 +2032,7 @@ async def run_lab(
       6. POST a signed callback to ``callback_url`` reporting status + the first
          artifact's path as ``output_path``.
     """
-    from app.repositories.lab_repo import LabAgentRepository, LabRepository
+    from app.repositories.lab_repo import LabRepository
 
     body, app_id = await _auth(request, db)
     payload = RunLabIn.model_validate_json(body)
@@ -2059,7 +2117,9 @@ async def run_lab(
     task.add_done_callback(_surface)
     logger.info(
         "[app-lab%s] dispatched lab=%s template=%s",
-        generation_uuid, new_lab.id, template_uuid,
+        generation_uuid,
+        new_lab.id,
+        template_uuid,
     )
     return RunLabOut(lab_id=str(new_lab.id), status="started")
 
@@ -2073,7 +2133,6 @@ async def _clone_lab(db, template, new_name: str):
     from app.repositories.lab_repo import (
         LabAgentRepository,
         LabRepository,
-        LabResourceRepository,
         LabToolRepository,
     )
 
@@ -2149,20 +2208,26 @@ async def _synthesize_fallback_artifacts(
     recent agent outputs, then wraps it as HTML/text per the expected file extensions.
     Returns the list of synthesized artifact paths (may be empty if nothing usable).
     """
-    from sqlalchemy import desc, select as _select
+    from sqlalchemy import desc
+    from sqlalchemy import select as _select
+
     from app.database import async_session
     from app.models.orchestrator import LabMessage
 
     try:
         async with async_session() as db:
             rows = (
-                await db.execute(
-                    _select(LabMessage)
-                    .where(LabMessage.lab_id == lab_id)
-                    .order_by(desc(LabMessage.created_at))
-                    .limit(40)
+                (
+                    await db.execute(
+                        _select(LabMessage)
+                        .where(LabMessage.lab_id == lab_id)
+                        .order_by(desc(LabMessage.created_at))
+                        .limit(40)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
     except Exception:
         logger.exception("[app-lab%s] fallback: cannot query lab messages", lab_id)
         return []
@@ -2219,23 +2284,27 @@ async def _synthesize_fallback_artifacts(
             elif ext in (".html", ".htm"):
                 # Naive markdown→HTML wrapper (escape, then preserve paragraph breaks).
                 from html import escape as _escape
+
                 escaped = _escape(md_text).replace("\n\n", "</p><p>").replace("\n", "<br>")
                 dst.write_text(
-                    "<!doctype html><html><head><meta charset=\"utf-8\">"
+                    '<!doctype html><html><head><meta charset="utf-8">'
                     "<title>Partial summary (fallback)</title>"
                     "<style>body{font:14px/1.5 system-ui,sans-serif;max-width:780px;"
                     "margin:2em auto;padding:0 1em;color:#222}h1,h2,h3{color:#111}"
                     ".note{background:#fff7e6;border-left:4px solid #f0a500;"
                     "padding:0.6em 0.9em;margin:1em 0;border-radius:4px;font-size:13px}</style>"
-                    "</head><body><div class=\"note\">"
+                    '</head><body><div class="note">'
                     "Fallback summary &mdash; the lab did not produce the expected files."
                     "</div><p>" + escaped + "</p></body></html>",
                     encoding="utf-8",
                 )
             elif ext == ".json":
                 import json as _json
+
                 dst.write_text(
-                    _json.dumps({"fallback": True, "summary": md_text}, ensure_ascii=False, indent=2),
+                    _json.dumps(
+                        {"fallback": True, "summary": md_text}, ensure_ascii=False, indent=2
+                    ),
                     encoding="utf-8",
                 )
             else:
@@ -2256,10 +2325,9 @@ async def _drive_app_lab(
     callback_url: str,
 ) -> None:
     """Run a cloned consumer-app lab to completion, copy artifacts, deliver callback."""
-    from app.api.routes.labs_execution import run_lab as _run_lab_route
     from app.database import async_session
     from app.repositories.lab_repo import LabRepository
-    from app.services.lab_runner import LabRunner, get_runner
+    from app.services.lab_runner import LabRunner
 
     final_status = "failed"
     output_path: str | None = None
@@ -2278,6 +2346,7 @@ async def _drive_app_lab(
                     AIModelRepository,
                     OrchestratorSettingsRepository,
                 )
+
                 settings_obj = await OrchestratorSettingsRepository(db).get()
                 if settings_obj and settings_obj.orchestrator_model:
                     for m in await AIModelRepository(db).get_all():
@@ -2288,6 +2357,7 @@ async def _drive_app_lab(
 
         # Pre-warm sandbox.
         from app.services.container_manager import ensure_sandbox
+
         await ensure_sandbox(lab_id)
 
         runner = LabRunner(lab_id, async_session)
@@ -2341,7 +2411,8 @@ async def _drive_app_lab(
                 )
                 logger.warning(
                     "[app-lab%s] synthesized fallback artifacts: %s",
-                    lab_id, [str(p) for p in synthesized],
+                    lab_id,
+                    [str(p) for p in synthesized],
                 )
             else:
                 raise RuntimeError("Lab finished but produced none of the expected artifacts")
@@ -2352,7 +2423,13 @@ async def _drive_app_lab(
 
         output_path = str(copied[0])
         final_status = "completed"
-        logger.info("[app-lab%s] DONE artifacts=%d primary=%s warnings=%d", lab_id, len(copied), output_path, len(warnings_list))
+        logger.info(
+            "[app-lab%s] DONE artifacts=%d primary=%s warnings=%d",
+            lab_id,
+            len(copied),
+            output_path,
+            len(warnings_list),
+        )
     except Exception as exc:
         logger.exception("[app-lab%s] failed", lab_id)
         error_msg = str(exc)[:500]
@@ -2378,6 +2455,7 @@ async def _drive_app_lab(
 # Lets consumer-app (or any internal client) run audio bytes through the same
 # STT dispatcher used by media_pipeline:stt — least-loaded provider + per-host
 # semaphore queue. No lab needed; deterministic and cheap.
+
 
 class TranscribeIn(BaseModel):
     audio_b64: str
@@ -2407,6 +2485,7 @@ async def transcribe_audio(
 ):
     """Run audio through the STT dispatcher (least-loaded provider, queued)."""
     import base64
+
     from app.services.pipelines import get_pipeline
     from app.services.tools.tool_media import _acquire_gpu_slot, _gpu_slots, _host_from_url
 
@@ -2421,20 +2500,27 @@ async def transcribe_audio(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "audio_b64 is empty")
 
     providers = (
-        await db.execute(
-            select(AIProvider).where(
-                AIProvider.provider_type == "stt",
-                AIProvider.is_active == True,  # noqa: E712
+        (
+            await db.execute(
+                select(AIProvider).where(
+                    AIProvider.provider_type == "stt",
+                    AIProvider.is_active == True,  # noqa: E712
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if not providers:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "No active STT provider configured")
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "No active STT provider configured"
+        )
 
     # Sort by queue depth (free hosts first).
     def _depth(p):
         sem = _gpu_slots.get(_host_from_url(p.base_url))
         return 0 if sem is None or sem._value > 0 else 1
+
     providers.sort(key=_depth)
 
     extra: dict[str, Any] = {
@@ -2458,7 +2544,12 @@ async def transcribe_audio(
         except ValueError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid STT params: {exc}")
 
-        logger.info("[apptranscribe] queuing on %s (host=%s, %d bytes)", provider.name, host, len(audio_bytes))
+        logger.info(
+            "[apptranscribe] queuing on %s (host=%s, %d bytes)",
+            provider.name,
+            host,
+            len(audio_bytes),
+        )
         sem = await _acquire_gpu_slot(host)
         try:
             result = await pipeline.generate(clean_params)
@@ -2476,7 +2567,9 @@ async def transcribe_audio(
             logger.warning("[apptranscribe] %s failed: %s — trying next", provider.name, last_error)
         except Exception as exc:
             last_error = str(exc)
-            logger.warning("[apptranscribe] %s exception: %s — trying next", provider.name, last_error)
+            logger.warning(
+                "[apptranscribe] %s exception: %s — trying next", provider.name, last_error
+            )
         finally:
             sem.release()
 
@@ -2487,6 +2580,7 @@ async def transcribe_audio(
 # Lets consumer-app run a one-shot LLM call through the same model dispatcher
 # used by labs (caller affinity, queue depth balancing, retry on next provider).
 # No lab needed — pure stateless completion.
+
 
 class LLMMessage(BaseModel):
     role: str
@@ -2605,7 +2699,8 @@ async def list_models(
     Body: ``{"available_only": true}`` (default). Set false to include models
     the dispatcher knows about but that are currently offline.
     """
-    from sqlalchemy import func, Integer
+    from sqlalchemy import Integer, func
+
     from app.models.orchestrator import AIModel
 
     body, _app_id = await _auth(request, db)
@@ -2631,12 +2726,14 @@ async def list_models(
         if payload.available_only and not is_available:
             continue
         capabilities = next((c for c in (row.capabilities_list or []) if c), {})
-        out.append(ListModelsEntry(
-            model_identifier=row.model_identifier,
-            available=is_available,
-            provider_types=sorted({pt for pt in (row.provider_types or []) if pt}),
-            capabilities=capabilities,
-        ))
+        out.append(
+            ListModelsEntry(
+                model_identifier=row.model_identifier,
+                available=is_available,
+                provider_types=sorted({pt for pt in (row.provider_types or []) if pt}),
+                capabilities=capabilities,
+            )
+        )
     return ListModelsOut(models=out)
 
 
@@ -2647,6 +2744,7 @@ async def list_models(
 
 class RunLtxImg2VidIn(BaseModel):
     """Direct ComfyUI LTX-2.3 image-to-video driver."""
+
     generation_id: str
     prompt: str
     negative_prompt: str | None = None
@@ -2705,8 +2803,13 @@ async def run_ltx_image2video(
             logger.error("[ltx2vid %s] task crashed: %r", payload.generation_id, exc, exc_info=exc)
 
     task.add_done_callback(_surface)
-    logger.info("[ltx2vid %s] dispatch base=%s in=%s out=%s",
-                payload.generation_id, base_url, in_path, out_path)
+    logger.info(
+        "[ltx2vid %s] dispatch base=%s in=%s out=%s",
+        payload.generation_id,
+        base_url,
+        in_path,
+        out_path,
+    )
     return RunOut(lab_id=payload.generation_id, status="started")
 
 
@@ -2760,7 +2863,9 @@ async def _run_ltx_image2video(
         if status_info.get("status_str") == "error":
             messages = status_info.get("messages", [])
             err_msgs = [m for m in messages if m and m[0] == "execution_error"]
-            detail = json.dumps(err_msgs[0][1]) if err_msgs and len(err_msgs[0]) > 1 else str(messages)
+            detail = (
+                json.dumps(err_msgs[0][1]) if err_msgs and len(err_msgs[0]) > 1 else str(messages)
+            )
             raise RuntimeError(f"ComfyUI execution error: {detail[:400]}")
 
         # LTX SaveVideo (node "75") surfaces under "videos" (or sometimes "gifs").
@@ -2817,6 +2922,7 @@ async def _run_ltx_image2video(
 
 class RunFfmpegOpIn(BaseModel):
     """Local ffmpeg subprocess driver. Two ops: extract_last_frame and concat."""
+
     generation_id: str
     op: str  # "extract_last_frame" | "concat"
     inputs: list[str]  # one path for extract, N paths for concat (in order)
@@ -2869,8 +2975,13 @@ async def run_ffmpeg_op(
             logger.error("[ffmpeg %s] task crashed: %r", payload.generation_id, exc, exc_info=exc)
 
     task.add_done_callback(_surface)
-    logger.info("[ffmpeg %s] dispatch op=%s inputs=%d out=%s",
-                payload.generation_id, payload.op, len(in_paths), out_path)
+    logger.info(
+        "[ffmpeg %s] dispatch op=%s inputs=%d out=%s",
+        payload.generation_id,
+        payload.op,
+        len(in_paths),
+        out_path,
+    )
     return RunOut(lab_id=payload.generation_id, status="started")
 
 
@@ -2891,11 +3002,16 @@ async def _run_ffmpeg_op(
 
         if op == "extract_last_frame":
             cmd = [
-                "ffmpeg", "-y",
-                "-sseof", "-0.5",
-                "-i", str(input_paths[0]),
-                "-vframes", "1",
-                "-q:v", "2",
+                "ffmpeg",
+                "-y",
+                "-sseof",
+                "-0.5",
+                "-i",
+                str(input_paths[0]),
+                "-vframes",
+                "1",
+                "-q:v",
+                "2",
                 str(output_path),
             ]
         elif op == "concat":
@@ -2906,16 +3022,26 @@ async def _run_ffmpeg_op(
                 encoding="utf-8",
             )
             cmd = [
-                "ffmpeg", "-y",
-                "-f", "concat",
-                "-safe", "0",
-                "-i", str(list_path),
-                "-c:v", "libx264",
-                "-preset", "medium",
-                "-crf", "20",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-movflags", "+faststart",
+                "ffmpeg",
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(list_path),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "20",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
                 str(output_path),
             ]
         else:

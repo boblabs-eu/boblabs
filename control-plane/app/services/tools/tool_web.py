@@ -24,13 +24,21 @@ TOOLS = {
         "description": "Search the web using DuckDuckGo. Returns a list of results with title, URL, and snippet.",
         "parameters": {
             "query": {"type": "string", "description": "Search query", "required": True},
-            "max_results": {"type": "integer", "description": "Maximum number of results to return (default: 5)", "required": False},
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum number of results to return (default: 5)",
+                "required": False,
+            },
         },
     },
     "web_extract": {
         "description": "Fetch a web page URL and extract its text content. Returns the main text from the page.",
         "parameters": {
-            "url": {"type": "string", "description": "The URL to fetch and extract content from", "required": True},
+            "url": {
+                "type": "string",
+                "description": "The URL to fetch and extract content from",
+                "required": True,
+            },
         },
     },
     "browser_navigate": {
@@ -46,26 +54,51 @@ TOOLS = {
     "mermaid_to_img": {
         "description": "Convert a Mermaid diagram file (.mmd or .md with mermaid blocks) to an image (SVG or PNG). Returns the path to the generated file.",
         "parameters": {
-            "input_path": {"type": "string", "description": "Path to the input .mmd or .md file (relative to workspace)", "required": True},
-            "output_format": {"type": "string", "description": "Output format: svg or png (default: svg)", "required": False},
+            "input_path": {
+                "type": "string",
+                "description": "Path to the input .mmd or .md file (relative to workspace)",
+                "required": True,
+            },
+            "output_format": {
+                "type": "string",
+                "description": "Output format: svg or png (default: svg)",
+                "required": False,
+            },
         },
     },
     "excalidraw": {
         "description": "Create an Excalidraw diagram from a JSON elements description. Saves the .excalidraw file, renders it to PNG via the browser, and uploads to excalidraw.com for a shareable link. Returns the saved file path and share URL.",
         "parameters": {
-            "elements": {"type": "string", "description": "JSON array of Excalidraw element objects (rectangles, arrows, text, etc.). Use container binding for labels (boundElements + containerId), NOT the 'label' property.", "required": True},
-            "filename": {"type": "string", "description": "Output filename without extension (default: 'diagram')", "required": False},
-            "dark_mode": {"type": "string", "description": "Set to 'true' for dark background (default: false)", "required": False},
+            "elements": {
+                "type": "string",
+                "description": "JSON array of Excalidraw element objects (rectangles, arrows, text, etc.). Use container binding for labels (boundElements + containerId), NOT the 'label' property.",
+                "required": True,
+            },
+            "filename": {
+                "type": "string",
+                "description": "Output filename without extension (default: 'diagram')",
+                "required": False,
+            },
+            "dark_mode": {
+                "type": "string",
+                "description": "Set to 'true' for dark background (default: false)",
+                "required": False,
+            },
         },
     },
 }
 
 
 from app.services.ssrf_guard import (
-    is_private_host as _is_private_host,
-    safe_get as _ssrf_safe_get,
     PrivateHostError as _PrivateHostError,
 )
+from app.services.ssrf_guard import (
+    is_private_host as _is_private_host,
+)
+from app.services.ssrf_guard import (
+    safe_get as _ssrf_safe_get,
+)
+
 # Cluster E — the previous in-file helper missed IPv6, the full 127.0.0.0/8
 # range, and treated 172.x.x.x as fully private even outside 172.16/12.
 # Delegated to ssrf_guard.is_private_host which uses the ipaddress stdlib
@@ -82,6 +115,7 @@ async def web_search(executor: ToolExecutor, args: dict) -> dict:
     from duckduckgo_search import DDGS
 
     try:
+
         def _search():
             with DDGS() as ddgs:
                 return list(ddgs.text(query, max_results=max_results))
@@ -111,6 +145,7 @@ async def web_extract(executor: ToolExecutor, args: dict) -> dict:
         return {"success": False, "output": "URL must start with http:// or https://"}
 
     from urllib.parse import urlparse
+
     hostname = urlparse(url).hostname or ""
     if _is_private_host(hostname):
         return {"success": False, "output": "Access to private/internal URLs is not allowed."}
@@ -122,19 +157,23 @@ async def web_extract(executor: ToolExecutor, args: dict) -> dict:
     # IPv6 link-local / ULA, loopback, or docker container hostnames.
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(20.0)) as client:
-            resp = await _ssrf_safe_get(client, url, headers={
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate, br",
-                "DNT": "1",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Sec-Fetch-User": "?1",
-            })
+            resp = await _ssrf_safe_get(
+                client,
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "DNT": "1",
+                    "Connection": "keep-alive",
+                    "Upgrade-Insecure-Requests": "1",
+                    "Sec-Fetch-Dest": "document",
+                    "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "none",
+                    "Sec-Fetch-User": "?1",
+                },
+            )
             resp.raise_for_status()
     except _PrivateHostError as e:
         return {"success": False, "output": f"Refused fetch: {e}"}
@@ -143,24 +182,29 @@ async def web_extract(executor: ToolExecutor, args: dict) -> dict:
 
     ct = resp.headers.get("content-type", "")
     if "html" not in ct and "text" not in ct:
-        return {"success": True, "output": f"Non-HTML content ({ct}). First 2000 chars:\n{resp.text[:2000]}"}
+        return {
+            "success": True,
+            "output": f"Non-HTML content ({ct}). First 2000 chars:\n{resp.text[:2000]}",
+        }
 
     soup = BeautifulSoup(resp.text, "html.parser")
     for tag in soup(["script", "style", "nav", "footer", "header"]):
         tag.decompose()
 
     text = soup.get_text(separator="\n", strip=True)
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
 
     if len(text) > executor.max_output_bytes:
-        text = text[:executor.max_output_bytes] + "\n... [truncated]"
+        text = text[: executor.max_output_bytes] + "\n... [truncated]"
 
     title = soup.title.get_text(strip=True) if soup.title else ""
     header = f"Title: {title}\nURL: {url}\n---\n" if title else f"URL: {url}\n---\n"
     return {"success": True, "output": header + text}
 
 
-async def _sandbox_post(executor: ToolExecutor, endpoint: str, payload: dict, timeout: float = 60.0) -> dict:
+async def _sandbox_post(
+    executor: ToolExecutor, endpoint: str, payload: dict, timeout: float = 60.0
+) -> dict:
     """POST `payload` to a per-lab sandbox endpoint. Returns the JSON response.
 
     All browser tools route through the sandbox so headless Chromium runs in
@@ -182,6 +226,7 @@ async def browser_navigate(executor: ToolExecutor, args: dict) -> dict:
         url = "https://" + url
 
     from urllib.parse import parse_qs, urlparse
+
     parsed = urlparse(url)
     if parsed.hostname and ("google.com" in parsed.hostname or "google." in parsed.hostname):
         if "/search" in parsed.path:
@@ -226,7 +271,7 @@ async def mermaid_to_img(executor: ToolExecutor, args: dict) -> dict:
     if output_format not in ("svg", "png"):
         return {"success": False, "output": "output_format must be svg or png"}
 
-    clean_path = re.sub(r'^output/', '', input_path)
+    clean_path = re.sub(r"^output/", "", input_path)
 
     target = None
     for base in (executor.workspace, executor.workspace / "output"):
@@ -246,7 +291,7 @@ async def mermaid_to_img(executor: ToolExecutor, args: dict) -> dict:
     diagrams: list[tuple[str, str]] = []
     stem = target.stem
     if target.suffix.lower() == ".md":
-        blocks = re.findall(r'```mermaid\s*\n(.*?)```', raw, re.DOTALL)
+        blocks = re.findall(r"```mermaid\s*\n(.*?)```", raw, re.DOTALL)
         if not blocks:
             return {"success": False, "output": "No ```mermaid blocks found in markdown file."}
         for i, block in enumerate(blocks):
@@ -263,7 +308,7 @@ async def mermaid_to_img(executor: ToolExecutor, args: dict) -> dict:
             out_name = f"{out_stem}.{output_format}"
             out_path = output_dir / out_name
 
-            escaped_code = code.replace('\\', '\\\\').replace('`', '\\`').replace('${', '\\${')
+            escaped_code = code.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
             html = f"""<!DOCTYPE html>
 <html><head>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
@@ -287,28 +332,38 @@ mermaid.render('diagram',`{escaped_code}`).then(({{svg}})=>{{
             try:
                 lab_id = str(executor.lab_id)
                 if output_format == "svg":
-                    result = await _sandbox_post(executor, "/browser_eval_selector", {
-                        "lab_id": lab_id,
-                        "html_path": str(tmp_html.resolve()),
-                        "wait_selector": "#container[data-rendered], #container[data-error]",
-                        "error_selector": "#container[data-error]",
-                        "selector": "#container svg",
-                        "js_expression": "el => el.outerHTML",
-                        "timeout_ms": 15000,
-                    }, timeout=30.0)
+                    result = await _sandbox_post(
+                        executor,
+                        "/browser_eval_selector",
+                        {
+                            "lab_id": lab_id,
+                            "html_path": str(tmp_html.resolve()),
+                            "wait_selector": "#container[data-rendered], #container[data-error]",
+                            "error_selector": "#container[data-error]",
+                            "selector": "#container svg",
+                            "js_expression": "el => el.outerHTML",
+                            "timeout_ms": 15000,
+                        },
+                        timeout=30.0,
+                    )
                     if not result.get("success"):
                         return result
                     out_path.write_text(result.get("output", ""))
                 else:
-                    result = await _sandbox_post(executor, "/browser_screenshot_element", {
-                        "lab_id": lab_id,
-                        "html_path": str(tmp_html.resolve()),
-                        "output_path": str(out_path.resolve()),
-                        "wait_selector": "#container[data-rendered], #container[data-error]",
-                        "error_selector": "#container[data-error]",
-                        "selector": "#container svg",
-                        "timeout_ms": 15000,
-                    }, timeout=30.0)
+                    result = await _sandbox_post(
+                        executor,
+                        "/browser_screenshot_element",
+                        {
+                            "lab_id": lab_id,
+                            "html_path": str(tmp_html.resolve()),
+                            "output_path": str(out_path.resolve()),
+                            "wait_selector": "#container[data-rendered], #container[data-error]",
+                            "error_selector": "#container[data-error]",
+                            "selector": "#container svg",
+                            "timeout_ms": 15000,
+                        },
+                        timeout=30.0,
+                    )
                     if not result.get("success"):
                         return result
 
@@ -332,19 +387,25 @@ mermaid.render('diagram',`{escaped_code}`).then(({{svg}})=>{{
             size_total = sum(f.stat().st_size for f in generated_files)
             return {
                 "success": True,
-                "output": f"Mermaid diagrams converted ({len(generated_files)} files):\n" + "\n".join(rel_paths),
+                "output": f"Mermaid diagrams converted ({len(generated_files)} files):\n"
+                + "\n".join(rel_paths),
                 "file_event": {"action": "created", "path": rel_paths[0], "size_bytes": size_total},
             }
 
     except asyncio.TimeoutError:
-        return {"success": False, "output": f"Mermaid conversion timed out after {executor.timeout_sec}s"}
+        return {
+            "success": False,
+            "output": f"Mermaid conversion timed out after {executor.timeout_sec}s",
+        }
     except Exception as e:
         return {"success": False, "output": f"Mermaid conversion error: {e}"}
 
 
-async def _excalidraw_render_png(executor: ToolExecutor, doc_json: str, out_path: Path) -> Path | None:
+async def _excalidraw_render_png(
+    executor: ToolExecutor, doc_json: str, out_path: Path
+) -> Path | None:
     """Render an Excalidraw JSON document to PNG via the per-lab sandbox browser."""
-    escaped = doc_json.replace('\\', '\\\\').replace('`', '\\`').replace('${', '\\${')
+    escaped = doc_json.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
     html = f"""<!DOCTYPE html>
 <html><head>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -382,14 +443,19 @@ ReactDOM.render(React.createElement(App), document.getElementById('root'));
     tmp_html.write_text(html)
 
     try:
-        result = await _sandbox_post(executor, "/browser_screenshot_element", {
-            "lab_id": str(executor.lab_id),
-            "html_path": str(tmp_html.resolve()),
-            "output_path": str(out_path.resolve()),
-            "wait_selector": "#root[data-rendered]",
-            "selector": "#root",
-            "timeout_ms": 25000,
-        }, timeout=45.0)
+        result = await _sandbox_post(
+            executor,
+            "/browser_screenshot_element",
+            {
+                "lab_id": str(executor.lab_id),
+                "html_path": str(tmp_html.resolve()),
+                "output_path": str(out_path.resolve()),
+                "wait_selector": "#root[data-rendered]",
+                "selector": "#root",
+                "timeout_ms": 25000,
+            },
+            timeout=45.0,
+        )
         if not result.get("success"):
             return None
         return out_path
@@ -425,11 +491,13 @@ async def _excalidraw_upload(doc_json: str) -> str | None:
     aesgcm = AESGCM(raw_key)
     encrypted = aesgcm.encrypt(iv, compressed, None)
 
-    encoding_meta = json.dumps({
-        "version": 2,
-        "compression": "pako@1",
-        "encryption": "AES-GCM",
-    }).encode("utf-8")
+    encoding_meta = json.dumps(
+        {
+            "version": 2,
+            "compression": "pako@1",
+            "encryption": "AES-GCM",
+        }
+    ).encode("utf-8")
 
     payload = concat_buffers(encoding_meta, iv, encrypted)
 
@@ -455,7 +523,10 @@ async def excalidraw(executor: ToolExecutor, args: dict) -> dict:
     """Create an Excalidraw diagram, render to PNG, and upload for a share link."""
     elements_str = args.get("elements", "").strip()
     if not elements_str:
-        return {"success": False, "output": "excalidraw requires 'elements' (JSON array of Excalidraw element objects)"}
+        return {
+            "success": False,
+            "output": "excalidraw requires 'elements' (JSON array of Excalidraw element objects)",
+        }
 
     filename = args.get("filename", "diagram").strip() or "diagram"
     dark_mode = args.get("dark_mode", "").strip().lower() == "true"

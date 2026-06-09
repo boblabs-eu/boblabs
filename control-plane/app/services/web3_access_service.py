@@ -16,11 +16,11 @@ async def augment_tool_names_with_web3_access(
     """Auto-add or strip tracked-wallet tool access based on lab grants."""
     original = tool_names or []
     explicit = [
-        name for name in original
-        if name == "web3_portfolio" or name.startswith("web3_portfolio:")
+        name for name in original if name == "web3_portfolio" or name.startswith("web3_portfolio:")
     ]
     base = [
-        name for name in original
+        name
+        for name in original
         if name != "web3_portfolio" and not name.startswith("web3_portfolio:")
     ]
 

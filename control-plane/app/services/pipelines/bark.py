@@ -70,11 +70,13 @@ class BarkPipeline(MediaPipeline):
 
         out["temperature"] = _clamp(
             float(params.get("temperature", DEFAULT_PARAMS["temperature"])),
-            0.1, 2.0,
+            0.1,
+            2.0,
         )
         out["silence_padding_ms"] = _clamp(
             int(params.get("silence_padding_ms", DEFAULT_PARAMS["silence_padding_ms"])),
-            0, 2000,
+            0,
+            2000,
         )
 
         return out

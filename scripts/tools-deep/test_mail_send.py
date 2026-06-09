@@ -8,10 +8,14 @@ PRECONDITIONS:
 
 This sends a real email. Use your own address.
 """
+
 from __future__ import annotations
-import sys, time
+
+import sys
+import time
+
 sys.path.insert(0, "/tmp/tools-deep")
-from _harness import require_env, make_executor, run_tool, passed, fail, run  # noqa: E402
+from _harness import fail, make_executor, passed, require_env, run, run_tool  # noqa: E402
 
 TOOL = "mail"
 
@@ -21,9 +25,16 @@ async def main():
     subject = f"bob smoke {int(time.time())}"
     body = "smoke test — safe to ignore"
     async with make_executor(timeout_sec=30) as (db, executor):
-        res = await run_tool(executor, TOOL, {
-            "action": "send", "to": to, "subject": subject, "body": body,
-        })
+        res = await run_tool(
+            executor,
+            TOOL,
+            {
+                "action": "send",
+                "to": to,
+                "subject": subject,
+                "body": body,
+            },
+        )
         if not res["success"]:
             fail(TOOL, res["output"][:200])
         passed(TOOL, f"sent to {to} in {res['latency_ms']}ms")

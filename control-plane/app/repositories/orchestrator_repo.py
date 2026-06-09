@@ -17,7 +17,6 @@ from app.models.orchestrator import (
     OrchestratorTask,
 )
 
-
 # ── Settings ──────────────────────────────────────
 
 
@@ -38,9 +37,7 @@ class OrchestratorSettingsRepository:
             self.db.add(settings)
         else:
             await self.db.execute(
-                update(OrchestratorSettings)
-                .where(OrchestratorSettings.id == 1)
-                .values(**kwargs)
+                update(OrchestratorSettings).where(OrchestratorSettings.id == 1).values(**kwargs)
             )
         await self.db.flush()
         return await self.get()  # type: ignore[return-value]
@@ -53,8 +50,9 @@ class AIProviderRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_all(self, active_only: bool = False,
-                        include_pending: bool = True) -> list[AIProvider]:
+    async def get_all(
+        self, active_only: bool = False, include_pending: bool = True
+    ) -> list[AIProvider]:
         """List providers.
 
         Cluster I — by default ``active_only=False, include_pending=True``
@@ -72,15 +70,11 @@ class AIProviderRepository:
         return list(result.scalars().all())
 
     async def get_by_id(self, provider_id: UUID) -> AIProvider | None:
-        result = await self.db.execute(
-            select(AIProvider).where(AIProvider.id == provider_id)
-        )
+        result = await self.db.execute(select(AIProvider).where(AIProvider.id == provider_id))
         return result.scalar_one_or_none()
 
     async def get_by_name(self, name: str) -> AIProvider | None:
-        result = await self.db.execute(
-            select(AIProvider).where(AIProvider.name == name)
-        )
+        result = await self.db.execute(select(AIProvider).where(AIProvider.name == name))
         return result.scalar_one_or_none()
 
     async def create(self, provider: AIProvider) -> AIProvider:
@@ -120,9 +114,7 @@ class AIModelRepository:
         return list(result.scalars().all())
 
     async def get_by_id(self, model_id: UUID) -> AIModel | None:
-        result = await self.db.execute(
-            select(AIModel).where(AIModel.id == model_id)
-        )
+        result = await self.db.execute(select(AIModel).where(AIModel.id == model_id))
         return result.scalar_one_or_none()
 
     async def get_by_provider_and_identifier(
@@ -139,9 +131,7 @@ class AIModelRepository:
     async def upsert(
         self, provider_id: UUID, model_identifier: str, name: str, **kwargs
     ) -> AIModel:
-        existing = await self.get_by_provider_and_identifier(
-            provider_id, model_identifier
-        )
+        existing = await self.get_by_provider_and_identifier(provider_id, model_identifier)
         now = datetime.now(timezone.utc)
         if existing:
             await self.db.execute(
@@ -190,9 +180,7 @@ class AIModelRepository:
         pids = [row[0] for row in provider_ids.fetchall()]
         if pids:
             await self.db.execute(
-                update(AIModel)
-                .where(AIModel.provider_id.in_(pids))
-                .values(is_available=False)
+                update(AIModel).where(AIModel.provider_id.in_(pids)).values(is_available=False)
             )
             await self.db.flush()
 
@@ -212,9 +200,7 @@ class AIAgentRepository:
         return list(result.scalars().all())
 
     async def get_by_id(self, agent_id: UUID) -> AIAgent | None:
-        result = await self.db.execute(
-            select(AIAgent).where(AIAgent.id == agent_id)
-        )
+        result = await self.db.execute(select(AIAgent).where(AIAgent.id == agent_id))
         return result.scalar_one_or_none()
 
     async def create(self, agent: AIAgent) -> AIAgent:
@@ -224,9 +210,7 @@ class AIAgentRepository:
         return agent
 
     async def update(self, agent_id: UUID, **kwargs) -> AIAgent | None:
-        await self.db.execute(
-            update(AIAgent).where(AIAgent.id == agent_id).values(**kwargs)
-        )
+        await self.db.execute(update(AIAgent).where(AIAgent.id == agent_id).values(**kwargs))
         await self.db.flush()
         return await self.get_by_id(agent_id)
 
@@ -254,9 +238,7 @@ class ConversationRepository:
         return list(result.scalars().all())
 
     async def get_by_id(self, conv_id: UUID) -> Conversation | None:
-        result = await self.db.execute(
-            select(Conversation).where(Conversation.id == conv_id)
-        )
+        result = await self.db.execute(select(Conversation).where(Conversation.id == conv_id))
         return result.scalar_one_or_none()
 
     async def create(self, conv: Conversation) -> Conversation:
@@ -288,9 +270,7 @@ class MessageRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_by_conversation(
-        self, conv_id: UUID, limit: int = 200
-    ) -> list[Message]:
+    async def get_by_conversation(self, conv_id: UUID, limit: int = 200) -> list[Message]:
         result = await self.db.execute(
             select(Message)
             .where(Message.conversation_id == conv_id)
@@ -306,13 +286,9 @@ class MessageRepository:
         return msg
 
     async def update(self, msg_id: UUID, **kwargs) -> Message | None:
-        await self.db.execute(
-            update(Message).where(Message.id == msg_id).values(**kwargs)
-        )
+        await self.db.execute(update(Message).where(Message.id == msg_id).values(**kwargs))
         await self.db.flush()
-        result = await self.db.execute(
-            select(Message).where(Message.id == msg_id)
-        )
+        result = await self.db.execute(select(Message).where(Message.id == msg_id))
         return result.scalar_one_or_none()
 
 
@@ -341,9 +317,7 @@ class TaskRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_by_conversation(
-        self, conv_id: UUID, limit: int = 50
-    ) -> list[OrchestratorTask]:
+    async def get_by_conversation(self, conv_id: UUID, limit: int = 50) -> list[OrchestratorTask]:
         result = await self.db.execute(
             select(OrchestratorTask)
             .where(OrchestratorTask.conversation_id == conv_id)
@@ -369,9 +343,7 @@ class TaskRepository:
 
     async def update(self, task_id: UUID, **kwargs) -> OrchestratorTask | None:
         await self.db.execute(
-            update(OrchestratorTask)
-            .where(OrchestratorTask.id == task_id)
-            .values(**kwargs)
+            update(OrchestratorTask).where(OrchestratorTask.id == task_id).values(**kwargs)
         )
         await self.db.flush()
         return await self.get_by_id(task_id)
@@ -384,9 +356,7 @@ class GpuLockRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def acquire(
-        self, server_id: UUID, gpu_index: int, task_id: UUID
-    ) -> bool:
+    async def acquire(self, server_id: UUID, gpu_index: int, task_id: UUID) -> bool:
         """Try to acquire a GPU lock. Returns True if successful."""
         existing = await self.db.execute(
             select(GpuLock).where(
@@ -411,9 +381,7 @@ class GpuLockRepository:
         await self.db.flush()
 
     async def release_by_task(self, task_id: UUID) -> None:
-        await self.db.execute(
-            delete(GpuLock).where(GpuLock.task_id == task_id)
-        )
+        await self.db.execute(delete(GpuLock).where(GpuLock.task_id == task_id))
         await self.db.flush()
 
     async def get_locked_gpus(self, server_id: UUID) -> list[int]:

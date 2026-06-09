@@ -24,7 +24,6 @@ import asyncio
 import inspect
 
 import pytest
-
 from app.services import trading_service
 from app.services.tools import tool_trading
 
@@ -43,10 +42,7 @@ def test_approve_token_routes_through_write_safety():
     # Find every occurrence of '_check_write_safety' and look for one
     # within 200 chars of 'approve_token'.
     indices = [i for i in range(len(src)) if src.startswith("_check_write_safety", i)]
-    near_approve = any(
-        "approve_token" in src[max(0, i - 400):i + 400]
-        for i in indices
-    )
+    near_approve = any("approve_token" in src[max(0, i - 400) : i + 400] for i in indices)
     assert near_approve, (
         "approve_token block does not call _check_write_safety — cluster D regression"
     )
@@ -61,10 +57,12 @@ def test_oracle_none_path_fails_closed():
     src = inspect.getsource(tool_trading)
     # The fix added a fail-closed branch around approve_token where None
     # USD estimate triggers an error instead of silently skipping the cap.
-    assert ("usd_value is None" in src or "no usd" in src.lower() or
-            "could not estimate" in src.lower() or "fail" in src.lower()), (
-        "tool_trading.py no longer guards against None oracle prices — cluster D regression"
-    )
+    assert (
+        "usd_value is None" in src
+        or "no usd" in src.lower()
+        or "could not estimate" in src.lower()
+        or "fail" in src.lower()
+    ), "tool_trading.py no longer guards against None oracle prices — cluster D regression"
 
 
 def test_decimal_used_for_native_and_token_sends():
@@ -77,9 +75,7 @@ def test_decimal_used_for_native_and_token_sends():
         if fn is None:
             continue
         src = inspect.getsource(fn)
-        assert "Decimal" in src, (
-            f"{name} no longer uses Decimal — cluster D regression"
-        )
+        assert "Decimal" in src, f"{name} no longer uses Decimal — cluster D regression"
 
 
 # ── Cluster R — per-wallet lock + lazy load ───────────────────────
@@ -92,8 +88,7 @@ def test_per_wallet_lock_present():
         pytest.skip("estimate_and_send not exported; can't introspect")
     src = inspect.getsource(fn)
     assert "Lock" in src or "_wallet_lock" in src or "lock" in src.lower(), (
-        "estimate_and_send no longer references a per-wallet lock — "
-        "cluster R regression"
+        "estimate_and_send no longer references a per-wallet lock — cluster R regression"
     )
 
 

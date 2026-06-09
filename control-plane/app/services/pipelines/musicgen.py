@@ -66,14 +66,18 @@ class MusicGenPipeline(MediaPipeline):
         if not out["prompt"]:
             raise ValueError("Missing or empty 'prompt'")
 
-        out["duration"] = _clamp(float(params.get("duration", DEFAULT_PARAMS["duration"])), 1.0, 30.0)
+        out["duration"] = _clamp(
+            float(params.get("duration", DEFAULT_PARAMS["duration"])), 1.0, 30.0
+        )
 
         model = str(params.get("model", DEFAULT_PARAMS["model"]))
         if model not in ("small", "medium", "large", "melody"):
             model = "medium"
         out["model"] = model
 
-        out["temperature"] = _clamp(float(params.get("temperature", DEFAULT_PARAMS["temperature"])), 0.1, 2.0)
+        out["temperature"] = _clamp(
+            float(params.get("temperature", DEFAULT_PARAMS["temperature"])), 0.1, 2.0
+        )
         out["top_k"] = _clamp(int(params.get("top_k", DEFAULT_PARAMS["top_k"])), 0, 1000)
         out["top_p"] = _clamp(float(params.get("top_p", DEFAULT_PARAMS["top_p"])), 0.0, 1.0)
 
@@ -101,8 +105,15 @@ class MusicGenPipeline(MediaPipeline):
 
     def build_tool_params(self, prompt: str, extra: dict) -> dict:
         params = {"prompt": prompt}
-        for key in ("duration", "model", "temperature", "top_k", "top_p",
-                     "continuation_audio", "melody_audio"):
+        for key in (
+            "duration",
+            "model",
+            "temperature",
+            "top_k",
+            "top_p",
+            "continuation_audio",
+            "melody_audio",
+        ):
             if key in extra:
                 params[key] = extra[key]
         # If an input_audio_b64 was injected by the handler (from input_file),

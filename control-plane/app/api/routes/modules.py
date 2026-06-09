@@ -11,11 +11,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.api.dependencies import DbSession, get_current_user
 from app.repositories.project_repo import ProjectRepository
 from app.schemas.module import (
-    ModuleCreate, ModuleUpdate, ModuleResponse, ModuleDetailResponse,
-    StepCreate, StepUpdate, StepResponse,
-    TaskCreate, TaskUpdate, TaskResponse,
+    ModuleCreate,
+    ModuleDetailResponse,
+    ModuleResponse,
+    ModuleUpdate,
+    StepCreate,
+    StepResponse,
+    StepUpdate,
+    TaskCreate,
+    TaskResponse,
+    TaskUpdate,
 )
-from app.services.authorization import check_permission, Permission
+from app.services.authorization import Permission, check_permission
 from app.services.module_service import ModuleService
 
 router = APIRouter(prefix="/projects/{project_id}/modules", tags=["modules"])
@@ -48,14 +55,22 @@ async def list_modules(project_id: UUID, db: DbSession, user: dict = Depends(get
 
 
 @router.post("", response_model=ModuleResponse, status_code=status.HTTP_201_CREATED)
-async def create_module(project_id: UUID, data: ModuleCreate, db: DbSession, user: dict = Depends(get_current_user)):
+async def create_module(
+    project_id: UUID, data: ModuleCreate, db: DbSession, user: dict = Depends(get_current_user)
+):
     await _check_project_access(project_id, user, db, Permission.EDIT)
     svc = ModuleService(db)
     return await svc.create_module(project_id, data)
 
 
 @router.put("/{module_id}", response_model=ModuleResponse)
-async def update_module(project_id: UUID, module_id: UUID, data: ModuleUpdate, db: DbSession, user: dict = Depends(get_current_user)):
+async def update_module(
+    project_id: UUID,
+    module_id: UUID,
+    data: ModuleUpdate,
+    db: DbSession,
+    user: dict = Depends(get_current_user),
+):
     await _check_project_access(project_id, user, db, Permission.EDIT)
     svc = ModuleService(db)
     mod = await svc.update_module(module_id, data)
@@ -65,7 +80,9 @@ async def update_module(project_id: UUID, module_id: UUID, data: ModuleUpdate, d
 
 
 @router.delete("/{module_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_module(project_id: UUID, module_id: UUID, db: DbSession, user: dict = Depends(get_current_user)):
+async def delete_module(
+    project_id: UUID, module_id: UUID, db: DbSession, user: dict = Depends(get_current_user)
+):
     await _check_project_access(project_id, user, db, Permission.EDIT)
     svc = ModuleService(db)
     if not await svc.delete_module(module_id):
@@ -74,21 +91,36 @@ async def delete_module(project_id: UUID, module_id: UUID, db: DbSession, user: 
 
 # ── Steps ────────────────────────────────────────
 @router.get("/{module_id}/steps", response_model=list[StepResponse])
-async def list_steps(project_id: UUID, module_id: UUID, db: DbSession, user: dict = Depends(get_current_user)):
+async def list_steps(
+    project_id: UUID, module_id: UUID, db: DbSession, user: dict = Depends(get_current_user)
+):
     await _check_project_access(project_id, user, db, Permission.VIEW)
     svc = ModuleService(db)
     return await svc.list_steps(module_id)
 
 
 @router.post("/{module_id}/steps", response_model=StepResponse, status_code=status.HTTP_201_CREATED)
-async def create_step(project_id: UUID, module_id: UUID, data: StepCreate, db: DbSession, user: dict = Depends(get_current_user)):
+async def create_step(
+    project_id: UUID,
+    module_id: UUID,
+    data: StepCreate,
+    db: DbSession,
+    user: dict = Depends(get_current_user),
+):
     await _check_project_access(project_id, user, db, Permission.EDIT)
     svc = ModuleService(db)
     return await svc.create_step(module_id, data)
 
 
 @router.put("/{module_id}/steps/{step_id}", response_model=StepResponse)
-async def update_step(project_id: UUID, module_id: UUID, step_id: UUID, data: StepUpdate, db: DbSession, user: dict = Depends(get_current_user)):
+async def update_step(
+    project_id: UUID,
+    module_id: UUID,
+    step_id: UUID,
+    data: StepUpdate,
+    db: DbSession,
+    user: dict = Depends(get_current_user),
+):
     await _check_project_access(project_id, user, db, Permission.EDIT)
     svc = ModuleService(db)
     step = await svc.update_step(step_id, data)
@@ -98,7 +130,13 @@ async def update_step(project_id: UUID, module_id: UUID, step_id: UUID, data: St
 
 
 @router.delete("/{module_id}/steps/{step_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_step(project_id: UUID, module_id: UUID, step_id: UUID, db: DbSession, user: dict = Depends(get_current_user)):
+async def delete_step(
+    project_id: UUID,
+    module_id: UUID,
+    step_id: UUID,
+    db: DbSession,
+    user: dict = Depends(get_current_user),
+):
     await _check_project_access(project_id, user, db, Permission.EDIT)
     svc = ModuleService(db)
     if not await svc.delete_step(step_id):
@@ -107,21 +145,36 @@ async def delete_step(project_id: UUID, module_id: UUID, step_id: UUID, db: DbSe
 
 # ── Tasks ────────────────────────────────────────
 @router.get("/{module_id}/tasks", response_model=list[TaskResponse])
-async def list_tasks(project_id: UUID, module_id: UUID, db: DbSession, user: dict = Depends(get_current_user)):
+async def list_tasks(
+    project_id: UUID, module_id: UUID, db: DbSession, user: dict = Depends(get_current_user)
+):
     await _check_project_access(project_id, user, db, Permission.VIEW)
     svc = ModuleService(db)
     return await svc.list_tasks(module_id)
 
 
 @router.post("/{module_id}/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
-async def create_task(project_id: UUID, module_id: UUID, data: TaskCreate, db: DbSession, user: dict = Depends(get_current_user)):
+async def create_task(
+    project_id: UUID,
+    module_id: UUID,
+    data: TaskCreate,
+    db: DbSession,
+    user: dict = Depends(get_current_user),
+):
     await _check_project_access(project_id, user, db, Permission.EDIT)
     svc = ModuleService(db)
     return await svc.create_task(module_id, data)
 
 
 @router.put("/{module_id}/tasks/{task_id}", response_model=TaskResponse)
-async def update_task(project_id: UUID, module_id: UUID, task_id: UUID, data: TaskUpdate, db: DbSession, user: dict = Depends(get_current_user)):
+async def update_task(
+    project_id: UUID,
+    module_id: UUID,
+    task_id: UUID,
+    data: TaskUpdate,
+    db: DbSession,
+    user: dict = Depends(get_current_user),
+):
     await _check_project_access(project_id, user, db, Permission.EDIT)
     svc = ModuleService(db)
     task = await svc.update_task(task_id, data)
@@ -131,7 +184,13 @@ async def update_task(project_id: UUID, module_id: UUID, task_id: UUID, data: Ta
 
 
 @router.delete("/{module_id}/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_task(project_id: UUID, module_id: UUID, task_id: UUID, db: DbSession, user: dict = Depends(get_current_user)):
+async def delete_task(
+    project_id: UUID,
+    module_id: UUID,
+    task_id: UUID,
+    db: DbSession,
+    user: dict = Depends(get_current_user),
+):
     await _check_project_access(project_id, user, db, Permission.EDIT)
     svc = ModuleService(db)
     if not await svc.delete_task(task_id):

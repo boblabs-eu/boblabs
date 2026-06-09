@@ -153,10 +153,14 @@ async def gouv_data_fr(executor: "ToolExecutor", args: dict) -> dict:
 
 
 def _client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(timeout=_TIMEOUT, headers={"User-Agent": _UA, "Accept": "application/json"})
+    return httpx.AsyncClient(
+        timeout=_TIMEOUT, headers={"User-Agent": _UA, "Accept": "application/json"}
+    )
 
 
-async def _get_json(client: httpx.AsyncClient, url: str, params: dict | None = None) -> tuple[int, dict | list | str]:
+async def _get_json(
+    client: httpx.AsyncClient, url: str, params: dict | None = None
+) -> tuple[int, dict | list | str]:
     resp = await client.get(url, params=params)
     if resp.headers.get("content-type", "").startswith("application/json"):
         try:
@@ -223,7 +227,9 @@ async def _search_datasets(params: dict) -> dict:
                 "id": d.get("id"),
                 "slug": d.get("slug"),
                 "title": d.get("title"),
-                "organization": (d.get("organization") or {}).get("name") if isinstance(d.get("organization"), dict) else d.get("organization"),
+                "organization": (d.get("organization") or {}).get("name")
+                if isinstance(d.get("organization"), dict)
+                else d.get("organization"),
                 "page": d.get("page"),
                 "resources_count": len(d.get("resources") or []),
                 "frequency": d.get("frequency"),
@@ -378,7 +384,10 @@ async def _get_dataset_metrics(params: dict) -> dict:
     if not dataset_id:
         return {"success": False, "output": "get_dataset_metrics: 'dataset_id' is required"}
 
-    qp: dict[str, str | int] = {"dataset_id__exact": dataset_id, "page_size": min(int(params.get("page_size") or 50), 200)}
+    qp: dict[str, str | int] = {
+        "dataset_id__exact": dataset_id,
+        "page_size": min(int(params.get("page_size") or 50), 200),
+    }
     if params.get("period_start"):
         qp["metric_month__gte"] = str(params["period_start"])
     if params.get("period_end"):
@@ -404,7 +413,10 @@ async def _get_dataset_metrics(params: dict) -> dict:
 async def _query_tabular(params: dict) -> dict:
     resource_id = str(params.get("resource_id") or "").strip()
     if not resource_id:
-        return {"success": False, "output": "query_tabular: 'resource_id' (CSV resource UUID) is required"}
+        return {
+            "success": False,
+            "output": "query_tabular: 'resource_id' (CSV resource UUID) is required",
+        }
 
     page = int(params.get("page") or 1)
     page_size = min(int(params.get("page_size") or 50), 500)
@@ -448,15 +460,17 @@ def _normalize_company_record(item: dict) -> dict:
     """
     siege = item.get("siege") or {}
     dirigeants = []
-    for d in (item.get("dirigeants") or []):
+    for d in item.get("dirigeants") or []:
         if not isinstance(d, dict):
             continue
-        dirigeants.append({
-            "nom": d.get("nom") or d.get("nom_complet"),
-            "prenoms": d.get("prenoms") or d.get("prenom"),
-            "qualite": d.get("qualite"),
-            "type_dirigeant": d.get("type_dirigeant"),
-        })
+        dirigeants.append(
+            {
+                "nom": d.get("nom") or d.get("nom_complet"),
+                "prenoms": d.get("prenoms") or d.get("prenom"),
+                "qualite": d.get("qualite"),
+                "type_dirigeant": d.get("type_dirigeant"),
+            }
+        )
     return {
         "siren": item.get("siren"),
         "nom_complet": item.get("nom_complet"),
@@ -480,7 +494,9 @@ def _normalize_company_record(item: dict) -> dict:
             "tranche_effectif_salarie": siege.get("tranche_effectif_salarie"),
         },
         "dirigeants": dirigeants,
-        "public_page": f"https://annuaire-entreprises.data.gouv.fr/entreprise/{item.get('siren')}" if item.get("siren") else None,
+        "public_page": f"https://annuaire-entreprises.data.gouv.fr/entreprise/{item.get('siren')}"
+        if item.get("siren")
+        else None,
     }
 
 

@@ -2,10 +2,19 @@
 
 import uuid
 from datetime import datetime
-
 from typing import Optional
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,16 +26,12 @@ class RagCollection(Base):
 
     __tablename__ = "rag_collections"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
 
-    embedding_model: Mapped[str] = mapped_column(
-        String(255), default="all-MiniLM-L6-v2"
-    )
+    embedding_model: Mapped[str] = mapped_column(String(255), default="all-MiniLM-L6-v2")
     embedding_dim: Mapped[int] = mapped_column(Integer, default=384)
     distance_metric: Mapped[str] = mapped_column(String(20), default="cosine")
 
@@ -43,17 +48,18 @@ class RagCollection(Base):
     lightrag_model_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ai_models.id", ondelete="SET NULL"), nullable=True
     )
-    lightrag_search_mode: Mapped[str] = mapped_column(String(10), default="hybrid", server_default="hybrid")
+    lightrag_search_mode: Mapped[str] = mapped_column(
+        String(10), default="hybrid", server_default="hybrid"
+    )
 
     acl: Mapped[dict] = mapped_column(
-        JSONB, nullable=False,
+        JSONB,
+        nullable=False,
         server_default='{"owner":"admin","editors":[],"viewers":[]}',
         default=dict,
     )
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -64,9 +70,7 @@ class RagDocument(Base):
 
     __tablename__ = "rag_documents"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     collection_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("rag_collections.id", ondelete="CASCADE"),
@@ -86,25 +90,17 @@ class RagDocument(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
 
-    ingested_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    ingested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class LabRagAccess(Base):
     """Per-lab collection permissions."""
 
     __tablename__ = "lab_rag_access"
-    __table_args__ = (
-        UniqueConstraint("lab_id", "collection_id", name="uq_lab_rag_access"),
-    )
+    __table_args__ = (UniqueConstraint("lab_id", "collection_id", name="uq_lab_rag_access"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     lab_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("labs.id", ondelete="CASCADE"),
@@ -117,6 +113,4 @@ class LabRagAccess(Base):
     )
     can_read: Mapped[bool] = mapped_column(Boolean, default=True)
     can_write: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

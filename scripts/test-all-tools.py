@@ -27,34 +27,55 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import re
 import time
 import traceback
-import uuid
 from pathlib import Path
 
 # These are tier classifications used in the report. They mirror the
 # Phase-2 plan's "tool smoke test" matrix.
-TIER_A = {"think", "clock", "file_read", "file_write", "python_exec",
-          "shell_exec", "memory_save", "memory_search", "handle_memory"}
-TIER_B = {"db_query", "db_execute", "db_schema",
-          "rag_list_collections", "rag_search", "rag_ingest"}
-TIER_C = {"web_search", "web_extract", "browser_navigate",
-          "browser_snapshot", "mermaid_to_img", "excalidraw",
-          "gouv_data_fr"}
-TIER_D = {"image_generate", "audio_generate", "video_generate",
-          "media_pipeline", "audio_mix", "comfyui"}
-TIER_E = {"youtube", "mail", "twitter", "call_agent",
-          "media_post", "postiz"}
-TIER_F = {"blockchain", "defi_data", "web3_portfolio",
-          "trading", "trustless_otc"}
+TIER_A = {
+    "think",
+    "clock",
+    "file_read",
+    "file_write",
+    "python_exec",
+    "shell_exec",
+    "memory_save",
+    "memory_search",
+    "handle_memory",
+}
+TIER_B = {"db_query", "db_execute", "db_schema", "rag_list_collections", "rag_search", "rag_ingest"}
+TIER_C = {
+    "web_search",
+    "web_extract",
+    "browser_navigate",
+    "browser_snapshot",
+    "mermaid_to_img",
+    "excalidraw",
+    "gouv_data_fr",
+}
+TIER_D = {
+    "image_generate",
+    "audio_generate",
+    "video_generate",
+    "media_pipeline",
+    "audio_mix",
+    "comfyui",
+}
+TIER_E = {"youtube", "mail", "twitter", "call_agent", "media_post", "postiz"}
+TIER_F = {"blockchain", "defi_data", "web3_portfolio", "trading", "trustless_otc"}
 TIER_G = {"control_server"}
 
-ALL_TIERS = {**{n: "A" for n in TIER_A}, **{n: "B" for n in TIER_B},
-             **{n: "C" for n in TIER_C}, **{n: "D" for n in TIER_D},
-             **{n: "E" for n in TIER_E}, **{n: "F" for n in TIER_F},
-             **{n: "G" for n in TIER_G}}
+ALL_TIERS = {
+    **{n: "A" for n in TIER_A},
+    **{n: "B" for n in TIER_B},
+    **{n: "C" for n in TIER_C},
+    **{n: "D" for n in TIER_D},
+    **{n: "E" for n in TIER_E},
+    **{n: "F" for n in TIER_F},
+    **{n: "G" for n in TIER_G},
+}
 
 
 def _build_args(tool_name: str, lab_workspace: Path) -> dict | None:
@@ -114,13 +135,14 @@ def _build_args(tool_name: str, lab_workspace: Path) -> dict | None:
     if tool_name == "excalidraw":
         # Handler expects ``elements`` as a JSON-stringified array (the
         # LLM tool-call wire format), not a raw Python list.
-        return {"elements": json.dumps([{"type": "rectangle",
-                                          "x": 0, "y": 0,
-                                          "width": 100, "height": 50}])}
+        return {
+            "elements": json.dumps(
+                [{"type": "rectangle", "x": 0, "y": 0, "width": 100, "height": 50}]
+            )
+        }
     if tool_name == "gouv_data_fr":
         # Smallest possible catalog query — should return at least 1 result.
-        return {"action": "search_datasets",
-                "params": {"query": "population", "page_size": 1}}
+        return {"action": "search_datasets", "params": {"query": "population", "page_size": 1}}
 
     # ── Tier D — media (GPU) ─────────────────────
     if tool_name == "comfyui":
@@ -139,8 +161,7 @@ def _build_args(tool_name: str, lab_workspace: Path) -> dict | None:
 
     # ── Tier E — integrations (read-only paths only) ─
     if tool_name == "youtube":
-        return {"action": "list_channel",
-                "channel_handle": "@boblabs"}
+        return {"action": "list_channel", "channel_handle": "@boblabs"}
     if tool_name == "mail":
         # Read inbox (IMAP); never send.
         return {"action": "read", "limit": 1}
@@ -155,8 +176,7 @@ def _build_args(tool_name: str, lab_workspace: Path) -> dict | None:
 
     # ── Tier F — web3 (read-only) ────────────────
     if tool_name == "blockchain":
-        return {"action": "balance",
-                "address": "0x0000000000000000000000000000000000000000"}
+        return {"action": "balance", "address": "0x0000000000000000000000000000000000000000"}
     if tool_name == "defi_data":
         return {"action": "prices", "symbols": ["BTC", "ETH"]}
     if tool_name == "web3_portfolio":
@@ -216,10 +236,10 @@ async def main() -> int:
     # Imports happen inside main so the script can be inspected without
     # the bob-api environment.
     from app.database import async_session
+    from app.models.orchestrator import Lab
     from app.services.tool_executor import ToolExecutor
     from app.services.tools import BUILTIN_TOOLS
     from sqlalchemy import select
-    from app.models.orchestrator import Lab
 
     async with async_session() as db:
         lab = (await db.execute(select(Lab).limit(1))).scalars().first()
@@ -238,16 +258,19 @@ async def main() -> int:
         skipped: list[str] = []
 
         # Run in a deterministic order, file_write before file_read.
-        order = sorted(BUILTIN_TOOLS.keys(),
-                       key=lambda n: (ALL_TIERS.get(n, "Z"), n))
+        order = sorted(BUILTIN_TOOLS.keys(), key=lambda n: (ALL_TIERS.get(n, "Z"), n))
         for name in order:
             payload = _build_args(name, executor.workspace)
             if payload is None:
                 skipped.append(name)
-                results.append({"tool": name,
-                                "tier": ALL_TIERS.get(name, "?"),
-                                "verdict": "SKIPPED",
-                                "output_excerpt": "skipped — needs setup or destructive"})
+                results.append(
+                    {
+                        "tool": name,
+                        "tier": ALL_TIERS.get(name, "?"),
+                        "verdict": "SKIPPED",
+                        "output_excerpt": "skipped — needs setup or destructive",
+                    }
+                )
                 continue
             print(f"  [{ALL_TIERS.get(name, '?')}] {name:<26}…", end=" ", flush=True)
             r = await _run_one(executor, name, payload)
@@ -255,8 +278,7 @@ async def main() -> int:
             results.append(r)
 
     # ── Markdown report ────────────────────────────
-    by_verdict = {"PASS": [], "GRACEFUL": [], "STACKTRACE": [],
-                  "SKIPPED": []}
+    by_verdict = {"PASS": [], "GRACEFUL": [], "STACKTRACE": [], "SKIPPED": []}
     for r in results:
         by_verdict[r["verdict"]].append(r)
 
@@ -264,7 +286,7 @@ async def main() -> int:
     md.append("# Tool Smoke Test Report\n")
     md.append(f"_Generated by `scripts/test-all-tools.py` — {len(results)} tools tested._\n")
     md.append("\n## Summary\n")
-    md.append(f"| Verdict | Count |\n|---|---|\n")
+    md.append("| Verdict | Count |\n|---|---|\n")
     for v, lst in by_verdict.items():
         md.append(f"| {v} | {len(lst)} |\n")
     md.append("\n## Results by tier\n")
@@ -272,14 +294,18 @@ async def main() -> int:
     md.append("|------|------|---------|--------------|----------------|\n")
     for r in results:
         excerpt = re.sub(r"\s+", " ", r["output_excerpt"])[:180]
-        md.append(f"| {r['tier']} | `{r['tool']}` | {r['verdict']} | "
-                  f"{r.get('latency_ms','-')} | {excerpt} |\n")
+        md.append(
+            f"| {r['tier']} | `{r['tool']}` | {r['verdict']} | "
+            f"{r.get('latency_ms', '-')} | {excerpt} |\n"
+        )
     if skipped:
         md.append("\n### Skipped tools (intentional)\n")
-        md.append("These tools were not invoked because the safe minimal "
-                  "argument is unclear or invocation would have side "
-                  "effects (sending mail, broadcasting a transaction, "
-                  "consuming heavy GPU time, etc.):\n\n")
+        md.append(
+            "These tools were not invoked because the safe minimal "
+            "argument is unclear or invocation would have side "
+            "effects (sending mail, broadcasting a transaction, "
+            "consuming heavy GPU time, etc.):\n\n"
+        )
         for n in skipped:
             md.append(f"- `{n}`\n")
 

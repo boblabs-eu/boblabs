@@ -14,16 +14,15 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
-from fastapi import HTTPException
-from fastapi.security import HTTPAuthorizationCredentials
-from jose import jwt
-
 from app.api.dependencies import (
     create_access_token,
     get_current_user,
     require_admin,
 )
 from app.config import settings
+from fastapi import HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
+from jose import jwt
 
 
 def _creds(token: str) -> HTTPAuthorizationCredentials:
@@ -153,8 +152,9 @@ async def test_admin_route_admin_returns_200(admin_client):
 
 @pytest.mark.asyncio
 async def test_create_access_token_round_trip():
-    tok = create_access_token({"sub": "round@trip", "role": "user"},
-                              expires_delta=timedelta(minutes=5))
+    tok = create_access_token(
+        {"sub": "round@trip", "role": "user"}, expires_delta=timedelta(minutes=5)
+    )
     payload = await get_current_user(_creds(tok))
     assert payload["sub"] == "round@trip"
     assert payload["role"] == "user"

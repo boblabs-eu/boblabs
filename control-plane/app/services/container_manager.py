@@ -71,7 +71,9 @@ async def ensure_sandbox(
     )
 
     await _wait_healthy(name)
-    logger.info("Created sandbox %s for lab %s (mem=%dMB, cpus=%.1f)", name, lab_id, memory_mb, cpus)
+    logger.info(
+        "Created sandbox %s for lab %s (mem=%dMB, cpus=%.1f)", name, lab_id, memory_mb, cpus
+    )
     return f"http://{name}:9000"
 
 

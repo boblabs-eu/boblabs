@@ -4,10 +4,8 @@ Manages WebSocket connections for both agents and UI clients.
 """
 
 import asyncio
-import json
 import logging
 from datetime import datetime, timezone
-from uuid import UUID
 
 from fastapi import WebSocket
 
@@ -63,9 +61,10 @@ class ConnectionManager:
         terminated = self.cleanup_agent_terminals(agent_name)
         if cancelled or terminated:
             logger.info(
-                "Agent disconnected: %s (cancelled %d pending, "
-                "closed %d terminal sessions)",
-                agent_name, cancelled, terminated,
+                "Agent disconnected: %s (cancelled %d pending, closed %d terminal sessions)",
+                agent_name,
+                cancelled,
+                terminated,
             )
         else:
             logger.info("Agent disconnected: %s", agent_name)
@@ -94,8 +93,9 @@ class ConnectionManager:
 
     # ── Client Connections ───────────────────────────
 
-    async def register_client(self, client_id: str, ws: WebSocket,
-                                user: dict | None = None) -> None:
+    async def register_client(
+        self, client_id: str, ws: WebSocket, user: dict | None = None
+    ) -> None:
         """Register a UI client. Cluster A — ``user`` carries the JWT
         payload (sub / role / iat etc.) so broadcast_to_clients can
         filter to a specific principal when callers know the audience.
@@ -114,9 +114,9 @@ class ConnectionManager:
     def get_client_user(self, client_id: str) -> dict | None:
         return self._client_users.get(client_id)
 
-    async def broadcast_to_clients(self, message: dict,
-                                     *, audience_email: str | None = None,
-                                     admin_only: bool = False) -> None:
+    async def broadcast_to_clients(
+        self, message: dict, *, audience_email: str | None = None, admin_only: bool = False
+    ) -> None:
         """Broadcast a message to UI clients.
 
         Cluster A — when ``audience_email`` is provided only clients
@@ -134,7 +134,11 @@ class ConnectionManager:
                 is_admin = user.get("role") == "admin"
                 if admin_only and not is_admin:
                     continue
-                if audience_email is not None and not is_admin and user.get("sub") != audience_email:
+                if (
+                    audience_email is not None
+                    and not is_admin
+                    and user.get("sub") != audience_email
+                ):
                     continue
             try:
                 await ws.send_json(message)
@@ -220,9 +224,7 @@ class ConnectionManager:
 
     # ── Terminal Session Mapping ─────────────────────
 
-    def map_terminal_session(
-        self, session_id: str, client_id: str, server_name: str
-    ) -> None:
+    def map_terminal_session(self, session_id: str, client_id: str, server_name: str) -> None:
         """Map a terminal session to a client and server."""
         self._terminal_sessions[session_id] = {
             "client_id": client_id,
@@ -240,9 +242,7 @@ class ConnectionManager:
     def cleanup_client_terminals(self, client_id: str) -> None:
         """Remove all terminal sessions for a disconnected client."""
         to_remove = [
-            sid
-            for sid, m in self._terminal_sessions.items()
-            if m["client_id"] == client_id
+            sid for sid, m in self._terminal_sessions.items() if m["client_id"] == client_id
         ]
         for sid in to_remove:
             self._terminal_sessions.pop(sid, None)
@@ -262,8 +262,7 @@ class ConnectionManager:
         indication of why.
         """
         to_remove = [
-            sid for sid, m in self._terminal_sessions.items()
-            if m.get("server_name") == agent_name
+            sid for sid, m in self._terminal_sessions.items() if m.get("server_name") == agent_name
         ]
         for sid in to_remove:
             self._terminal_sessions.pop(sid, None)
@@ -297,9 +296,7 @@ class ConnectionManager:
         """Remove a tool terminal queue."""
         self._tool_terminal_queues.pop(session_id, None)
 
-    def map_tool_terminal_session(
-        self, session_id: str, server_name: str
-    ) -> None:
+    def map_tool_terminal_session(self, session_id: str, server_name: str) -> None:
         """Map a tool terminal session (no client_id, uses queue instead)."""
         self._terminal_sessions[session_id] = {
             "client_id": "__tool__",

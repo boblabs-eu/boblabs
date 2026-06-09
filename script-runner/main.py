@@ -166,7 +166,9 @@ def discover_scripts() -> dict[str, dict]:
         if meta:
             name = meta.get("name", py_file.stem)
             scripts[name] = meta
-            logger.info("Discovered script: %s (%s) env=%s", name, py_file.name, meta.get("env", "system"))
+            logger.info(
+                "Discovered script: %s (%s) env=%s", name, py_file.name, meta.get("env", "system")
+            )
         else:
             logger.debug("Skipping %s (no BOB_SCRIPT_META)", py_file.name)
 
@@ -178,6 +180,7 @@ def discover_scripts() -> dict[str, dict]:
 def _find_conda() -> str | None:
     """Find the conda binary, searching common locations."""
     import shutil
+
     conda = shutil.which("conda")
     if conda:
         return conda
@@ -240,7 +243,7 @@ def _resolve_python(env_spec: str | None) -> list[str]:
 
 # ── Subprocess wrapper script ─────────────────────
 
-_WRAPPER_TEMPLATE = '''\
+_WRAPPER_TEMPLATE = """\
 import json, sys, os, importlib.util
 sys.path.insert(0, os.path.dirname(SCRIPT_PATH))
 spec = importlib.util.spec_from_file_location("bob_target", SCRIPT_PATH)
@@ -254,7 +257,7 @@ except Exception as e:
     result = {"success": False, "message": f"Script error: {e}"}
 with open(RESULT_PATH, "w") as f:
     json.dump(result, f)
-'''
+"""
 
 
 def _build_wrapper(script_path: str, args_path: str, output_dir: str, result_path: str) -> str:
@@ -389,11 +392,13 @@ async def run_script(script_name: str, req: ScriptRunRequest):
                 logger.warning("Skipping %s: would exceed max output size", f.name)
                 continue
             total_size += size
-            output_files.append({
-                "name": f.name,
-                "size_bytes": size,
-                "base64": base64.b64encode(f.read_bytes()).decode(),
-            })
+            output_files.append(
+                {
+                    "name": f.name,
+                    "size_bytes": size,
+                    "base64": base64.b64encode(f.read_bytes()).decode(),
+                }
+            )
 
     stdout_text = proc.get("stdout", "")
     if proc.get("stderr"):
@@ -485,5 +490,6 @@ def _cleanup(path: Path):
 
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.environ.get("BOB_SCRIPTS_PORT", "9101"))
     uvicorn.run(app, host="0.0.0.0", port=port)

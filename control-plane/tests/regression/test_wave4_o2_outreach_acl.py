@@ -27,8 +27,9 @@ pytestmark = pytest.mark.regression
 @pytest.fixture
 def lab_resources_root(tmp_path, monkeypatch):
     """Override LAB_RESOURCES_ROOT to a tmp dir for the test."""
-    from app.api.routes import outreach as outreach_mod
     from app.api.routes import labs as labs_mod
+    from app.api.routes import outreach as outreach_mod
+
     root = tmp_path / "lab_resources"
     root.mkdir()
     monkeypatch.setattr(labs_mod, "LAB_RESOURCES_ROOT", root)
@@ -46,7 +47,11 @@ def _write_draft(root: Path, lab_id: str, filename: str, to: str = "x@y", subjec
 
 @pytest.mark.asyncio
 async def test_list_drafts_admin_sees_all(
-    admin_client, lab_factory, lab_resources_root, admin_user, regular_user,
+    admin_client,
+    lab_factory,
+    lab_resources_root,
+    admin_user,
+    regular_user,
 ):
     lab1 = await lab_factory(owner=admin_user)
     lab2 = await lab_factory(owner=regular_user)
@@ -61,7 +66,11 @@ async def test_list_drafts_admin_sees_all(
 
 @pytest.mark.asyncio
 async def test_list_drafts_user_only_sees_accessible_labs(
-    make_client, lab_factory, lab_resources_root, admin_user, regular_user,
+    make_client,
+    lab_factory,
+    lab_resources_root,
+    admin_user,
+    regular_user,
 ):
     mine = await lab_factory(owner=regular_user)
     not_mine = await lab_factory(owner=admin_user)
@@ -77,7 +86,11 @@ async def test_list_drafts_user_only_sees_accessible_labs(
 
 @pytest.mark.asyncio
 async def test_get_draft_requires_view_permission(
-    make_client, lab_factory, lab_resources_root, admin_user, other_user,
+    make_client,
+    lab_factory,
+    lab_resources_root,
+    admin_user,
+    other_user,
 ):
     lab = await lab_factory(owner=admin_user)
     _write_draft(lab_resources_root, str(lab.id), "x.md")
@@ -88,7 +101,11 @@ async def test_get_draft_requires_view_permission(
 
 @pytest.mark.asyncio
 async def test_get_draft_viewer_can_read(
-    make_client, lab_factory, lab_resources_root, admin_user, viewer_user,
+    make_client,
+    lab_factory,
+    lab_resources_root,
+    admin_user,
+    viewer_user,
 ):
     lab = await lab_factory(owner=admin_user, viewers=[viewer_user])
     _write_draft(lab_resources_root, str(lab.id), "x.md")
@@ -99,7 +116,11 @@ async def test_get_draft_viewer_can_read(
 
 @pytest.mark.asyncio
 async def test_edit_draft_viewer_denied_edit(
-    make_client, lab_factory, lab_resources_root, admin_user, viewer_user,
+    make_client,
+    lab_factory,
+    lab_resources_root,
+    admin_user,
+    viewer_user,
 ):
     lab = await lab_factory(owner=admin_user, viewers=[viewer_user])
     _write_draft(lab_resources_root, str(lab.id), "x.md")
@@ -113,7 +134,11 @@ async def test_edit_draft_viewer_denied_edit(
 
 @pytest.mark.asyncio
 async def test_edit_draft_editor_can_edit(
-    make_client, lab_factory, lab_resources_root, admin_user, editor_user,
+    make_client,
+    lab_factory,
+    lab_resources_root,
+    admin_user,
+    editor_user,
 ):
     lab = await lab_factory(owner=admin_user, editors=[editor_user])
     _write_draft(lab_resources_root, str(lab.id), "x.md")

@@ -59,6 +59,7 @@ def _get_model(name: str):
 
         logger.info("Loading MusicGen model: %s", name)
         from audiocraft.models import MusicGen
+
         _model = MusicGen.get_pretrained(f"facebook/musicgen-{name}")
         _model_name = name
         _last_used = time.time()
@@ -82,15 +83,26 @@ def _unload_if_idle():
 
 # ── Request / Response schemas ───────────────────────
 
+
 class GenerateRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, max_length=1000, description="Text description of the music to generate")
-    duration: float = Field(default=15.0, ge=1.0, le=MAX_DURATION_SEC, description="Duration in seconds")
-    model: str = Field(default=MODEL_SIZE, pattern=r"^(small|medium|large|melody)$", description="Model variant")
+    prompt: str = Field(
+        ..., min_length=1, max_length=1000, description="Text description of the music to generate"
+    )
+    duration: float = Field(
+        default=15.0, ge=1.0, le=MAX_DURATION_SEC, description="Duration in seconds"
+    )
+    model: str = Field(
+        default=MODEL_SIZE, pattern=r"^(small|medium|large|melody)$", description="Model variant"
+    )
     temperature: float = Field(default=1.0, ge=0.1, le=2.0)
     top_k: int = Field(default=250, ge=0, le=1000)
     top_p: float = Field(default=0.0, ge=0.0, le=1.0)
-    continuation_audio: Optional[str] = Field(default=None, description="Base64 WAV to continue from")
-    melody_audio: Optional[str] = Field(default=None, description="Base64 WAV for melody conditioning (melody model only)")
+    continuation_audio: Optional[str] = Field(
+        default=None, description="Base64 WAV to continue from"
+    )
+    melody_audio: Optional[str] = Field(
+        default=None, description="Base64 WAV for melody conditioning (melody model only)"
+    )
     # D10 — the prior `sample_rate` request field was declared but
     # never wired into the encoder (the response always carried the
     # model's native rate, typically 32 000 Hz). Field removed to
@@ -107,12 +119,15 @@ class GenerateResponse(BaseModel):
 
 # ── App lifecycle ────────────────────────────────────
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Start idle-unload background thread
     t = threading.Thread(target=_unload_if_idle, daemon=True)
     t.start()
-    logger.info("MusicGen API starting (default model: %s, max duration: %ss)", MODEL_SIZE, MAX_DURATION_SEC)
+    logger.info(
+        "MusicGen API starting (default model: %s, max duration: %ss)", MODEL_SIZE, MAX_DURATION_SEC
+    )
     yield
     logger.info("MusicGen API shutting down")
 
@@ -121,6 +136,7 @@ app = FastAPI(title="MusicGen API", version="1.0.0", lifespan=lifespan)
 
 
 # ── Endpoints ────────────────────────────────────────
+
 
 @app.get("/health")
 async def health():
@@ -193,7 +209,13 @@ async def generate(req: GenerateRequest):
         audio_b64 = _encode_wav(wav, actual_sr)
 
         elapsed = time.time() - t0
-        logger.info("Generated %.1fs audio in %.1fs (model=%s, prompt=%.60s...)", duration_s, elapsed, req.model, req.prompt)
+        logger.info(
+            "Generated %.1fs audio in %.1fs (model=%s, prompt=%.60s...)",
+            duration_s,
+            elapsed,
+            req.model,
+            req.prompt,
+        )
 
         return GenerateResponse(
             audio=audio_b64,
@@ -208,6 +230,7 @@ async def generate(req: GenerateRequest):
 
 
 # ── Audio helpers ────────────────────────────────────
+
 
 def _decode_audio(b64_data: str, target_sr: int) -> torch.Tensor:
     """Decode base64 WAV/MP3 to tensor, resample if needed."""
@@ -238,4 +261,5 @@ def _encode_wav(wav: torch.Tensor, sample_rate: int) -> str:
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host=HOST, port=PORT, log_level="info")

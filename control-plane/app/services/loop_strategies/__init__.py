@@ -57,27 +57,29 @@ def _load_prompts() -> None:
     """Lazily populate the prompt registry from strategy modules."""
     if _PROMPT_REGISTRY:
         return
-    from app.services.loop_strategies.plan_execute import PLAN_SYSTEM_PROMPT
     from app.services.loop_strategies.critique_refine import CRITIQUE_SYSTEM_PROMPT
-    from app.services.loop_strategies.round_robin import ROUND_ROBIN_SYSTEM_PROMPT
     from app.services.loop_strategies.debate import DEBATE_SYSTEM_PROMPT
     from app.services.loop_strategies.map_reduce import MAP_REDUCE_SYSTEM_PROMPT
     from app.services.loop_strategies.parallel_broadcast import PARALLEL_BROADCAST_SYSTEM_PROMPT
-    from app.services.loop_strategies.tree_of_thought import TREE_OF_THOUGHT_SYSTEM_PROMPT
+    from app.services.loop_strategies.plan_execute import PLAN_SYSTEM_PROMPT
     from app.services.loop_strategies.react import REACT_SYSTEM_PROMPT
+    from app.services.loop_strategies.round_robin import ROUND_ROBIN_SYSTEM_PROMPT
     from app.services.loop_strategies.supervisor import SUPERVISOR_SYSTEM_PROMPT
+    from app.services.loop_strategies.tree_of_thought import TREE_OF_THOUGHT_SYSTEM_PROMPT
 
-    _PROMPT_REGISTRY.update({
-        "plan_execute": PLAN_SYSTEM_PROMPT,
-        "critique_refine": CRITIQUE_SYSTEM_PROMPT,
-        "round_robin": ROUND_ROBIN_SYSTEM_PROMPT,
-        "debate": DEBATE_SYSTEM_PROMPT,
-        "map_reduce": MAP_REDUCE_SYSTEM_PROMPT,
-        "parallel_broadcast": PARALLEL_BROADCAST_SYSTEM_PROMPT,
-        "tree_of_thought": TREE_OF_THOUGHT_SYSTEM_PROMPT,
-        "react": REACT_SYSTEM_PROMPT,
-        "supervisor": SUPERVISOR_SYSTEM_PROMPT,
-    })
+    _PROMPT_REGISTRY.update(
+        {
+            "plan_execute": PLAN_SYSTEM_PROMPT,
+            "critique_refine": CRITIQUE_SYSTEM_PROMPT,
+            "round_robin": ROUND_ROBIN_SYSTEM_PROMPT,
+            "debate": DEBATE_SYSTEM_PROMPT,
+            "map_reduce": MAP_REDUCE_SYSTEM_PROMPT,
+            "parallel_broadcast": PARALLEL_BROADCAST_SYSTEM_PROMPT,
+            "tree_of_thought": TREE_OF_THOUGHT_SYSTEM_PROMPT,
+            "react": REACT_SYSTEM_PROMPT,
+            "supervisor": SUPERVISOR_SYSTEM_PROMPT,
+        }
+    )
 
 
 def get_strategy_prompt(loop_type: str) -> str | None:
@@ -140,9 +142,11 @@ def list_strategies() -> list[dict[str, str]]:
     out: list[dict[str, str]] = []
     for loop_type in STRATEGY_REGISTRY:
         meta = STRATEGY_METADATA.get(loop_type, {})
-        out.append({
-            "loop_type": loop_type,
-            "label": meta.get("label", loop_type.replace("_", " ").title()),
-            "description": meta.get("description", ""),
-        })
+        out.append(
+            {
+                "loop_type": loop_type,
+                "label": meta.get("label", loop_type.replace("_", " ").title()),
+                "description": meta.get("description", ""),
+            }
+        )
     return out

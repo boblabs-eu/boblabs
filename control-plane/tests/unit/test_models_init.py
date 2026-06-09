@@ -13,9 +13,8 @@ from __future__ import annotations
 import inspect
 import pkgutil
 
-import pytest
-
 import app.models
+import pytest
 from app.models.base import Base
 
 
@@ -40,8 +39,7 @@ def test_every_model_class_is_reexported():
     actual = {name for name in dir(app.models) if not name.startswith("_")}
     missing = expected - actual
     assert not missing, (
-        f"app.models missing re-exports for {missing}. Add them to "
-        f"app/models/__init__.py."
+        f"app.models missing re-exports for {missing}. Add them to app/models/__init__.py."
     )
 
 

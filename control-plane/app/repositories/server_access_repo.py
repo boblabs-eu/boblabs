@@ -51,9 +51,7 @@ class LabServerAccessRepository:
 
     async def has_any_access(self, lab_id: UUID) -> bool:
         result = await self.db.execute(
-            select(LabServerAccess.id)
-            .where(LabServerAccess.lab_id == lab_id)
-            .limit(1)
+            select(LabServerAccess.id).where(LabServerAccess.lab_id == lab_id).limit(1)
         )
         return result.first() is not None
 

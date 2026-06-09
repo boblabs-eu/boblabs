@@ -1,0 +1,35 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [
+    "control-plane/app/migrations/versions",
+    "**/node_modules",
+    "**/build",
+    "**/__pycache__",
+    "**/.venv",
+    "frontend/build",
+    "showroom-ui/build",
+    "**/*.EXAMPLE.py",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "W"]
+ignore = [
+    "E501",  # line-too-long — formatter handles
+    "B008",  # function call in default arg — FastAPI Depends() idiom
+    "B904",  # raise from in except — too aggressive for our error patterns
+    "E712",  # `== True` — required idiom for SQLAlchemy Column comparisons
+    "E402",  # module-level import not at top — sys.path bootstrap in scripts
+    "E741",  # ambiguous var name `l`/`I`/`O` — acceptable in math contexts
+    "B905",  # zip(strict=) — opt-in, not retroactive
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["B", "E402", "F401", "F811"]
+"**/__init__.py" = ["F401"]
+"**/migrations/**" = ["E501", "F401", "I"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

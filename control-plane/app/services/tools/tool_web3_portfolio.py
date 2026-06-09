@@ -137,7 +137,9 @@ async def web3_portfolio(executor: ToolExecutor, args: dict) -> dict:
             for wallet_meta in allowed_wallets:
                 balances = await get_wallet_balances(wallet_meta["address"])
                 wallet_total = round(
-                    sum((chain_data.get("total_value_usd") or 0) for chain_data in balances.values()),
+                    sum(
+                        (chain_data.get("total_value_usd") or 0) for chain_data in balances.values()
+                    ),
                     2,
                 )
                 total += wallet_total
@@ -168,7 +170,9 @@ async def web3_portfolio(executor: ToolExecutor, args: dict) -> dict:
                     hours=hours,
                 )
             else:
-                allowed_ids = await LabWeb3AccessRepository(executor.db).list_wallet_ids(executor.lab_id)
+                allowed_ids = await LabWeb3AccessRepository(executor.db).list_wallet_ids(
+                    executor.lab_id
+                )
                 allowed_id_strs = {str(wallet_id) for wallet_id in allowed_ids}
                 history = []
                 for row in await get_portfolio_history(executor.db, hours=hours):
@@ -182,7 +186,10 @@ async def web3_portfolio(executor: ToolExecutor, args: dict) -> dict:
                             {
                                 "ts": row.get("ts"),
                                 "total_value_usd": round(
-                                    sum((wallet_data or {}).get("value", 0) for wallet_data in wallets.values()),
+                                    sum(
+                                        (wallet_data or {}).get("value", 0)
+                                        for wallet_data in wallets.values()
+                                    ),
                                     2,
                                 ),
                                 "wallets": wallets,

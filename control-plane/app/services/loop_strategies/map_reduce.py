@@ -103,7 +103,9 @@ class MapReduceStrategy(LoopStrategy):
 
         messages = [{"role": "system", "content": system}]
         messages += build_messages_from_history(
-            context, self._last_results, self._injections,
+            context,
+            self._last_results,
+            self._injections,
             prompt_suffix="MAP results are in. Proceed with REDUCE or plan another MAP if needed.",
             first_iter_prompt="Begin the MAP phase. Split the task into parallel chunks.",
         )

@@ -8,10 +8,21 @@ REQUIRED ENV:
 PRECONDITIONS:
     The named pipeline's GPU service is running and reachable.
 """
+
 from __future__ import annotations
-import os, sys
+
+import sys
+
 sys.path.insert(0, "/tmp/tools-deep")
-from _harness import optional_env, make_executor, run_tool, passed, fail_or_skip, skip, run  # noqa: E402
+from _harness import (  # noqa: E402
+    fail_or_skip,
+    make_executor,
+    optional_env,
+    passed,
+    run,
+    run_tool,
+    skip,
+)
 
 TOOL = "media_pipeline"
 
@@ -21,14 +32,20 @@ async def main():
     if not name:
         try:
             from app.services.pipelines import PIPELINE_REGISTRY
+
             available = ", ".join(sorted(PIPELINE_REGISTRY.keys())) or "(none)"
         except Exception as exc:
             available = f"(import failed: {exc})"
         skip(TOOL, f"set PIPELINE_NAME — available: {available}")
     async with make_executor(timeout_sec=1800) as (db, executor):
-        res = await run_tool(executor, TOOL, {
-            "pipeline": name, "prompt": "smoke test",
-        })
+        res = await run_tool(
+            executor,
+            TOOL,
+            {
+                "pipeline": name,
+                "prompt": "smoke test",
+            },
+        )
         if not res["success"]:
             fail_or_skip(TOOL, res["output"])
         passed(TOOL, f"{name} ran in {res['latency_ms']}ms")

@@ -8,10 +8,13 @@ PRECONDITIONS:
 
 Read-only: lists configured integrations. No posts are scheduled.
 """
+
 from __future__ import annotations
+
 import sys
+
 sys.path.insert(0, "/tmp/tools-deep")
-from _harness import make_executor, run_tool, passed, fail_or_skip, run  # noqa: E402
+from _harness import fail_or_skip, make_executor, passed, run, run_tool  # noqa: E402
 
 TOOL = "postiz"
 

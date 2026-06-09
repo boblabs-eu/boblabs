@@ -10,10 +10,14 @@ PRECONDITIONS:
 This makes a real public tweet. The script tries to delete it but if the
 delete fails the tweet stays up.
 """
+
 from __future__ import annotations
-import sys, time
+
+import sys
+import time
+
 sys.path.insert(0, "/tmp/tools-deep")
-from _harness import optional_env, make_executor, run_tool, passed, fail_or_skip, run  # noqa: E402
+from _harness import fail_or_skip, make_executor, optional_env, passed, run, run_tool  # noqa: E402
 
 TOOL = "twitter"
 

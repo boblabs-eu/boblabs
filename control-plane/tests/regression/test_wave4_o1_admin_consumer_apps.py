@@ -14,16 +14,20 @@ import pytest
 pytestmark = pytest.mark.regression
 
 
-@pytest.mark.parametrize("method,path", [
-    ("GET", "/api/v1/admin/consumer-apps"),
-    ("POST", "/api/v1/admin/consumer-apps"),
-    ("DELETE", "/api/v1/admin/consumer-apps/00000000-0000-0000-0000-000000000000"),
-    ("DELETE", "/api/v1/admin/consumer-apps/00000000-0000-0000-0000-000000000000/permanent"),
-])
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("GET", "/api/v1/admin/consumer-apps"),
+        ("POST", "/api/v1/admin/consumer-apps"),
+        ("DELETE", "/api/v1/admin/consumer-apps/00000000-0000-0000-0000-000000000000"),
+        ("DELETE", "/api/v1/admin/consumer-apps/00000000-0000-0000-0000-000000000000/permanent"),
+    ],
+)
 @pytest.mark.asyncio
 async def test_non_admin_blocked(user_client, method, path):
     r = await user_client.request(
-        method, path,
+        method,
+        path,
         json={"app_id": "spam"} if method == "POST" else None,
     )
     assert r.status_code == 403, (
@@ -32,10 +36,13 @@ async def test_non_admin_blocked(user_client, method, path):
     )
 
 
-@pytest.mark.parametrize("method,path", [
-    ("GET", "/api/v1/admin/consumer-apps"),
-    ("DELETE", "/api/v1/admin/consumer-apps/00000000-0000-0000-0000-000000000000"),
-])
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("GET", "/api/v1/admin/consumer-apps"),
+        ("DELETE", "/api/v1/admin/consumer-apps/00000000-0000-0000-0000-000000000000"),
+    ],
+)
 @pytest.mark.asyncio
 async def test_anonymous_blocked(anonymous_client, method, path):
     r = await anonymous_client.request(method, path)

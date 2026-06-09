@@ -5,14 +5,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.trading import TradingPosition, TradeHistory
+from app.models.trading import TradeHistory, TradingPosition
 from app.services.trading_units import (
-    DEFAULT_TOKEN_DECIMALS,
     decimals_for,
     from_raw,
     to_raw,
@@ -144,8 +142,7 @@ class TradingRepo:
         # we can multiply against ``entry_price_usd`` (also Numeric).
         total_entry = sum(
             (
-                (p.entry_price_usd or Decimal(0))
-                * from_raw(p.amount_raw or 0, p.token_decimals)
+                (p.entry_price_usd or Decimal(0)) * from_raw(p.amount_raw or 0, p.token_decimals)
                 for p in positions
             ),
             start=Decimal(0),
@@ -161,7 +158,9 @@ class TradingRepo:
         # D03 — render the human Decimal here; the raw wei stays
         # available for consumers that want byte-exact reconciliation
         # against on-chain logs.
-        human_amount = from_raw(p.amount_raw, p.token_decimals) if p.amount_raw is not None else None
+        human_amount = (
+            from_raw(p.amount_raw, p.token_decimals) if p.amount_raw is not None else None
+        )
         return {
             "id": str(p.id),
             "wallet_address": p.wallet_address,

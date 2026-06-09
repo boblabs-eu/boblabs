@@ -1,4 +1,5 @@
 """Anti-loop endpoints (history of detected loops + recent in-memory status)."""
+
 from __future__ import annotations
 
 from uuid import UUID

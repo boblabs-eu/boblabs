@@ -21,22 +21,66 @@ TOOLS = {
     "rag_search": {
         "description": "Search an accessible RAG collection using semantic similarity. For LightRAG collections, supports mode: local (vector), global (graph), hybrid (both). Use rag_list_collections first if needed.",
         "parameters": {
-            "query": {"type": "string", "description": "Natural language search query", "required": True},
-            "collection": {"type": "string", "description": "Collection name from rag_list_collections", "required": True},
-            "top_k": {"type": "integer", "description": "Optional result count, default 5, max 20", "required": False},
-            "mode": {"type": "string", "description": "Search mode for LightRAG collections: local, global, or hybrid (default)", "required": False},
-            "filter": {"type": "object", "description": "Optional metadata filter object", "required": False},
-            "score_threshold": {"type": "number", "description": "Optional minimum similarity score from 0 to 1", "required": False},
+            "query": {
+                "type": "string",
+                "description": "Natural language search query",
+                "required": True,
+            },
+            "collection": {
+                "type": "string",
+                "description": "Collection name from rag_list_collections",
+                "required": True,
+            },
+            "top_k": {
+                "type": "integer",
+                "description": "Optional result count, default 5, max 20",
+                "required": False,
+            },
+            "mode": {
+                "type": "string",
+                "description": "Search mode for LightRAG collections: local, global, or hybrid (default)",
+                "required": False,
+            },
+            "filter": {
+                "type": "object",
+                "description": "Optional metadata filter object",
+                "required": False,
+            },
+            "score_threshold": {
+                "type": "number",
+                "description": "Optional minimum similarity score from 0 to 1",
+                "required": False,
+            },
         },
     },
     "rag_ingest": {
         "description": "Ingest text content or a workspace file into a RAG collection this lab has write access to. Use rag_list_collections to find available collections.",
         "parameters": {
-            "collection": {"type": "string", "description": "Collection name (from rag_list_collections)", "required": True},
-            "filename": {"type": "string", "description": "Source label for the ingested document", "required": True},
-            "source_file": {"type": "string", "description": "Path to workspace file to ingest (relative to lab workspace)", "required": False},
-            "content": {"type": "string", "description": "Raw text content to ingest (alternative to source_file)", "required": False},
-            "metadata": {"type": "object", "description": "Optional metadata tags (e.g. {\"source\": \"youtube\", \"video_id\": \"...\"})", "required": False},
+            "collection": {
+                "type": "string",
+                "description": "Collection name (from rag_list_collections)",
+                "required": True,
+            },
+            "filename": {
+                "type": "string",
+                "description": "Source label for the ingested document",
+                "required": True,
+            },
+            "source_file": {
+                "type": "string",
+                "description": "Path to workspace file to ingest (relative to lab workspace)",
+                "required": False,
+            },
+            "content": {
+                "type": "string",
+                "description": "Raw text content to ingest (alternative to source_file)",
+                "required": False,
+            },
+            "metadata": {
+                "type": "object",
+                "description": 'Optional metadata tags (e.g. {"source": "youtube", "video_id": "..."})',
+                "required": False,
+            },
         },
     },
 }
@@ -51,7 +95,11 @@ async def rag_list_collections(executor: ToolExecutor, args: dict) -> dict:
 
     lines = []
     for collection in collections:
-        mode_label = f" [{collection['rag_mode']}]" if collection.get('rag_mode', 'vector') != 'vector' else ""
+        mode_label = (
+            f" [{collection['rag_mode']}]"
+            if collection.get("rag_mode", "vector") != "vector"
+            else ""
+        )
         lines.append(
             f"- {collection['name']}{mode_label} ({collection['display_name']}): "
             f"{collection['document_count']} docs, {collection['chunk_count']} chunks. "
@@ -122,7 +170,10 @@ async def rag_ingest(executor: ToolExecutor, args: dict) -> dict:
     if not filename:
         return {"success": False, "output": "rag_ingest requires 'filename'."}
     if not source_file and not content:
-        return {"success": False, "output": "rag_ingest requires either 'source_file' or 'content'."}
+        return {
+            "success": False,
+            "output": "rag_ingest requires either 'source_file' or 'content'.",
+        }
 
     if isinstance(metadata, str):
         try:
@@ -133,7 +184,10 @@ async def rag_ingest(executor: ToolExecutor, args: dict) -> dict:
     rag_svc = RagService(executor.db)
     collection = await rag_svc.check_access(executor.lab_id, collection_name, permission="write")
     if not collection:
-        return {"success": False, "output": f"Write access denied to collection '{collection_name}'."}
+        return {
+            "success": False,
+            "output": f"Write access denied to collection '{collection_name}'.",
+        }
 
     if source_file:
         fpath = (executor.workspace / source_file).resolve()

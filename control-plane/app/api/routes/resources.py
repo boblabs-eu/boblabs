@@ -6,10 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.dependencies import DbSession, get_current_user
 from app.schemas.resource import (
-    ResourceCreate, ResourceUpdate, ResourceResponse,
-    ResourceDetailResponse, ResourceLinkRequest,
+    ResourceCreate,
+    ResourceDetailResponse,
+    ResourceLinkRequest,
+    ResourceResponse,
+    ResourceUpdate,
 )
-from app.services.authorization import check_permission, Permission
+from app.services.authorization import Permission, check_permission
 from app.services.resource_service import ResourceService
 
 router = APIRouter(prefix="/resources", tags=["resources"])
@@ -37,14 +40,18 @@ async def get_resource(resource_id: UUID, db: DbSession, user: dict = Depends(ge
 
 
 @router.post("", response_model=ResourceResponse, status_code=status.HTTP_201_CREATED)
-async def create_resource(data: ResourceCreate, db: DbSession, user: dict = Depends(get_current_user)):
+async def create_resource(
+    data: ResourceCreate, db: DbSession, user: dict = Depends(get_current_user)
+):
     """Create a new resource."""
     svc = ResourceService(db)
     return await svc.create_resource(data, user=user)
 
 
 @router.put("/{resource_id}", response_model=ResourceResponse)
-async def update_resource(resource_id: UUID, data: ResourceUpdate, db: DbSession, user: dict = Depends(get_current_user)):
+async def update_resource(
+    resource_id: UUID, data: ResourceUpdate, db: DbSession, user: dict = Depends(get_current_user)
+):
     """Update a resource."""
     svc = ResourceService(db)
     resource = await svc.get_resource(resource_id)

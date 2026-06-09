@@ -10,15 +10,17 @@ def get_disk_usage() -> list[dict]:
     for p in partitions:
         try:
             usage = psutil.disk_usage(p.mountpoint)
-            disks.append({
-                "device": p.device,
-                "mountpoint": p.mountpoint,
-                "fstype": p.fstype,
-                "total": usage.total,
-                "used": usage.used,
-                "free": usage.free,
-                "percent": usage.percent,
-            })
+            disks.append(
+                {
+                    "device": p.device,
+                    "mountpoint": p.mountpoint,
+                    "fstype": p.fstype,
+                    "total": usage.total,
+                    "used": usage.used,
+                    "free": usage.free,
+                    "percent": usage.percent,
+                }
+            )
         except (PermissionError, OSError):
             continue
     return disks

@@ -5,8 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.resource import Resource
 from app.models.project import Project
+from app.models.resource import Resource
 from app.repositories.resource_repo import ResourceRepository
 from app.schemas.resource import ResourceCreate, ResourceUpdate
 from app.services.authorization import get_default_acl
@@ -52,9 +52,7 @@ class ResourceService:
         project_ids = await self.repo.get_linked_project_ids(resource_id)
         if not project_ids:
             return []
-        result = await self.db.execute(
-            select(Project).where(Project.id.in_(project_ids))
-        )
+        result = await self.db.execute(select(Project).where(Project.id.in_(project_ids)))
         return [
             {"id": str(p.id), "name": p.name, "themes": p.themes or []}
             for p in result.scalars().all()
@@ -65,9 +63,7 @@ class ResourceService:
         resource_ids = await self.repo.get_resource_ids_for_project(project_id)
         if not resource_ids:
             return []
-        result = await self.db.execute(
-            select(Resource).where(Resource.id.in_(resource_ids))
-        )
+        result = await self.db.execute(select(Resource).where(Resource.id.in_(resource_ids)))
         return [
             {"id": str(r.id), "name": r.name, "themes": r.themes or []}
             for r in result.scalars().all()

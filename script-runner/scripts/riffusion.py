@@ -18,7 +18,6 @@ Requirements (install in the script-runner venv or system):
 """
 
 import os
-import time
 
 
 def run(args: dict, output_dir: str) -> dict:
@@ -31,12 +30,15 @@ def run(args: dict, output_dir: str) -> dict:
     seed = args.get("seed")
 
     try:
-        import torch
         import numpy as np
-        from diffusers import StableDiffusionPipeline
         import scipy.io.wavfile as wavfile
+        import torch
+        from diffusers import StableDiffusionPipeline
     except ImportError as e:
-        return {"success": False, "message": f"Missing dependency: {e}. Install: pip install torch diffusers scipy numpy"}
+        return {
+            "success": False,
+            "message": f"Missing dependency: {e}. Install: pip install torch diffusers scipy numpy",
+        }
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if device == "cuda" else torch.float32
@@ -80,12 +82,16 @@ def run(args: dict, output_dir: str) -> dict:
 
         # Resize spectrogram to match desired frequency bins
         from PIL import Image
-        spec_resized = np.array(
-            Image.fromarray((spec_arr * 255).astype(np.uint8)).resize(
-                (n_samples // hop_length, n_fft // 2 + 1)
-            ),
-            dtype=np.float32,
-        ) / 255.0
+
+        spec_resized = (
+            np.array(
+                Image.fromarray((spec_arr * 255).astype(np.uint8)).resize(
+                    (n_samples // hop_length, n_fft // 2 + 1)
+                ),
+                dtype=np.float32,
+            )
+            / 255.0
+        )
 
         # Reconstruct magnitude spectrogram and apply Griffin-Lim
         magnitude = spec_resized.T * 100  # scale up
@@ -94,9 +100,9 @@ def run(args: dict, output_dir: str) -> dict:
             stft = magnitude * np.exp(1j * phase)
             audio = np.fft.irfft(stft, axis=0).flatten()[:n_samples]
             recon = np.fft.rfft(
-                np.lib.stride_tricks.sliding_window_view(
-                    np.pad(audio, (0, n_fft - 1)), n_fft
-                )[::hop_length],
+                np.lib.stride_tricks.sliding_window_view(np.pad(audio, (0, n_fft - 1)), n_fft)[
+                    ::hop_length
+                ],
                 axis=1,
             ).T
             phase = np.angle(recon)

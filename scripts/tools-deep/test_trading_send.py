@@ -12,10 +12,23 @@ PRECONDITIONS (script aborts otherwise):
 
 This broadcasts two **real** transactions on Base mainnet. Real money.
 """
+
 from __future__ import annotations
-import os, sys
+
+import os
+import sys
+
 sys.path.insert(0, "/tmp/tools-deep")
-from _harness import require_env, optional_env, make_executor, run_tool, passed, fail, skip, run  # noqa: E402
+from _harness import (  # noqa: E402
+    fail,
+    make_executor,
+    optional_env,
+    passed,
+    require_env,
+    run,
+    run_tool,
+    skip,
+)
 
 TOOL = "trading"
 USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
@@ -42,20 +55,37 @@ async def main():
         if not wallet:
             fail(TOOL, f"no hot wallet found in: {wallets['output'][:200]}")
         # Native send.
-        eth_send = await run_tool(executor, TOOL, {
-            "action": "send_native", "chain": "base", "wallet": wallet,
-            "to": to, "amount": amount_eth,
-        })
+        eth_send = await run_tool(
+            executor,
+            TOOL,
+            {
+                "action": "send_native",
+                "chain": "base",
+                "wallet": wallet,
+                "to": to,
+                "amount": amount_eth,
+            },
+        )
         if not eth_send["success"]:
             fail(TOOL, f"send_native: {eth_send['output'][:200]}")
         # Token send (USDC).
-        usdc_send = await run_tool(executor, TOOL, {
-            "action": "send_token", "chain": "base", "wallet": wallet,
-            "to": to, "token": USDC_BASE, "amount": amount_usdc,
-        })
+        usdc_send = await run_tool(
+            executor,
+            TOOL,
+            {
+                "action": "send_token",
+                "chain": "base",
+                "wallet": wallet,
+                "to": to,
+                "token": USDC_BASE,
+                "amount": amount_usdc,
+            },
+        )
         if not usdc_send["success"]:
             fail(TOOL, f"send_token: {usdc_send['output'][:200]}")
-        passed(TOOL, f"native {amount_eth} + USDC {amount_usdc} sent from {wallet[:10]}… to {to[:10]}…")
+        passed(
+            TOOL, f"native {amount_eth} + USDC {amount_usdc} sent from {wallet[:10]}… to {to[:10]}…"
+        )
 
 
 run(main())

@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.dependencies import DbSession, get_current_user
+from app.api.routes.labs import _lab_to_response
 from app.repositories.lab_repo import (
     LabAgentRepository,
     LabRepository,
@@ -13,15 +14,13 @@ from app.repositories.lab_repo import (
 )
 from app.repositories.rag_repo import LabRagAccessRepository, RagCollectionRepository
 from app.schemas.orchestrator import LabBlueprint, LabResponse
-from app.api.routes.labs import _lab_to_response
 from app.services.authorization import Permission, check_permission
 
 router = APIRouter(tags=["labs"])
 
 
 @router.get("/{lab_id}/export", response_model=LabBlueprint)
-async def export_lab(lab_id: UUID, db: DbSession,
-                       user: dict = Depends(get_current_user)):
+async def export_lab(lab_id: UUID, db: DbSession, user: dict = Depends(get_current_user)):
     """Export a lab as a portable JSON blueprint.
 
     Cluster G — previously anonymous and shipped system_prompt for every
@@ -56,6 +55,7 @@ async def export_lab(lab_id: UUID, db: DbSession,
         return pt.name if pt else None
 
     from app.repositories.lab_repo import ToolSetRepository as TSRepo
+
     async def tool_set_refs(ts_id, ts_ids):
         names = []
         ts_repo = TSRepo(db)
@@ -63,7 +63,7 @@ async def export_lab(lab_id: UUID, db: DbSession,
             ts = await ts_repo.get_by_id(ts_id)
             if ts:
                 names.append(ts.name)
-        for tid in (ts_ids or []):
+        for tid in ts_ids or []:
             try:
                 ts = await ts_repo.get_by_id(uuid_mod.UUID(tid))
             except (ValueError, AttributeError):
@@ -84,7 +84,9 @@ async def export_lab(lab_id: UUID, db: DbSession,
         "temperature": float(lab.orchestrator_temperature or 0.7),
         "max_tokens": lab.orchestrator_max_tokens or 4096,
         "tools": lab.orchestrator_tools or [],
-        "tool_sets": await tool_set_refs(lab.orchestrator_tool_set_id, lab.orchestrator_tool_set_ids),
+        "tool_sets": await tool_set_refs(
+            lab.orchestrator_tool_set_id, lab.orchestrator_tool_set_ids
+        ),
     }
 
     # Build settings section
@@ -105,26 +107,28 @@ async def export_lab(lab_id: UUID, db: DbSession,
     agents = await agent_repo.get_by_lab(lab.id)
     agent_list = []
     for a in agents:
-        agent_list.append({
-            "name": a.name,
-            "role": a.role or "",
-            # Cluster G: per-agent system prompt is the most leak-sensitive
-            # field of a blueprint. Zero it out on export — re-import
-            # produces an empty prompt that the new owner re-authors.
-            "system_prompt": "",
-            "prompt_template": await prompt_template_ref(a.prompt_template_id),
-            "model": await model_ref(a.model_id),
-            "temperature": float(a.temperature or 0.7),
-            "max_tokens": a.max_tokens or 4096,
-            "tools": a.tools or [],
-            "tool_sets": await tool_set_refs(a.tool_set_id, a.tool_set_ids),
-            "is_active": a.is_active if a.is_active is not None else True,
-            "sort_order": a.sort_order or 0,
-            "share_memory": a.share_memory or False,
-            "callable_agents": a.callable_agents or [],
-            "cron_expression": a.cron_expression,
-            "cron_instruction": a.cron_instruction or "",
-        })
+        agent_list.append(
+            {
+                "name": a.name,
+                "role": a.role or "",
+                # Cluster G: per-agent system prompt is the most leak-sensitive
+                # field of a blueprint. Zero it out on export — re-import
+                # produces an empty prompt that the new owner re-authors.
+                "system_prompt": "",
+                "prompt_template": await prompt_template_ref(a.prompt_template_id),
+                "model": await model_ref(a.model_id),
+                "temperature": float(a.temperature or 0.7),
+                "max_tokens": a.max_tokens or 4096,
+                "tools": a.tools or [],
+                "tool_sets": await tool_set_refs(a.tool_set_id, a.tool_set_ids),
+                "is_active": a.is_active if a.is_active is not None else True,
+                "sort_order": a.sort_order or 0,
+                "share_memory": a.share_memory or False,
+                "callable_agents": a.callable_agents or [],
+                "cron_expression": a.cron_expression,
+                "cron_instruction": a.cron_instruction or "",
+            }
+        )
 
     # Export RAG access links so a re-import can recreate them in one shot.
     access_rows = await LabRagAccessRepository(db).get_by_lab(lab.id)
@@ -155,7 +159,9 @@ async def export_lab(lab_id: UUID, db: DbSession,
 
 
 @router.post("/import", response_model=LabResponse, status_code=status.HTTP_201_CREATED)
-async def import_lab(blueprint: LabBlueprint, db: DbSession, user: dict = Depends(get_current_user)):
+async def import_lab(
+    blueprint: LabBlueprint, db: DbSession, user: dict = Depends(get_current_user)
+):
     """Create a new lab from a JSON blueprint."""
     from app.repositories.orchestrator_repo import AIModelRepository
 
@@ -183,6 +189,7 @@ async def import_lab(blueprint: LabBlueprint, db: DbSession, user: dict = Depend
         return None
 
     from app.repositories.lab_repo import ToolSetRepository as TSRepo
+
     async def resolve_tool_sets(names: list[str]):
         if not names:
             return None, []
@@ -284,6 +291,7 @@ async def import_lab(blueprint: LabBlueprint, db: DbSession, user: dict = Depend
     # content differs, so this doesn't fight with later edits.
     if bp.context_files:
         from app.services.lab_runner import _materialize_context_files
+
         _materialize_context_files(lab)
 
     agents = await agent_repo.get_by_lab(lab.id)

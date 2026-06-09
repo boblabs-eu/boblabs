@@ -2,14 +2,17 @@
 
 from uuid import UUID
 
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.module import ProjectModule, ModuleStep, ModuleTask
+from app.models.module import ModuleStep, ModuleTask, ProjectModule
 from app.schemas.module import (
-    ModuleCreate, ModuleUpdate,
-    StepCreate, StepUpdate,
-    TaskCreate, TaskUpdate,
+    ModuleCreate,
+    ModuleUpdate,
+    StepCreate,
+    StepUpdate,
+    TaskCreate,
+    TaskUpdate,
 )
 
 
@@ -29,9 +32,7 @@ class ModuleService:
         return list(result.scalars().all())
 
     async def get_module(self, module_id: UUID) -> ProjectModule | None:
-        result = await self.db.execute(
-            select(ProjectModule).where(ProjectModule.id == module_id)
-        )
+        result = await self.db.execute(select(ProjectModule).where(ProjectModule.id == module_id))
         return result.scalar_one_or_none()
 
     async def create_module(self, project_id: UUID, data: ModuleCreate) -> ProjectModule:
@@ -74,9 +75,7 @@ class ModuleService:
         return list(result.scalars().all())
 
     async def get_step(self, step_id: UUID) -> ModuleStep | None:
-        result = await self.db.execute(
-            select(ModuleStep).where(ModuleStep.id == step_id)
-        )
+        result = await self.db.execute(select(ModuleStep).where(ModuleStep.id == step_id))
         return result.scalar_one_or_none()
 
     async def create_step(self, module_id: UUID, data: StepCreate) -> ModuleStep:
@@ -97,9 +96,7 @@ class ModuleService:
         updates = data.model_dump(exclude_unset=True)
         if not updates:
             return await self.get_step(step_id)
-        await self.db.execute(
-            update(ModuleStep).where(ModuleStep.id == step_id).values(**updates)
-        )
+        await self.db.execute(update(ModuleStep).where(ModuleStep.id == step_id).values(**updates))
         await self.db.flush()
         return await self.get_step(step_id)
 
@@ -121,9 +118,7 @@ class ModuleService:
         return list(result.scalars().all())
 
     async def get_task(self, task_id: UUID) -> ModuleTask | None:
-        result = await self.db.execute(
-            select(ModuleTask).where(ModuleTask.id == task_id)
-        )
+        result = await self.db.execute(select(ModuleTask).where(ModuleTask.id == task_id))
         return result.scalar_one_or_none()
 
     async def create_task(self, module_id: UUID, data: TaskCreate) -> ModuleTask:
@@ -145,14 +140,11 @@ class ModuleService:
         updates = data.model_dump(exclude_unset=True)
         if "dependencies" in updates and updates["dependencies"] is not None:
             updates["dependencies"] = [
-                d if isinstance(d, dict) else d.model_dump()
-                for d in updates["dependencies"]
+                d if isinstance(d, dict) else d.model_dump() for d in updates["dependencies"]
             ]
         if not updates:
             return await self.get_task(task_id)
-        await self.db.execute(
-            update(ModuleTask).where(ModuleTask.id == task_id).values(**updates)
-        )
+        await self.db.execute(update(ModuleTask).where(ModuleTask.id == task_id).values(**updates))
         await self.db.flush()
         return await self.get_task(task_id)
 

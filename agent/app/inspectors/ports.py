@@ -11,13 +11,15 @@ def get_listening_ports() -> list[dict]:
         for conn in connections:
             if conn.status == "LISTEN" and conn.laddr:
                 proc_info = _get_process_info(conn.pid)
-                ports.append({
-                    "port": conn.laddr.port,
-                    "address": conn.laddr.ip,
-                    "pid": conn.pid,
-                    "process": proc_info.get("name", "unknown"),
-                    "command": proc_info.get("command", ""),
-                })
+                ports.append(
+                    {
+                        "port": conn.laddr.port,
+                        "address": conn.laddr.ip,
+                        "pid": conn.pid,
+                        "process": proc_info.get("name", "unknown"),
+                        "command": proc_info.get("command", ""),
+                    }
+                )
     except (psutil.AccessDenied, PermissionError):
         pass
 

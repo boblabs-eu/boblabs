@@ -15,11 +15,10 @@ import uuid
 from contextlib import contextmanager
 
 import pytest
-from sqlalchemy import event
-
 from app.database import engine
 from app.models.orchestrator import Lab
 from app.repositories.lab_repo import LabRepository
+from sqlalchemy import event
 
 pytestmark = pytest.mark.repo
 
@@ -62,11 +61,16 @@ async def test_list_labs_no_n_plus_one_on_agent_count(db, admin_client, admin_us
     possibly app-tag filter), independent of lab count.
     """
     from app.models.orchestrator import LabAgent
+
     for i in range(10):
         lab = await lab_factory(owner=admin_user, name=f"p02-lab-{i}")
-        db.add(LabAgent(
-            id=uuid.uuid4(), lab_id=lab.id, name=f"agent-{i}",
-        ))
+        db.add(
+            LabAgent(
+                id=uuid.uuid4(),
+                lab_id=lab.id,
+                name=f"agent-{i}",
+            )
+        )
     await db.commit()
 
     with count_select_queries() as c:
@@ -85,12 +89,18 @@ async def test_list_workflows_no_n_plus_one(db, admin_client):
     workflows table, optional fan-out, not 5+ per-row queries)."""
     from app.models.workflow import Workflow
 
-    db.add_all([
-        Workflow(
-            id=uuid.uuid4(), name=f"wf-{i}", description="", definition={},
-            acl={"owner": "admin@test.local", "editors": [], "viewers": []},
-        ) for i in range(5)
-    ])
+    db.add_all(
+        [
+            Workflow(
+                id=uuid.uuid4(),
+                name=f"wf-{i}",
+                description="",
+                definition={},
+                acl={"owner": "admin@test.local", "editors": [], "viewers": []},
+            )
+            for i in range(5)
+        ]
+    )
     await db.commit()
 
     with count_select_queries() as c:

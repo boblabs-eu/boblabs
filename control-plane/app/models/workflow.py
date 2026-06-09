@@ -3,8 +3,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Integer, Text, Boolean, DateTime, ForeignKey, func
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -15,9 +15,7 @@ class Workflow(Base):
 
     __tablename__ = "workflows"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     definition: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
@@ -34,9 +32,7 @@ class Workflow(Base):
         nullable=False,
         default=lambda: {"owner": "admin", "editors": [], "viewers": []},
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -51,9 +47,7 @@ class WorkflowStep(Base):
 
     __tablename__ = "workflow_steps"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     workflow_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False
     )

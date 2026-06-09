@@ -23,7 +23,7 @@ from app.repositories.orchestrator_repo import (
 from app.services.comfyui_discovery import comfyui_health_check
 from app.services.conversation_service import ConversationService
 from app.services.llm_provider import LLMProvider, create_provider
-from app.services.pipelines import is_media_pipeline, get_pipeline
+from app.services.pipelines import get_pipeline, is_media_pipeline
 from app.websocket.hub import manager
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,9 @@ class OrchestratorService:
             settings = await self.settings_repo.upsert()
         return settings
 
-    async def _resolve_provider(self, model_override: str | None = None) -> tuple[LLMProvider | None, str, str, str, AIProvider]:
+    async def _resolve_provider(
+        self, model_override: str | None = None
+    ) -> tuple[LLMProvider | None, str, str, str, AIProvider]:
         """Resolve the orchestrator's LLM provider and model.
 
         If *model_override* is given, look up which provider actually hosts
@@ -78,7 +80,9 @@ class OrchestratorService:
 
         # Always look up which provider hosts the requested model
         from sqlalchemy import select
+
         from app.models.orchestrator import AIModel
+
         stmt = select(AIModel).where(
             AIModel.model_identifier == model_id,
             AIModel.is_available == True,
@@ -86,7 +90,9 @@ class OrchestratorService:
         result = await self.db.execute(stmt)
         ai_model = result.scalars().first()
         if ai_model:
-            logger.info("_resolve_provider: found model in DB, provider_id=%s", ai_model.provider_id)
+            logger.info(
+                "_resolve_provider: found model in DB, provider_id=%s", ai_model.provider_id
+            )
             for p in providers:
                 if p.id == ai_model.provider_id:
                     target = p
@@ -95,7 +101,11 @@ class OrchestratorService:
 
         # Fallback: first active provider of the configured type
         if target is None:
-            logger.warning("_resolve_provider: no DB match for model '%s', falling back to first '%s' provider", model_id, provider_type)
+            logger.warning(
+                "_resolve_provider: no DB match for model '%s', falling back to first '%s' provider",
+                model_id,
+                provider_type,
+            )
             for p in providers:
                 if p.provider_type == provider_type:
                     target = p
@@ -107,7 +117,12 @@ class OrchestratorService:
                 "Add one in Settings → AI Providers."
             )
 
-        logger.info("_resolve_provider: using provider %s at %s for model %s", target.name, target.base_url, model_id)
+        logger.info(
+            "_resolve_provider: using provider %s at %s for model %s",
+            target.name,
+            target.base_url,
+            model_id,
+        )
         # Non-LLM provider types get None for the LLM instance
         llm = None
         if not is_media_pipeline(target.provider_type):
@@ -116,6 +131,7 @@ class OrchestratorService:
         server_name = target.name
         if target.server_id:
             from app.models.server import Server
+
             sr = await self.db.execute(select(Server).where(Server.id == target.server_id))
             srv = sr.scalars().first()
             if srv:
@@ -139,7 +155,9 @@ class OrchestratorService:
           models with a 1-image limit like GLM-4V).
         """
         include_history_images = context_mode == "full"
-        msgs: list[dict] = [{"role": "system", "content": system_prompt or ORCHESTRATOR_SYSTEM_PROMPT}]
+        msgs: list[dict] = [
+            {"role": "system", "content": system_prompt or ORCHESTRATOR_SYSTEM_PROMPT}
+        ]
         for m in history:
             if m.role in ("user", "assistant"):
                 msg_dict: dict = {"role": m.role, "content": m.content}
@@ -172,18 +190,22 @@ class OrchestratorService:
         model_identifier = None
         if agent.model_id:
             from sqlalchemy import select
-            result = await self.db.execute(
-                select(AIModel).where(AIModel.id == agent.model_id)
-            )
+
+            result = await self.db.execute(select(AIModel).where(AIModel.id == agent.model_id))
             ai_model = result.scalars().first()
             if ai_model:
                 model_identifier = ai_model.model_identifier
         return agent, model_identifier
 
     async def process_message(
-        self, conversation_id: UUID, user_content: str, model_override: str | None = None,
-        images: list[str] | None = None, context_mode: str | None = None,
-        agent_id: UUID | None = None, adhoc_tools: list[str] | None = None,
+        self,
+        conversation_id: UUID,
+        user_content: str,
+        model_override: str | None = None,
+        images: list[str] | None = None,
+        context_mode: str | None = None,
+        agent_id: UUID | None = None,
+        adhoc_tools: list[str] | None = None,
     ) -> AsyncGenerator[str, None]:
         """Process a user message and stream the response.
 
@@ -245,7 +267,13 @@ class OrchestratorService:
 
         # Resolve LLM provider
         try:
-            llm, model_id, provider_name, server_name, target_provider = await self._resolve_provider(effective_model)
+            (
+                llm,
+                model_id,
+                provider_name,
+                server_name,
+                target_provider,
+            ) = await self._resolve_provider(effective_model)
         except RuntimeError as e:
             error_msg = str(e)
             err = await self.conv_service.add_message(
@@ -262,8 +290,12 @@ class OrchestratorService:
         # ── Media pipeline path (riffusion, etc.) ────────────────
         if is_media_pipeline(target_provider.provider_type):
             async for sse in self._handle_media_pipeline(
-                conversation_id, user_content, model_id,
-                provider_name, server_name, target_provider,
+                conversation_id,
+                user_content,
+                model_id,
+                provider_name,
+                server_name,
+                target_provider,
             ):
                 yield sse
             return
@@ -278,14 +310,19 @@ class OrchestratorService:
 
         # Build messages for LLM
         llm_messages = self._build_messages(
-            history[:-1], user_content, images=images,
+            history[:-1],
+            user_content,
+            images=images,
             context_mode=context_mode or "minimal",
             system_prompt=system_prompt,
         )
 
         # If agent has tools, inject tool descriptions into system prompt
         if agent_tool_names:
-            from app.services.tool_executor import format_tool_descriptions, build_native_tools_schema
+            from app.services.tool_executor import (
+                format_tool_descriptions,
+            )
+
             tool_desc = format_tool_descriptions(agent_tool_names)
             llm_messages[0]["content"] += "\n\n" + tool_desc
 
@@ -310,8 +347,11 @@ class OrchestratorService:
             effective_agent = agent
             if not effective_agent:
                 effective_agent = AIAgent(
-                    name="Assistant", description="", system_prompt="",
-                    tools=agent_tool_names, is_active=True,
+                    name="Assistant",
+                    description="",
+                    system_prompt="",
+                    tools=agent_tool_names,
+                    is_active=True,
                 )
             async for sse in self._process_with_tools(
                 conversation_id=conversation_id,
@@ -397,7 +437,10 @@ class OrchestratorService:
             msg_kwargs["agent_id"] = agent.id
             msg_kwargs["agent_name"] = agent.name
         assistant_msg = await self.conv_service.add_message(
-            conversation_id, "assistant", content, **msg_kwargs,
+            conversation_id,
+            "assistant",
+            content,
+            **msg_kwargs,
         )
         await self.db.commit()
 
@@ -438,13 +481,14 @@ class OrchestratorService:
     ) -> AsyncGenerator[str, None]:
         """Run the tool call loop then stream the final response."""
         import json
+
         from app.services.lab_dispatcher import _log_llm_event
+        from app.services.pipelines import extract_pipeline_names, normalize_tool_names
         from app.services.tool_executor import (
             ToolExecutor,
             build_native_tools_schema,
             parse_tool_calls,
         )
-        from app.services.pipelines import normalize_tool_names, extract_pipeline_names
 
         native_tools = build_native_tools_schema(agent_tool_names)
         normalized_tools = set(normalize_tool_names(agent_tool_names))
@@ -468,7 +512,8 @@ class OrchestratorService:
             # Call LLM (non-streaming) with tools
             try:
                 result = await llm.chat(
-                    llm_messages, model_id,
+                    llm_messages,
+                    model_id,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     tools=native_tools,
@@ -477,9 +522,13 @@ class OrchestratorService:
                 logger.error("LLM error during tool loop: %s\n%s", e, traceback.format_exc())
                 error_text = f"⚠️ LLM error: {e}"
                 err_msg = await self.conv_service.add_message(
-                    conversation_id, "assistant", error_text,
-                    agent_id=agent.id, agent_name=agent.name,
-                    model_used=model_id, provider_used=provider_name,
+                    conversation_id,
+                    "assistant",
+                    error_text,
+                    agent_id=agent.id,
+                    agent_name=agent.name,
+                    model_used=model_id,
+                    provider_used=provider_name,
                 )
                 await self.db.commit()
                 yield f"data: {json.dumps({'token': error_text, 'done': False})}\n\n"
@@ -494,7 +543,10 @@ class OrchestratorService:
             tool_calls = []
             native_tc = result.get("tool_calls")
             if native_tc:
-                tool_calls = [{"name": tc.get("name", ""), "arguments": tc.get("arguments", {})} for tc in native_tc]
+                tool_calls = [
+                    {"name": tc.get("name", ""), "arguments": tc.get("arguments", {})}
+                    for tc in native_tc
+                ]
             elif content:
                 tool_calls = parse_tool_calls(content, agent_tools=agent_tool_names)
 
@@ -527,23 +579,35 @@ class OrchestratorService:
                     # Native format: assistant message with tool_calls, then tool result
                     # Use flat internal format (id/name/arguments) – _convert_messages_ollama
                     # converts to provider-specific shape before sending.
-                    llm_messages.append({
-                        "role": "assistant",
-                        "content": content or "",
-                        "tool_calls": [{"id": f"call_{tool_name}", "name": tool_name, "arguments": tool_args}],
-                    })
-                    llm_messages.append({
-                        "role": "tool",
-                        "tool_call_id": f"call_{tool_name}",
-                        "content": tr.get("output", ""),
-                    })
+                    llm_messages.append(
+                        {
+                            "role": "assistant",
+                            "content": content or "",
+                            "tool_calls": [
+                                {
+                                    "id": f"call_{tool_name}",
+                                    "name": tool_name,
+                                    "arguments": tool_args,
+                                }
+                            ],
+                        }
+                    )
+                    llm_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": f"call_{tool_name}",
+                            "content": tr.get("output", ""),
+                        }
+                    )
                 else:
                     # Text-based: append as assistant + user messages
                     llm_messages.append({"role": "assistant", "content": content})
-                    llm_messages.append({
-                        "role": "user",
-                        "content": f"<tool_result>\n{json.dumps(tr)}\n</tool_result>",
-                    })
+                    llm_messages.append(
+                        {
+                            "role": "user",
+                            "content": f"<tool_result>\n{json.dumps(tr)}\n</tool_result>",
+                        }
+                    )
 
             # Save tool messages to conversation for history
             tool_summary_parts = []
@@ -552,9 +616,13 @@ class OrchestratorService:
                 tool_summary_parts.append(tr_text)
             tool_summary = "\n".join(tool_summary_parts)
             await self.conv_service.add_message(
-                conversation_id, "assistant", tool_summary,
-                agent_id=agent.id, agent_name=agent.name,
-                model_used=model_id, provider_used=provider_name,
+                conversation_id,
+                "assistant",
+                tool_summary,
+                agent_id=agent.id,
+                agent_name=agent.name,
+                model_used=model_id,
+                provider_used=provider_name,
                 extra={"tool_calls": [tc for tc in tool_calls]},
             )
             await self.db.commit()
@@ -568,8 +636,10 @@ class OrchestratorService:
             final_parts = []
             try:
                 async for chunk in llm.chat_completion(
-                    llm_messages, model_id,
-                    temperature=temperature, max_tokens=max_tokens,
+                    llm_messages,
+                    model_id,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
                 ):
                     if chunk.get("done"):
                         total_tokens_in += chunk.get("tokens_in", 0)
@@ -607,10 +677,15 @@ class OrchestratorService:
 
         # Save final assistant message
         assistant_msg = await self.conv_service.add_message(
-            conversation_id, "assistant", final_content,
-            agent_id=agent.id, agent_name=agent.name,
-            model_used=model_id, provider_used=provider_name,
-            tokens_in=total_tokens_in, tokens_out=total_tokens_out,
+            conversation_id,
+            "assistant",
+            final_content,
+            agent_id=agent.id,
+            agent_name=agent.name,
+            model_used=model_id,
+            provider_used=provider_name,
+            tokens_in=total_tokens_in,
+            tokens_out=total_tokens_out,
             duration_ms=duration_ms,
         )
         await self.db.commit()
@@ -659,9 +734,11 @@ class OrchestratorService:
         planner_llm, planner_model = await self._get_planner_llm()
         if planner_llm is None:
             err_msg = await self.conv_service.add_message(
-                conversation_id, "assistant",
+                conversation_id,
+                "assistant",
                 "⚠️ No LLM provider available to plan generation parameters.",
-                model_used=model_id, provider_used=provider_name,
+                model_used=model_id,
+                provider_used=provider_name,
             )
             await self.db.commit()
             yield f"data: {json.dumps({'token': '⚠️ No LLM available to plan params.', 'done': False})}\n\n"
@@ -687,9 +764,11 @@ class OrchestratorService:
         except Exception as e:
             logger.error("LLM planning error for %s pipeline: %s", provider.provider_type, e)
             err_msg = await self.conv_service.add_message(
-                conversation_id, "assistant",
+                conversation_id,
+                "assistant",
                 f"⚠️ LLM failed to generate parameters: {e}",
-                model_used=model_id, provider_used=provider_name,
+                model_used=model_id,
+                provider_used=provider_name,
             )
             await self.db.commit()
             yield f"data: {json.dumps({'token': f'⚠️ LLM planning error: {e}', 'done': False})}\n\n"
@@ -699,12 +778,14 @@ class OrchestratorService:
         raw_llm = "".join(llm_tokens).strip()
 
         # Extract JSON (LLM may wrap it in ```json ... ```)
-        json_match = re.search(r'\{[\s\S]*\}', raw_llm)
+        json_match = re.search(r"\{[\s\S]*\}", raw_llm)
         if not json_match:
             err_msg = await self.conv_service.add_message(
-                conversation_id, "assistant",
+                conversation_id,
+                "assistant",
                 f"⚠️ LLM did not return valid JSON.\n\nRaw:\n```\n{raw_llm[:500]}\n```",
-                model_used=model_id, provider_used=provider_name,
+                model_used=model_id,
+                provider_used=provider_name,
             )
             await self.db.commit()
             yield f"data: {json.dumps({'token': '⚠️ LLM did not return valid JSON.', 'done': False})}\n\n"
@@ -715,9 +796,11 @@ class OrchestratorService:
             raw_params = json.loads(json_match.group())
         except json.JSONDecodeError as e:
             err_msg = await self.conv_service.add_message(
-                conversation_id, "assistant",
+                conversation_id,
+                "assistant",
                 f"⚠️ Invalid JSON from LLM: {e}\n\n```\n{raw_llm[:500]}\n```",
-                model_used=model_id, provider_used=provider_name,
+                model_used=model_id,
+                provider_used=provider_name,
             )
             await self.db.commit()
             yield f"data: {json.dumps({'token': '⚠️ Invalid JSON from LLM.', 'done': False})}\n\n"
@@ -729,9 +812,11 @@ class OrchestratorService:
             clean_params = pipeline.validate_params(raw_params)
         except ValueError as e:
             err_msg = await self.conv_service.add_message(
-                conversation_id, "assistant",
+                conversation_id,
+                "assistant",
                 f"⚠️ Invalid parameters: {e}",
-                model_used=model_id, provider_used=provider_name,
+                model_used=model_id,
+                provider_used=provider_name,
             )
             await self.db.commit()
             yield f"data: {json.dumps({'token': f'⚠️ Invalid parameters: {e}', 'done': False})}\n\n"
@@ -751,6 +836,7 @@ class OrchestratorService:
 
         if _is_video_pipeline:
             import asyncio
+
             import httpx as _httpx
 
             gen_task = asyncio.create_task(pipeline.generate(clean_params))
@@ -784,9 +870,11 @@ class OrchestratorService:
 
         if not result.success:
             err_msg = await self.conv_service.add_message(
-                conversation_id, "assistant",
+                conversation_id,
+                "assistant",
                 f"🎵 {param_summary}\n\n⚠️ {result.error}",
-                model_used=model_id, provider_used=provider_name,
+                model_used=model_id,
+                provider_used=provider_name,
             )
             await self.db.commit()
             yield f"data: {json.dumps({'token': f'\\n⚠️ {result.error}', 'done': False})}\n\n"
@@ -798,7 +886,7 @@ class OrchestratorService:
         emoji = "🎬" if is_video_result else "🎵"
         kind_label = "Video" if is_video_result else "Text to Audio"
         content = (
-            f"{emoji} **{kind_label}** — \"{prompt}\"\n\n"
+            f'{emoji} **{kind_label}** — "{prompt}"\n\n'
             f"{param_summary}\n\n"
             f"Duration: {result.duration_s:.1f}s · Inference: {duration_ms}ms "
             f"(planned by {planner_model})"
@@ -818,7 +906,9 @@ class OrchestratorService:
             extra_data["image"] = result.preview_url
 
         assistant_msg = await self.conv_service.add_message(
-            conversation_id, "assistant", content,
+            conversation_id,
+            "assistant",
+            content,
             model_used=model_id,
             provider_used=provider_name,
             duration_ms=duration_ms,
@@ -860,7 +950,8 @@ class OrchestratorService:
             return {"provider_id": str(provider_id), "healthy": healthy}
 
         # Media pipeline providers have their own health_check via the pipeline class
-        from app.services.pipelines import is_media_pipeline, get_pipeline
+        from app.services.pipelines import get_pipeline, is_media_pipeline
+
         if is_media_pipeline(provider.provider_type):
             try:
                 pipeline = get_pipeline(provider.provider_type, provider.base_url)

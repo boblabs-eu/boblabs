@@ -14,7 +14,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, update as sa_update
+from sqlalchemy import select
+from sqlalchemy import update as sa_update
 
 from app.api.dependencies import DbSession, require_admin
 from app.models.orchestrator import Lab
@@ -44,9 +45,7 @@ async def list_labs(db: DbSession, _admin: dict = Depends(require_admin)):
     Sorted by most-recently-updated first so labs the operator is actively
     working on land at the top.
     """
-    rows = (
-        await db.execute(select(Lab).order_by(Lab.updated_at.desc()))
-    ).scalars().all()
+    rows = (await db.execute(select(Lab).order_by(Lab.updated_at.desc()))).scalars().all()
     return [
         LabAdminOut(
             id=str(lab.id),
@@ -70,9 +69,7 @@ async def set_lab_visibility(
     _admin: dict = Depends(require_admin),
 ):
     """Admin override — flip a lab's ``is_public`` flag without owning it."""
-    lab = (
-        await db.execute(select(Lab).where(Lab.id == lab_id))
-    ).scalar_one_or_none()
+    lab = (await db.execute(select(Lab).where(Lab.id == lab_id))).scalar_one_or_none()
     if not lab:
         raise HTTPException(404, "Lab not found")
     await db.execute(

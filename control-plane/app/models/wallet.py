@@ -15,32 +15,25 @@ class Wallet(Base):
 
     __tablename__ = "wallets"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     address: Mapped[str] = mapped_column(String(42), nullable=False, unique=True)
     label: Mapped[str] = mapped_column(String(255), default="")
     acl: Mapped[dict] = mapped_column(
-        JSONB, nullable=False,
+        JSONB,
+        nullable=False,
         server_default='{"owner":"admin","editors":[],"viewers":[]}',
         default=dict,
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class LabWeb3Access(Base):
     """Explicit tracked-wallet grants for labs."""
 
     __tablename__ = "lab_web3_access"
-    __table_args__ = (
-        UniqueConstraint("lab_id", "wallet_id", name="uq_lab_web3_access"),
-    )
+    __table_args__ = (UniqueConstraint("lab_id", "wallet_id", name="uq_lab_web3_access"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     lab_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("labs.id", ondelete="CASCADE"), nullable=False
     )
@@ -50,6 +43,4 @@ class LabWeb3Access(Base):
     can_read: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

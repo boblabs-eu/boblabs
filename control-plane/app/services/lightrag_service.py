@@ -108,8 +108,10 @@ class LightRagService:
     ) -> None:
         """Ingest raw text into a LightRAG collection (entity extraction + graph build)."""
         rag = await cls._get_or_create(
-            collection_id, model_name,
-            embedding_model, embedding_dim,
+            collection_id,
+            model_name,
+            embedding_model,
+            embedding_dim,
         )
         await rag.ainsert(text)
 
@@ -125,8 +127,10 @@ class LightRagService:
     ) -> str:
         """Query a LightRAG collection. Returns the LightRAG response string."""
         rag = await cls._get_or_create(
-            collection_id, model_name,
-            embedding_model, embedding_dim,
+            collection_id,
+            model_name,
+            embedding_model,
+            embedding_dim,
         )
         result = await rag.aquery(
             query,

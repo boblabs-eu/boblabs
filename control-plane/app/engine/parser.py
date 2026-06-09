@@ -52,7 +52,8 @@ class _NoAliasSafeLoader(yaml.SafeLoader):
 
 def _reject_anchor(loader, node):
     raise yaml.constructor.ConstructorError(
-        None, None,
+        None,
+        None,
         "YAML anchors and aliases are not allowed in workflow definitions "
         "(D13 — alias-bomb / billion-laughs guard).",
         node.start_mark,
@@ -79,7 +80,8 @@ def _safe_load_no_anchors(content: str):
             if loader.check_event(yaml.AliasEvent):
                 event = loader.peek_event()
                 raise yaml.constructor.ConstructorError(
-                    None, None,
+                    None,
+                    None,
                     "YAML aliases (*ref) are not allowed in workflow "
                     "definitions (D13 — alias-bomb guard).",
                     event.start_mark,
@@ -129,17 +131,19 @@ def _validate_workflow(data: dict) -> dict[str, Any]:
         if not isinstance(step, dict):
             raise ValueError(f"Step {i} must be a dict")
 
-        step_name = step.get("name", f"step-{i+1}")
+        step_name = step.get("name", f"step-{i + 1}")
         command = step.get("run") or step.get("command")
         if not command:
             raise ValueError(f"Step '{step_name}' must have a 'run' or 'command' field")
 
-        validated_steps.append({
-            "name": step_name,
-            "command": command,
-            "timeout_seconds": step.get("timeout", step.get("timeout_seconds", 300)),
-            "continue_on_error": step.get("continue_on_error", False),
-        })
+        validated_steps.append(
+            {
+                "name": step_name,
+                "command": command,
+                "timeout_seconds": step.get("timeout", step.get("timeout_seconds", 300)),
+                "continue_on_error": step.get("continue_on_error", False),
+            }
+        )
 
     return {
         "name": name,

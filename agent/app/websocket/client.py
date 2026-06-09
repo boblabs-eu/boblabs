@@ -11,26 +11,35 @@ from datetime import datetime, timezone
 
 import websockets
 
-from app.config import config
-from app.collectors.cpu import get_cpu_usage, get_cpu_temperature
+from app.collectors.cpu import get_cpu_temperature, get_cpu_usage
+from app.collectors.disk import get_disk_usage
+from app.collectors.docker import get_docker_containers
 from app.collectors.gpu import get_gpu_info, get_gpu_metrics
+from app.collectors.gpu_services import (
+    get_bark_models,
+    get_comfyui_status,
+    get_coqui_tts_models,
+    get_ltx_video_models,
+    get_musicgen_models,
+    get_rvc_models,
+    get_stt_models,
+    get_wan_video_models,
+)
 from app.collectors.memory import get_memory_usage
 from app.collectors.network import get_network_io
-from app.collectors.disk import get_disk_usage
-from app.collectors.system import get_os_info, get_software_versions
-from app.collectors.docker import get_docker_containers, get_docker_stats
 from app.collectors.ollama import get_ollama_models
 from app.collectors.riffusion import get_riffusion_models
-from app.collectors.gpu_services import get_musicgen_models, get_bark_models, get_rvc_models, get_coqui_tts_models, get_stt_models, get_ltx_video_models, get_wan_video_models, get_comfyui_status
 from app.collectors.script_runner import get_script_runner_scripts
+from app.collectors.system import get_os_info, get_software_versions
+from app.config import config
+from app.executor.runner import run_command
+from app.executor.terminal import terminal_manager
+from app.inspectors.crontab import get_crontabs
+from app.inspectors.firewall import get_firewall_status
+from app.inspectors.ports import get_listening_ports
 from app.inspectors.processes import get_top_processes
 from app.inspectors.services import get_services_grouped
 from app.version import __version__ as agent_version
-from app.inspectors.crontab import get_crontabs
-from app.inspectors.ports import get_listening_ports
-from app.inspectors.firewall import get_firewall_status
-from app.executor.runner import run_command
-from app.executor.terminal import terminal_manager
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +78,8 @@ class AgentWebSocketClient:
             ) as e:
                 logger.warning(
                     "Connection lost (%s): %s. Reconnecting in 5s...",
-                    type(e).__name__, e or "(no details)",
+                    type(e).__name__,
+                    e or "(no details)",
                 )
                 terminal_manager.close_all()
                 self.ws = None
@@ -77,7 +87,8 @@ class AgentWebSocketClient:
             except Exception as e:
                 logger.error(
                     "Unexpected error (%s): %s. Reconnecting in 10s...",
-                    type(e).__name__, e,
+                    type(e).__name__,
+                    e,
                 )
                 terminal_manager.close_all()
                 self.ws = None
@@ -104,7 +115,9 @@ class AgentWebSocketClient:
                 "script_runner": {
                     "port": _runner_port,
                     "scripts": scripts,
-                } if scripts else None,
+                }
+                if scripts
+                else None,
             },
         }
 
@@ -140,26 +153,38 @@ class AgentWebSocketClient:
             logger.info("Executing command: %s", command[:100])
 
             async def on_stdout(line: str):
-                await self.ws.send(json.dumps({
-                    "type": "agent.command.output",
-                    "id": msg_id,
-                    "payload": {"stream": "stdout", "line": line},
-                }))
+                await self.ws.send(
+                    json.dumps(
+                        {
+                            "type": "agent.command.output",
+                            "id": msg_id,
+                            "payload": {"stream": "stdout", "line": line},
+                        }
+                    )
+                )
 
             async def on_stderr(line: str):
-                await self.ws.send(json.dumps({
-                    "type": "agent.command.output",
-                    "id": msg_id,
-                    "payload": {"stream": "stderr", "line": line},
-                }))
+                await self.ws.send(
+                    json.dumps(
+                        {
+                            "type": "agent.command.output",
+                            "id": msg_id,
+                            "payload": {"stream": "stderr", "line": line},
+                        }
+                    )
+                )
 
             result = await run_command(command, on_stdout=on_stdout, on_stderr=on_stderr)
 
-            await self.ws.send(json.dumps({
-                "type": "agent.command.complete",
-                "id": msg_id,
-                "payload": result,
-            }))
+            await self.ws.send(
+                json.dumps(
+                    {
+                        "type": "agent.command.complete",
+                        "id": msg_id,
+                        "payload": result,
+                    }
+                )
+            )
 
         elif msg_type == "command.cancel":
             # TODO: implement command cancellation
@@ -173,18 +198,26 @@ class AgentWebSocketClient:
             terminal_manager.create_session(session_id, cols, rows)
 
             async def send_output(data: str, sid=session_id):
-                await self.ws.send(json.dumps({
-                    "type": "agent.terminal.output",
-                    "id": sid,
-                    "payload": {"data": data},
-                }))
+                await self.ws.send(
+                    json.dumps(
+                        {
+                            "type": "agent.terminal.output",
+                            "id": sid,
+                            "payload": {"data": data},
+                        }
+                    )
+                )
 
             await terminal_manager.start_output_loop(session_id, send_output)
-            await self.ws.send(json.dumps({
-                "type": "agent.terminal.opened",
-                "id": session_id,
-                "payload": {"status": "ok"},
-            }))
+            await self.ws.send(
+                json.dumps(
+                    {
+                        "type": "agent.terminal.opened",
+                        "id": session_id,
+                        "payload": {"status": "ok"},
+                    }
+                )
+            )
 
         elif msg_type == "terminal.input":
             session_id = payload.get("session_id", msg_id)
@@ -210,20 +243,28 @@ class AgentWebSocketClient:
         elif msg_type == "ai.models.discover":
             # Report available Ollama models to control plane
             models = get_ollama_models()
-            await self.ws.send(json.dumps({
-                "type": "agent.ai.models",
-                "id": msg_id,
-                "payload": {"models": models},
-            }))
+            await self.ws.send(
+                json.dumps(
+                    {
+                        "type": "agent.ai.models",
+                        "id": msg_id,
+                        "payload": {"models": models},
+                    }
+                )
+            )
 
         elif msg_type == "inspection.request":
             kind = payload.get("kind", "")
             result = await self._handle_inspection(kind)
-            await self.ws.send(json.dumps({
-                "type": "agent.inspection.result",
-                "id": msg_id,
-                "payload": {"kind": kind, "data": result},
-            }))
+            await self.ws.send(
+                json.dumps(
+                    {
+                        "type": "agent.inspection.result",
+                        "id": msg_id,
+                        "payload": {"kind": kind, "data": result},
+                    }
+                )
+            )
 
         elif msg_type == "script.execute":
             # Execute a script on the local script runner
@@ -232,11 +273,15 @@ class AgentWebSocketClient:
             timeout_sec = payload.get("timeout_sec", 600)
             logger.info("Script execution requested: %s", script_name)
             result = await self._execute_script(script_name, arguments, timeout_sec)
-            await self.ws.send(json.dumps({
-                "type": "agent.script.result",
-                "id": msg_id,
-                "payload": result,
-            }))
+            await self.ws.send(
+                json.dumps(
+                    {
+                        "type": "agent.script.result",
+                        "id": msg_id,
+                        "payload": result,
+                    }
+                )
+            )
 
     async def _handle_inspection(self, kind: str) -> dict | list:
         """Handle system inspection requests."""
@@ -253,13 +298,17 @@ class AgentWebSocketClient:
         else:
             return {"error": f"Unknown inspection type: {kind}"}
 
-    async def _execute_script(self, script_name: str, arguments: dict, timeout_sec: int = 600) -> dict:
+    async def _execute_script(
+        self, script_name: str, arguments: dict, timeout_sec: int = 600
+    ) -> dict:
         """Execute a script on the local script runner via HTTP."""
         import httpx as _httpx
 
         runner_url = config.script_runner_url.rstrip("/")
         try:
-            async with _httpx.AsyncClient(timeout=_httpx.Timeout(float(timeout_sec) + 30)) as client:
+            async with _httpx.AsyncClient(
+                timeout=_httpx.Timeout(float(timeout_sec) + 30)
+            ) as client:
                 resp = await client.post(
                     f"{runner_url}/scripts/{script_name}/run",
                     json={"arguments": arguments, "timeout_sec": timeout_sec},
@@ -275,12 +324,16 @@ class AgentWebSocketClient:
         while self._running:
             await asyncio.sleep(config.heartbeat_interval)
             try:
-                await self.ws.send(json.dumps({
-                    "type": "agent.heartbeat",
-                    "payload": {
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    },
-                }))
+                await self.ws.send(
+                    json.dumps(
+                        {
+                            "type": "agent.heartbeat",
+                            "payload": {
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            },
+                        }
+                    )
+                )
             except Exception:
                 break
 
@@ -296,10 +349,14 @@ class AgentWebSocketClient:
             await asyncio.sleep(config.metrics_interval)
             try:
                 metrics = await asyncio.to_thread(_collect_all_metrics)
-                await self.ws.send(json.dumps({
-                    "type": "agent.metrics",
-                    "payload": metrics,
-                }))
+                await self.ws.send(
+                    json.dumps(
+                        {
+                            "type": "agent.metrics",
+                            "payload": metrics,
+                        }
+                    )
+                )
             except Exception:
                 break
 
@@ -325,12 +382,14 @@ def _collect_all_metrics() -> dict:
     enriched_gpus = []
     for gm in gpu_metrics:
         gi = gpu_info_map.get(gm["index"], {})
-        enriched_gpus.append({
-            **gm,
-            "name": gi.get("name", ""),
-            "memory_total_mb": gi.get("memory_total_mb"),
-            "memory_used_mb": gi.get("memory_used_mb"),
-        })
+        enriched_gpus.append(
+            {
+                **gm,
+                "name": gi.get("name", ""),
+                "memory_total_mb": gi.get("memory_total_mb"),
+                "memory_used_mb": gi.get("memory_used_mb"),
+            }
+        )
 
     # Running services count
     running_services = services.get("running", [])
@@ -359,8 +418,12 @@ def _collect_all_metrics() -> dict:
         # Top processes
         "top_processes": top_procs,
         # Services summary
-        "running_services": [{"name": s["name"], "sub_state": s["sub_state"]} for s in running_services[:30]],
-        "failed_services": [{"name": s["name"], "sub_state": s["sub_state"]} for s in failed_services],
+        "running_services": [
+            {"name": s["name"], "sub_state": s["sub_state"]} for s in running_services[:30]
+        ],
+        "failed_services": [
+            {"name": s["name"], "sub_state": s["sub_state"]} for s in failed_services
+        ],
         "services_running_count": len(running_services),
         "services_failed_count": len(failed_services),
         # Docker containers
@@ -398,6 +461,7 @@ def _collect_all_metrics() -> dict:
 def _get_script_runner_port() -> int:
     """Extract port from script runner URL."""
     from urllib.parse import urlparse
+
     parsed = urlparse(config.script_runner_url)
     return parsed.port or 9101
 

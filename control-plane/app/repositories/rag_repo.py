@@ -29,9 +29,7 @@ class RagCollectionRepository:
         return result.scalar_one_or_none()
 
     async def get_by_name(self, name: str) -> RagCollection | None:
-        result = await self.db.execute(
-            select(RagCollection).where(RagCollection.name == name)
-        )
+        result = await self.db.execute(select(RagCollection).where(RagCollection.name == name))
         return result.scalar_one_or_none()
 
     async def list_by_app_tag(self, app_id: str) -> list[RagCollection]:
@@ -55,17 +53,13 @@ class RagCollectionRepository:
 
     async def update(self, collection_id: UUID, **kwargs) -> RagCollection | None:
         await self.db.execute(
-            update(RagCollection)
-            .where(RagCollection.id == collection_id)
-            .values(**kwargs)
+            update(RagCollection).where(RagCollection.id == collection_id).values(**kwargs)
         )
         await self.db.flush()
         return await self.get_by_id(collection_id)
 
     async def delete(self, collection_id: UUID) -> None:
-        await self.db.execute(
-            delete(RagCollection).where(RagCollection.id == collection_id)
-        )
+        await self.db.execute(delete(RagCollection).where(RagCollection.id == collection_id))
         await self.db.flush()
 
 
@@ -74,9 +68,7 @@ class RagDocumentRepository:
         self.db = db
 
     async def get_by_id(self, document_id: UUID) -> RagDocument | None:
-        result = await self.db.execute(
-            select(RagDocument).where(RagDocument.id == document_id)
-        )
+        result = await self.db.execute(select(RagDocument).where(RagDocument.id == document_id))
         return result.scalar_one_or_none()
 
     async def get_by_collection(self, collection_id: UUID) -> list[RagDocument]:
@@ -96,17 +88,13 @@ class RagDocumentRepository:
 
     async def update(self, document_id: UUID, **kwargs) -> RagDocument | None:
         await self.db.execute(
-            update(RagDocument)
-            .where(RagDocument.id == document_id)
-            .values(**kwargs)
+            update(RagDocument).where(RagDocument.id == document_id).values(**kwargs)
         )
         await self.db.flush()
         return await self.get_by_id(document_id)
 
     async def delete(self, document_id: UUID) -> None:
-        await self.db.execute(
-            delete(RagDocument).where(RagDocument.id == document_id)
-        )
+        await self.db.execute(delete(RagDocument).where(RagDocument.id == document_id))
         await self.db.flush()
 
     async def get_collection_stats(self, collection_id: UUID) -> dict:
@@ -154,9 +142,7 @@ class LabRagAccessRepository:
         await self.db.refresh(entry)
         return entry
 
-    async def update(
-        self, lab_id: UUID, collection_id: UUID, **kwargs
-    ) -> LabRagAccess | None:
+    async def update(self, lab_id: UUID, collection_id: UUID, **kwargs) -> LabRagAccess | None:
         await self.db.execute(
             update(LabRagAccess)
             .where(
@@ -186,16 +172,16 @@ class LabRagAccessRepository:
 
     async def has_any_write_access(self, lab_id: UUID) -> bool:
         result = await self.db.execute(
-            select(LabRagAccess.id).where(
+            select(LabRagAccess.id)
+            .where(
                 LabRagAccess.lab_id == lab_id,
                 LabRagAccess.can_write.is_(True),
-            ).limit(1)
+            )
+            .limit(1)
         )
         return result.first() is not None
 
-    async def has_permission(
-        self, lab_id: UUID, collection_id: UUID, permission: str
-    ) -> bool:
+    async def has_permission(self, lab_id: UUID, collection_id: UUID, permission: str) -> bool:
         column = LabRagAccess.can_write if permission == "write" else LabRagAccess.can_read
         result = await self.db.execute(
             select(LabRagAccess.id).where(

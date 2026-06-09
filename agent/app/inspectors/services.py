@@ -1,7 +1,7 @@
 """Bob Manager Agent — Systemctl service inspector."""
 
-import subprocess
 import logging
+import subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +27,15 @@ def get_all_services() -> list[dict]:
         for line in result.stdout.splitlines():
             parts = line.split(None, 4)
             if len(parts) >= 4:
-                services.append({
-                    "name": parts[0].replace(".service", ""),
-                    "load_state": parts[1],
-                    "active_state": parts[2],
-                    "sub_state": parts[3],
-                    "description": parts[4] if len(parts) > 4 else "",
-                })
+                services.append(
+                    {
+                        "name": parts[0].replace(".service", ""),
+                        "load_state": parts[1],
+                        "active_state": parts[2],
+                        "sub_state": parts[3],
+                        "description": parts[4] if len(parts) > 4 else "",
+                    }
+                )
 
         return services
 

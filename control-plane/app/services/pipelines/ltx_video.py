@@ -87,16 +87,19 @@ class LTXVideoPipeline(MediaPipeline):
 
         out["num_inference_steps"] = _clamp(
             int(params.get("num_inference_steps", DEFAULT_PARAMS["num_inference_steps"])),
-            1, 100,
+            1,
+            100,
         )
         out["guidance_scale"] = _clamp(
             float(params.get("guidance_scale", DEFAULT_PARAMS["guidance_scale"])),
-            1.0, 20.0,
+            1.0,
+            20.0,
         )
         out["seed"] = int(params.get("seed", DEFAULT_PARAMS["seed"]))
         out["frame_rate"] = _clamp(
             float(params.get("frame_rate", DEFAULT_PARAMS["frame_rate"])),
-            1.0, 60.0,
+            1.0,
+            60.0,
         )
 
         if params.get("enhance_prompt"):
@@ -126,8 +129,14 @@ class LTXVideoPipeline(MediaPipeline):
     def build_tool_params(self, prompt: str, extra: dict) -> dict:
         params: dict = {"prompt": prompt}
         for key in (
-            "width", "height", "num_frames", "num_inference_steps",
-            "guidance_scale", "seed", "frame_rate", "enhance_prompt",
+            "width",
+            "height",
+            "num_frames",
+            "num_inference_steps",
+            "guidance_scale",
+            "seed",
+            "frame_rate",
+            "enhance_prompt",
         ):
             if key in extra:
                 params[key] = extra[key]

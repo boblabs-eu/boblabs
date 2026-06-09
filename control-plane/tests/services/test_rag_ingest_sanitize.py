@@ -12,7 +12,6 @@ all removed AND the visible text survives.
 from __future__ import annotations
 
 import pytest
-
 from app.services.rag_ingest import sanitize_html_document
 
 pytestmark = pytest.mark.service

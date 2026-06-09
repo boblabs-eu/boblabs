@@ -76,16 +76,24 @@ class RVCPipeline(MediaPipeline):
             raise ValueError("Missing 'model_name' — specify which RVC voice model to use")
         out["model_name"] = model_name
 
-        out["pitch_shift"] = _clamp(int(params.get("pitch_shift", DEFAULT_PARAMS["pitch_shift"])), -24, 24)
+        out["pitch_shift"] = _clamp(
+            int(params.get("pitch_shift", DEFAULT_PARAMS["pitch_shift"])), -24, 24
+        )
 
         f0 = str(params.get("f0_method", DEFAULT_PARAMS["f0_method"]))
         if f0 not in ("rmvpe", "crepe", "harvest", "pm"):
             f0 = "rmvpe"
         out["f0_method"] = f0
 
-        out["index_ratio"] = _clamp(float(params.get("index_ratio", DEFAULT_PARAMS["index_ratio"])), 0.0, 1.0)
-        out["filter_radius"] = _clamp(int(params.get("filter_radius", DEFAULT_PARAMS["filter_radius"])), 0, 7)
-        out["rms_mix_rate"] = _clamp(float(params.get("rms_mix_rate", DEFAULT_PARAMS["rms_mix_rate"])), 0.0, 1.0)
+        out["index_ratio"] = _clamp(
+            float(params.get("index_ratio", DEFAULT_PARAMS["index_ratio"])), 0.0, 1.0
+        )
+        out["filter_radius"] = _clamp(
+            int(params.get("filter_radius", DEFAULT_PARAMS["filter_radius"])), 0, 7
+        )
+        out["rms_mix_rate"] = _clamp(
+            float(params.get("rms_mix_rate", DEFAULT_PARAMS["rms_mix_rate"])), 0.0, 1.0
+        )
         out["protect"] = _clamp(float(params.get("protect", DEFAULT_PARAMS["protect"])), 0.0, 0.5)
 
         return out
@@ -118,8 +126,14 @@ class RVCPipeline(MediaPipeline):
         if "model_name" in extra:
             params["model_name"] = extra["model_name"]
 
-        for key in ("pitch_shift", "f0_method", "index_ratio", "filter_radius",
-                     "rms_mix_rate", "protect"):
+        for key in (
+            "pitch_shift",
+            "f0_method",
+            "index_ratio",
+            "filter_radius",
+            "rms_mix_rate",
+            "protect",
+        ):
             if key in extra:
                 params[key] = extra[key]
 

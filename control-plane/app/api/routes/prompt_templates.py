@@ -25,7 +25,9 @@ async def list_prompt_templates(db: DbSession, _user: dict = Depends(require_adm
 
 
 @router.post("", response_model=PromptTemplateResponse, status_code=status.HTTP_201_CREATED)
-async def create_prompt_template(data: PromptTemplateCreate, db: DbSession, _user: dict = Depends(require_admin)):
+async def create_prompt_template(
+    data: PromptTemplateCreate, db: DbSession, _user: dict = Depends(require_admin)
+):
     return await PromptTemplateRepository(db).create(**data.model_dump(exclude_unset=True))
 
 
@@ -38,7 +40,9 @@ async def get_prompt_template(pt_id: UUID, db: DbSession, _user: dict = Depends(
 
 
 @router.patch("/{pt_id}", response_model=PromptTemplateResponse)
-async def update_prompt_template(pt_id: UUID, data: PromptTemplateUpdate, db: DbSession, _user: dict = Depends(require_admin)):
+async def update_prompt_template(
+    pt_id: UUID, data: PromptTemplateUpdate, db: DbSession, _user: dict = Depends(require_admin)
+):
     updates = data.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(400, "No fields to update")
@@ -56,8 +60,12 @@ async def delete_prompt_template(pt_id: UUID, db: DbSession, _user: dict = Depen
     await PromptTemplateRepository(db).delete(pt_id)
 
 
-@router.post("/{pt_id}/duplicate", response_model=PromptTemplateResponse, status_code=status.HTTP_201_CREATED)
-async def duplicate_prompt_template(pt_id: UUID, db: DbSession, _user: dict = Depends(require_admin)):
+@router.post(
+    "/{pt_id}/duplicate", response_model=PromptTemplateResponse, status_code=status.HTTP_201_CREATED
+)
+async def duplicate_prompt_template(
+    pt_id: UUID, db: DbSession, _user: dict = Depends(require_admin)
+):
     repo = PromptTemplateRepository(db)
     pt = await repo.get_by_id(pt_id)
     if not pt:

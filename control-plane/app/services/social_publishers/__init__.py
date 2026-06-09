@@ -23,7 +23,10 @@ def _stub(platform: str, account: dict, content: str) -> dict:
     posted_id = f"stub-{platform}-{uuid.uuid4().hex[:10]}"
     logger.info(
         "social_publishers[%s] DRY-RUN account=%s len=%d id=%s",
-        platform, account.get("account_id"), len(content), posted_id,
+        platform,
+        account.get("account_id"),
+        len(content),
+        posted_id,
     )
     return {
         "success": True,

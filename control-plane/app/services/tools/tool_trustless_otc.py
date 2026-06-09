@@ -20,18 +20,37 @@ logger = logging.getLogger(__name__)
 # All available actions (used in the description and dispatch table).
 _ACTIONS = [
     # auth / account
-    "register", "login", "mint_apikey", "list_apikeys", "revoke_apikey",
+    "register",
+    "login",
+    "mint_apikey",
+    "list_apikeys",
+    "revoke_apikey",
     # market
-    "list_chains", "list_tokens", "get_price", "get_quote",
+    "list_chains",
+    "list_tokens",
+    "get_price",
+    "get_quote",
     # orders (read)
-    "list_orders", "get_order", "my_orders",
+    "list_orders",
+    "get_order",
+    "my_orders",
     # orders (write)
-    "sell", "buy", "swap", "reserve_order", "deposit_confirm",
-    "payment_confirm", "refund_order", "cancel_order",
+    "sell",
+    "buy",
+    "swap",
+    "reserve_order",
+    "deposit_confirm",
+    "payment_confirm",
+    "refund_order",
+    "cancel_order",
     # wallets
-    "list_wallets", "set_wallet", "remove_wallet",
+    "list_wallets",
+    "set_wallet",
+    "remove_wallet",
     # notifications
-    "list_notifications", "mark_notification_read", "mark_all_read",
+    "list_notifications",
+    "mark_notification_read",
+    "mark_all_read",
 ]
 
 TOOLS = {
@@ -61,39 +80,147 @@ TOOLS = {
                 "required": True,
             },
             # Auth
-            "username": {"type": "string", "description": "Username (3..32 chars) for register/login.", "required": False},
-            "email": {"type": "string", "description": "Email address for register.", "required": False},
-            "password": {"type": "string", "description": "Password (>=8 chars) for register/login.", "required": False},
-            "label": {"type": "string", "description": "Label for mint_apikey (1..64 chars).", "required": False},
-            "scopes": {"type": "string", "description": "Comma-separated scopes for mint_apikey: market:read, orders:read, orders:write, wallets:write, apikeys:manage.", "required": False},
-            "expires_in_days": {"type": "integer", "description": "Optional expiry in days for mint_apikey (1..3650).", "required": False},
-            "key_id": {"type": "integer", "description": "API key ID for revoke_apikey.", "required": False},
+            "username": {
+                "type": "string",
+                "description": "Username (3..32 chars) for register/login.",
+                "required": False,
+            },
+            "email": {
+                "type": "string",
+                "description": "Email address for register.",
+                "required": False,
+            },
+            "password": {
+                "type": "string",
+                "description": "Password (>=8 chars) for register/login.",
+                "required": False,
+            },
+            "label": {
+                "type": "string",
+                "description": "Label for mint_apikey (1..64 chars).",
+                "required": False,
+            },
+            "scopes": {
+                "type": "string",
+                "description": "Comma-separated scopes for mint_apikey: market:read, orders:read, orders:write, wallets:write, apikeys:manage.",
+                "required": False,
+            },
+            "expires_in_days": {
+                "type": "integer",
+                "description": "Optional expiry in days for mint_apikey (1..3650).",
+                "required": False,
+            },
+            "key_id": {
+                "type": "integer",
+                "description": "API key ID for revoke_apikey.",
+                "required": False,
+            },
             # Market
-            "chain": {"type": "string", "description": "Chain identifier (lowercase): ethereum, base, arbitrum, bnb, solana, etc.", "required": False},
-            "symbol": {"type": "string", "description": "Token ticker (uppercase) for get_price (e.g. ETH, USDC).", "required": False},
-            "token_sell": {"type": "string", "description": "Ticker you sell (for get_quote, swap).", "required": False},
-            "chain_sell": {"type": "string", "description": "Chain of token_sell (for get_quote, swap).", "required": False},
-            "token_buy": {"type": "string", "description": "Ticker you buy (for get_quote, swap).", "required": False},
-            "chain_buy": {"type": "string", "description": "Chain of token_buy (for get_quote, swap).", "required": False},
-            "amount_sell": {"type": "number", "description": "Amount of token_sell (for get_quote, swap).", "required": False},
-            "amount_buy": {"type": "number", "description": "Amount of token_buy (for swap).", "required": False},
+            "chain": {
+                "type": "string",
+                "description": "Chain identifier (lowercase): ethereum, base, arbitrum, bnb, solana, etc.",
+                "required": False,
+            },
+            "symbol": {
+                "type": "string",
+                "description": "Token ticker (uppercase) for get_price (e.g. ETH, USDC).",
+                "required": False,
+            },
+            "token_sell": {
+                "type": "string",
+                "description": "Ticker you sell (for get_quote, swap).",
+                "required": False,
+            },
+            "chain_sell": {
+                "type": "string",
+                "description": "Chain of token_sell (for get_quote, swap).",
+                "required": False,
+            },
+            "token_buy": {
+                "type": "string",
+                "description": "Ticker you buy (for get_quote, swap).",
+                "required": False,
+            },
+            "chain_buy": {
+                "type": "string",
+                "description": "Chain of token_buy (for get_quote, swap).",
+                "required": False,
+            },
+            "amount_sell": {
+                "type": "number",
+                "description": "Amount of token_sell (for get_quote, swap).",
+                "required": False,
+            },
+            "amount_buy": {
+                "type": "number",
+                "description": "Amount of token_buy (for swap).",
+                "required": False,
+            },
             # Orders
-            "order_id": {"type": "integer", "description": "Order ID for get_order, reserve_order, deposit_confirm, payment_confirm, refund_order, cancel_order.", "required": False},
-            "status": {"type": "string", "description": "Order status filter for list_orders (pending|reserved|completed|cancelled|refunded). Default: pending.", "required": False},
-            "limit": {"type": "integer", "description": "Result limit for list_orders (1..200, default 50).", "required": False},
-            "sort": {"type": "string", "description": "Sort key for list_orders: timestamp, amount_sell, token_sell, chain_sell.", "required": False},
+            "order_id": {
+                "type": "integer",
+                "description": "Order ID for get_order, reserve_order, deposit_confirm, payment_confirm, refund_order, cancel_order.",
+                "required": False,
+            },
+            "status": {
+                "type": "string",
+                "description": "Order status filter for list_orders (pending|reserved|completed|cancelled|refunded). Default: pending.",
+                "required": False,
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Result limit for list_orders (1..200, default 50).",
+                "required": False,
+            },
+            "sort": {
+                "type": "string",
+                "description": "Sort key for list_orders: timestamp, amount_sell, token_sell, chain_sell.",
+                "required": False,
+            },
             # Sell / buy specific
-            "coin": {"type": "string", "description": "Ticker being sold/bought (for sell/buy).", "required": False},
-            "amount": {"type": "number", "description": "Amount of coin (for sell/buy).", "required": False},
-            "price": {"type": "number", "description": "Price per 1 coin in stablecoin units (for sell/buy).", "required": False},
-            "stablecoin": {"type": "string", "description": "Stablecoin ticker (for sell/buy).", "required": False},
+            "coin": {
+                "type": "string",
+                "description": "Ticker being sold/bought (for sell/buy).",
+                "required": False,
+            },
+            "amount": {
+                "type": "number",
+                "description": "Amount of coin (for sell/buy).",
+                "required": False,
+            },
+            "price": {
+                "type": "number",
+                "description": "Price per 1 coin in stablecoin units (for sell/buy).",
+                "required": False,
+            },
+            "stablecoin": {
+                "type": "string",
+                "description": "Stablecoin ticker (for sell/buy).",
+                "required": False,
+            },
             # Confirm
-            "tx_hash": {"type": "string", "description": "On-chain transaction hash (for deposit_confirm, payment_confirm), 4..256 chars.", "required": False},
+            "tx_hash": {
+                "type": "string",
+                "description": "On-chain transaction hash (for deposit_confirm, payment_confirm), 4..256 chars.",
+                "required": False,
+            },
             # Wallets
-            "address": {"type": "string", "description": "Wallet address for set_wallet (4..256 chars). Validate format yourself.", "required": False},
+            "address": {
+                "type": "string",
+                "description": "Wallet address for set_wallet (4..256 chars). Validate format yourself.",
+                "required": False,
+            },
             # Notifications
-            "notification_id": {"type": "integer", "description": "Notification ID for mark_notification_read.", "required": False},
-            "unread_only": {"type": "boolean", "description": "Filter for list_notifications (default false).", "required": False},
+            "notification_id": {
+                "type": "integer",
+                "description": "Notification ID for mark_notification_read.",
+                "required": False,
+            },
+            "unread_only": {
+                "type": "boolean",
+                "description": "Filter for list_notifications (default false).",
+                "required": False,
+            },
         },
     },
 }
@@ -101,8 +228,10 @@ TOOLS = {
 
 # ── Helpers ───────────────────────────────────
 
+
 async def _get_otc_config(executor: ToolExecutor) -> dict | None:
     from sqlalchemy import select
+
     from app.models.orchestrator import ToolConfig
 
     result = await executor.db.execute(
@@ -177,6 +306,7 @@ def _data(envelope: Any) -> Any:
 
 # ── Main dispatcher ───────────────────────────
 
+
 async def trustless_otc(executor: ToolExecutor, args: dict) -> dict:
     action = (args.get("action") or "").strip().lower()
     if not action:
@@ -188,12 +318,16 @@ async def trustless_otc(executor: ToolExecutor, args: dict) -> dict:
 
     cfg = await _get_otc_config(executor)
     if not cfg:
-        return _fail("TrustlessOTC not configured. Set api_base_url + api_key in Settings → Tool Configs → TrustlessOTC.")
+        return _fail(
+            "TrustlessOTC not configured. Set api_base_url + api_key in Settings → Tool Configs → TrustlessOTC."
+        )
 
     base = (cfg.get("api_base_url") or cfg.get("api_url") or "").rstrip("/")
     api_key = cfg.get("api_key") or ""
     if not base:
-        return _fail("TrustlessOTC config missing api_base_url (e.g. https://otc.boblabs.eu/api/v1).")
+        return _fail(
+            "TrustlessOTC config missing api_base_url (e.g. https://otc.boblabs.eu/api/v1)."
+        )
 
     handler = _DISPATCH.get(action)
     if not handler:
@@ -202,6 +336,7 @@ async def trustless_otc(executor: ToolExecutor, args: dict) -> dict:
 
 
 # ── Action handlers ───────────────────────────
+
 
 # Auth
 async def _register(args, base, _key):
@@ -237,7 +372,9 @@ async def _mint_apikey(args, base, key):
     }
     if args.get("expires_in_days"):
         body["expires_in_days"] = int(args["expires_in_days"])
-    ok, data = await _request("POST", f"{base}/apikeys", api_key=key, json_body=body, idempotent=True)
+    ok, data = await _request(
+        "POST", f"{base}/apikeys", api_key=key, json_body=body, idempotent=True
+    )
     return _ok(_data(data)) if ok else _fail(str(data))
 
 
@@ -331,7 +468,9 @@ async def _sell(args, base, key):
     body, missing = _sell_buy_body(args)
     if missing:
         return _fail(f"sell missing: {', '.join(missing)}.")
-    ok, data = await _request("POST", f"{base}/orders/sell", api_key=key, json_body=body, idempotent=True)
+    ok, data = await _request(
+        "POST", f"{base}/orders/sell", api_key=key, json_body=body, idempotent=True
+    )
     return _ok(_data(data)) if ok else _fail(str(data))
 
 
@@ -341,7 +480,9 @@ async def _buy(args, base, key):
     body, missing = _sell_buy_body(args)
     if missing:
         return _fail(f"buy missing: {', '.join(missing)}.")
-    ok, data = await _request("POST", f"{base}/orders/buy", api_key=key, json_body=body, idempotent=True)
+    ok, data = await _request(
+        "POST", f"{base}/orders/buy", api_key=key, json_body=body, idempotent=True
+    )
     return _ok(_data(data)) if ok else _fail(str(data))
 
 
@@ -353,7 +494,9 @@ async def _swap(args, base, key):
     if missing:
         return _fail(f"swap missing: {', '.join(missing)}.")
     body = {k: args[k] for k in required}
-    ok, data = await _request("POST", f"{base}/orders/swap", api_key=key, json_body=body, idempotent=True)
+    ok, data = await _request(
+        "POST", f"{base}/orders/swap", api_key=key, json_body=body, idempotent=True
+    )
     return _ok(_data(data)) if ok else _fail(str(data))
 
 
@@ -363,7 +506,9 @@ async def _reserve_order(args, base, key):
     oid = args.get("order_id")
     if not oid:
         return _fail("reserve_order requires order_id.")
-    ok, data = await _request("POST", f"{base}/orders/{int(oid)}/reserve", api_key=key, idempotent=True)
+    ok, data = await _request(
+        "POST", f"{base}/orders/{int(oid)}/reserve", api_key=key, idempotent=True
+    )
     return _ok(_data(data)) if ok else _fail(str(data))
 
 
@@ -375,8 +520,11 @@ async def _deposit_confirm(args, base, key):
     if not oid or not tx:
         return _fail("deposit_confirm requires order_id and tx_hash.")
     ok, data = await _request(
-        "POST", f"{base}/orders/{int(oid)}/deposit-confirm",
-        api_key=key, json_body={"tx_hash": tx}, idempotent=True,
+        "POST",
+        f"{base}/orders/{int(oid)}/deposit-confirm",
+        api_key=key,
+        json_body={"tx_hash": tx},
+        idempotent=True,
     )
     return _ok(_data(data)) if ok else _fail(str(data))
 
@@ -389,8 +537,11 @@ async def _payment_confirm(args, base, key):
     if not oid or not tx:
         return _fail("payment_confirm requires order_id and tx_hash.")
     ok, data = await _request(
-        "POST", f"{base}/orders/{int(oid)}/payment-confirm",
-        api_key=key, json_body={"tx_hash": tx}, idempotent=True,
+        "POST",
+        f"{base}/orders/{int(oid)}/payment-confirm",
+        api_key=key,
+        json_body={"tx_hash": tx},
+        idempotent=True,
     )
     return _ok(_data(data)) if ok else _fail(str(data))
 
@@ -401,7 +552,9 @@ async def _refund_order(args, base, key):
     oid = args.get("order_id")
     if not oid:
         return _fail("refund_order requires order_id.")
-    ok, data = await _request("POST", f"{base}/orders/{int(oid)}/refund", api_key=key, idempotent=True)
+    ok, data = await _request(
+        "POST", f"{base}/orders/{int(oid)}/refund", api_key=key, idempotent=True
+    )
     return _ok(_data(data)) if ok else _fail(str(data))
 
 
@@ -411,7 +564,9 @@ async def _cancel_order(args, base, key):
     oid = args.get("order_id")
     if not oid:
         return _fail("cancel_order requires order_id.")
-    ok, data = await _request("POST", f"{base}/orders/{int(oid)}/cancel", api_key=key, idempotent=True)
+    ok, data = await _request(
+        "POST", f"{base}/orders/{int(oid)}/cancel", api_key=key, idempotent=True
+    )
     return _ok(_data(data)) if ok else _fail(str(data))
 
 
@@ -431,8 +586,11 @@ async def _set_wallet(args, base, key):
     if not chain or not address:
         return _fail("set_wallet requires chain and address.")
     ok, data = await _request(
-        "POST", f"{base}/wallets",
-        api_key=key, json_body={"chain": chain, "address": address}, idempotent=True,
+        "POST",
+        f"{base}/wallets",
+        api_key=key,
+        json_body={"chain": chain, "address": address},
+        idempotent=True,
     )
     return _ok(_data(data)) if ok else _fail(str(data))
 
@@ -462,14 +620,18 @@ async def _mark_notification_read(args, base, key):
     nid = args.get("notification_id")
     if not nid:
         return _fail("mark_notification_read requires notification_id.")
-    ok, data = await _request("POST", f"{base}/notifications/{int(nid)}/read", api_key=key, idempotent=True)
+    ok, data = await _request(
+        "POST", f"{base}/notifications/{int(nid)}/read", api_key=key, idempotent=True
+    )
     return _ok(_data(data)) if ok else _fail(str(data))
 
 
 async def _mark_all_read(_args, base, key):
     if not key:
         return _fail("mark_all_read requires an authenticated api_key.")
-    ok, data = await _request("POST", f"{base}/notifications/read-all", api_key=key, idempotent=True)
+    ok, data = await _request(
+        "POST", f"{base}/notifications/read-all", api_key=key, idempotent=True
+    )
     return _ok(_data(data)) if ok else _fail(str(data))
 
 

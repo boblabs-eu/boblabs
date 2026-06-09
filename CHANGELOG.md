@@ -5,6 +5,75 @@ All notable changes to Bob Labs are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] — 2026-06-07 — v1.0 prep: CI, versioning, OpenAPI commitment
+
+No schema migrations, no runtime behavior changes. This release is
+**process maturity for the upcoming v1.0** — getting the project's
+governance and gate infrastructure to where a public 1.0 commitment
+can be made honestly. Sit on `0.11.x` for 4–6 weeks of public burn-in
+(real-world issues filed, fixes shipped) before tagging v1.0.
+
+### Added
+
+- **CI on every PR** — [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs
+  five jobs in parallel: ruff lint, ruff format check, OpenAPI spec
+  drift detection, `make test` (pytest), frontend Jest tests, and
+  `docker compose config` + image build smoke. End-to-end ~6 min.
+- **Ruff toolchain** — [`pyproject.toml`](pyproject.toml) configures
+  `ruff check` (E/F/I/B/W rules) + `ruff format` (black-compatible)
+  as the single source of truth for Python lint + style. The
+  baseline commit ran `ruff check --fix` and `ruff format` across
+  the entire codebase; no behavior changes, just consistency.
+- **OpenAPI spec committed** — [`docs/openapi.json`](docs/openapi.json) is
+  now the canonical public-API contract. Generated via
+  [`scripts/export_openapi.py`](scripts/export_openapi.py); drift-checked
+  in CI via [`scripts/check_openapi_drift.sh`](scripts/check_openapi_drift.sh).
+  Clients can read the contract without booting the stack.
+- **Versioning policy** — new [`VERSIONING.md`](VERSIONING.md) defines
+  what's public (REST `/api/v1/*`, consumer-app HMAC envelope, lab
+  blueprint shape, WebSocket events, env vars, schema migrations)
+  vs. internal (module layout, repositories, frontend components).
+  Includes the deprecation policy and SemVer mapping that v1.0 will
+  commit to.
+- **Upgrade guide** — new [`UPGRADE.md`](UPGRADE.md) with the generic
+  upgrade flow + per-version notes. Documents the 0.10.0 trading-
+  precision migration as one-way.
+- **Issue + PR templates** — [`.github/ISSUE_TEMPLATE/bug_report.yml`](.github/ISSUE_TEMPLATE/bug_report.yml),
+  [`.github/ISSUE_TEMPLATE/feature_request.yml`](.github/ISSUE_TEMPLATE/feature_request.yml),
+  [`.github/ISSUE_TEMPLATE/config.yml`](.github/ISSUE_TEMPLATE/config.yml) (blank issues
+  disabled, security routed to SECURITY.md, questions routed to
+  Discussions), and [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md).
+
+### Changed
+
+- **Codebase formatted** — single `ruff format` pass across all
+  Python sources outside `migrations/versions/`. Pure cosmetic;
+  no behavior changes.
+- **`lab_scheduler._recover_stuck_labs`** now binds `now =
+  datetime.now(timezone.utc)` at the top of the function (was
+  silently `NameError`-prone in the paused-with-cron recovery
+  branch).
+
+### Fixed
+
+- Three pre-existing test failures that had been quietly red since
+  the 0011 trading-precision migration (test_session7 path math,
+  test_wave4 ensure_sandbox assertion, test_cross_tenant
+  TradingPosition field names) now pass against the post-migration
+  ORM.
+
+### Notes
+
+- Versions of all four components (agent, control-plane, frontend,
+  remotion-api) aligned at **0.11.0**.
+- The control-plane FastAPI app now sets `version=__version__`
+  consistently — visible at `GET /api/v1/health` and
+  `GET /openapi.json` (info.version).
+- Still pre-1.0 — SemVer stability for the public API will land
+  with **v1.0.0** after public burn-in proves the contract.
+
+[0.11.0]: https://github.com/boblabs-eu/boblabs/releases/tag/v0.11.0
+
 ## [0.10.0] — 2026-06-07 — Security sweep + schema evolution + repo hardening
 
 Second public release. Most of this is the **Phase 5 audit closeout**: a

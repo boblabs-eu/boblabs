@@ -24,24 +24,31 @@ async def _grant_infra_access(db, regular_user, editor_user, viewer_user, other_
     pass the router-level dep; per-workflow ACL is what we're testing."""
     from app.models.platform_settings import PlatformSettings
 
-    db.add(PlatformSettings(
-        key="infra_access",
-        value={"emails": [
-            regular_user["sub"],
-            editor_user["sub"],
-            viewer_user["sub"],
-            other_user["sub"],
-        ]},
-    ))
+    db.add(
+        PlatformSettings(
+            key="infra_access",
+            value={
+                "emails": [
+                    regular_user["sub"],
+                    editor_user["sub"],
+                    viewer_user["sub"],
+                    other_user["sub"],
+                ]
+            },
+        )
+    )
     await db.commit()
 
 
 async def _create_workflow_as_admin(client, name="wf1") -> str:
-    r = await client.post("/api/v1/workflows", json={
-        "name": name,
-        "description": "x",
-        "steps": [],
-    })
+    r = await client.post(
+        "/api/v1/workflows",
+        json={
+            "name": name,
+            "description": "x",
+            "steps": [],
+        },
+    )
     assert r.status_code == 201, r.text
     return r.json()["id"]
 
@@ -54,7 +61,9 @@ async def test_anonymous_blocked_on_workflows(anonymous_client):
 
 @pytest.mark.asyncio
 async def test_admin_creates_workflow_and_user_cannot_view(
-    admin_client, make_client, regular_user,
+    admin_client,
+    make_client,
+    regular_user,
 ):
     wf_id = await _create_workflow_as_admin(admin_client, name="admin-only")
     client = await make_client(regular_user)
@@ -64,12 +73,16 @@ async def test_admin_creates_workflow_and_user_cannot_view(
 
 @pytest.mark.asyncio
 async def test_user_sees_only_owned_workflows_in_list(
-    admin_client, make_client, regular_user, db,
+    admin_client,
+    make_client,
+    regular_user,
+    db,
 ):
     """list_workflows filters by ACL for non-admin callers."""
     await _create_workflow_as_admin(admin_client, name="admin-wf")
     # Insert a second workflow owned by regular_user directly via DB
     from app.models.workflow import Workflow
+
     own = Workflow(
         id=uuid.uuid4(),
         name="user-wf",
@@ -89,9 +102,14 @@ async def test_user_sees_only_owned_workflows_in_list(
 
 @pytest.mark.asyncio
 async def test_editor_can_update_but_outsider_cannot(
-    db, make_client, regular_user, editor_user, other_user,
+    db,
+    make_client,
+    regular_user,
+    editor_user,
+    other_user,
 ):
     from app.models.workflow import Workflow
+
     wf = Workflow(
         id=uuid.uuid4(),
         name="shared-wf",
@@ -104,23 +122,38 @@ async def test_editor_can_update_but_outsider_cannot(
     wf_id = str(wf.id)
 
     editor_client = await make_client(editor_user)
-    r = await editor_client.put(f"/api/v1/workflows/{wf_id}", json={
-        "name": "renamed-by-editor", "description": "", "steps": [],
-    })
+    r = await editor_client.put(
+        f"/api/v1/workflows/{wf_id}",
+        json={
+            "name": "renamed-by-editor",
+            "description": "",
+            "steps": [],
+        },
+    )
     assert r.status_code == 200, r.text
 
     outsider_client = await make_client(other_user)
-    r = await outsider_client.put(f"/api/v1/workflows/{wf_id}", json={
-        "name": "should-not-take", "description": "", "steps": [],
-    })
+    r = await outsider_client.put(
+        f"/api/v1/workflows/{wf_id}",
+        json={
+            "name": "should-not-take",
+            "description": "",
+            "steps": [],
+        },
+    )
     assert r.status_code == 403, r.text
 
 
 @pytest.mark.asyncio
 async def test_only_owner_or_admin_can_delete(
-    db, make_client, admin_client, regular_user, editor_user,
+    db,
+    make_client,
+    admin_client,
+    regular_user,
+    editor_user,
 ):
     from app.models.workflow import Workflow
+
     wf = Workflow(
         id=uuid.uuid4(),
         name="del-test",

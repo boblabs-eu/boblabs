@@ -48,9 +48,7 @@ class WorkflowService:
         updates = data.model_dump(exclude_unset=True)
         steps = updates.get("steps")
         if steps is not None:
-            updates["steps"] = [
-                s if isinstance(s, dict) else s.model_dump() for s in steps
-            ]
+            updates["steps"] = [s if isinstance(s, dict) else s.model_dump() for s in steps]
             # Mirror the canonical step list into the JSONB column in
             # the same transaction.
             updates["definition"] = {"steps": list(updates["steps"])}

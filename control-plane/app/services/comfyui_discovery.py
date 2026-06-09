@@ -5,7 +5,6 @@ from pathlib import Path
 
 import httpx
 
-
 _TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=15.0, pool=30.0)
 
 _EXCLUDED_FOLDERS = {
@@ -17,8 +16,18 @@ _EXCLUDED_FOLDERS = {
 # (e.g. "put_checkpoints_here", "put_loras_here", "put_vae_here").
 # These are not real models and must never be reported as available.
 _MODEL_EXTENSIONS = {
-    "safetensors", "ckpt", "pt", "pth", "bin", "gguf",
-    "onnx", "sft", "vae", "yaml", "yml", "json",
+    "safetensors",
+    "ckpt",
+    "pt",
+    "pth",
+    "bin",
+    "gguf",
+    "onnx",
+    "sft",
+    "vae",
+    "yaml",
+    "yml",
+    "json",
 }
 
 
@@ -123,7 +132,9 @@ async def discover_comfyui_models(base_url: str) -> list[dict]:
         return folder_models
 
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        results = await asyncio.gather(*[_fetch_folder_models(client, folder) for folder in folders])
+        results = await asyncio.gather(
+            *[_fetch_folder_models(client, folder) for folder in folders]
+        )
 
     models = []
     seen_identifiers = set()

@@ -17,7 +17,6 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from app.services.loop_detection.base import LoopReport, LoopSignal
 from app.services.loop_detection.manager import LoopManager
 
@@ -48,8 +47,10 @@ async def test_recovering_set_cleared_after_resume_failure(db):
     fake_runner.pause = AsyncMock()
     fake_runner.resume = AsyncMock(side_effect=RuntimeError("simulated resume failure"))
 
-    with patch("app.services.lab_runner.get_runner", return_value=fake_runner), \
-         patch("app.services.loop_detection.manager.ws_manager") as ws_mock:
+    with (
+        patch("app.services.lab_runner.get_runner", return_value=fake_runner),
+        patch("app.services.loop_detection.manager.ws_manager") as ws_mock,
+    ):
         ws_mock.broadcast_to_clients = AsyncMock()
         await mgr._handle_report(lab_id, anti_loop_enabled=True, report=_make_report())
 
@@ -72,8 +73,10 @@ async def test_recovery_failed_event_broadcast_on_resume_error(db):
     fake_runner.pause = AsyncMock()
     fake_runner.resume = AsyncMock(side_effect=RuntimeError("boom"))
 
-    with patch("app.services.lab_runner.get_runner", return_value=fake_runner), \
-         patch("app.services.loop_detection.manager.ws_manager") as ws_mock:
+    with (
+        patch("app.services.lab_runner.get_runner", return_value=fake_runner),
+        patch("app.services.loop_detection.manager.ws_manager") as ws_mock,
+    ):
         ws_mock.broadcast_to_clients = AsyncMock()
         await mgr._handle_report(lab_id, anti_loop_enabled=True, report=_make_report())
 
@@ -92,8 +95,10 @@ async def test_no_runner_returns_clean(db):
     mgr = LoopManager()
     mgr.configure(async_session)
 
-    with patch("app.services.lab_runner.get_runner", return_value=None), \
-         patch("app.services.loop_detection.manager.ws_manager") as ws_mock:
+    with (
+        patch("app.services.lab_runner.get_runner", return_value=None),
+        patch("app.services.loop_detection.manager.ws_manager") as ws_mock,
+    ):
         ws_mock.broadcast_to_clients = AsyncMock()
         # Should not raise.
         await mgr._handle_report(lab_id, anti_loop_enabled=True, report=_make_report())

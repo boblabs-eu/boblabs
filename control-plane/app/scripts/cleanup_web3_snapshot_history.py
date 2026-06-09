@@ -11,10 +11,9 @@ import asyncio
 from copy import deepcopy
 from decimal import Decimal
 
-from sqlalchemy import select
-
 from app.database import async_session
 from app.models.portfolio_snapshot import PortfolioSnapshot
+from sqlalchemy import select
 
 _DIP_RATIO = 0.9
 _RECOVERY_TOLERANCE = 0.18
@@ -54,7 +53,10 @@ def _find_repair_ranges(values: list[float]) -> list[tuple[int, int]]:
         run_end = index
         while run_end < len(values):
             candidate = values[run_end]
-            if candidate >= previous * _DIP_RATIO or (previous - candidate) < _MIN_COMPONENT_TRANSIENT_DROP_USD:
+            if (
+                candidate >= previous * _DIP_RATIO
+                or (previous - candidate) < _MIN_COMPONENT_TRANSIENT_DROP_USD
+            ):
                 break
             run_end += 1
 
@@ -103,7 +105,9 @@ def _row_total_usd(row: PortfolioSnapshot) -> float:
 async def main() -> None:
     async with async_session() as db:
         result = await db.execute(
-            select(PortfolioSnapshot).order_by(PortfolioSnapshot.wallet_id.asc(), PortfolioSnapshot.ts.asc())
+            select(PortfolioSnapshot).order_by(
+                PortfolioSnapshot.wallet_id.asc(), PortfolioSnapshot.ts.asc()
+            )
         )
         rows = result.scalars().all()
 
@@ -116,11 +120,7 @@ async def main() -> None:
 
         for wallet_id, wallet_rows in per_wallet.items():
             chain_ids = sorted(
-                {
-                    chain_id
-                    for row in wallet_rows
-                    for chain_id in (row.breakdown or {}).keys()
-                }
+                {chain_id for row in wallet_rows for chain_id in (row.breakdown or {}).keys()}
             )
             if not chain_ids:
                 continue

@@ -22,7 +22,11 @@ TOOLS = {
     "shell_exec": {
         "description": "Execute a whitelisted shell command. Allowed: mkdir,curl, wget, python3, pip, cat, head, tail, grep, awk, sed, sort, ls, find, jq, etc.",
         "parameters": {
-            "command": {"type": "string", "description": "Shell command to execute", "required": True},
+            "command": {
+                "type": "string",
+                "description": "Shell command to execute",
+                "required": True,
+            },
         },
     },
 }
@@ -36,15 +40,21 @@ async def python_exec(executor: ToolExecutor, args: dict) -> dict:
     try:
         sandbox_url = await executor.get_sandbox_url()
         async with httpx.AsyncClient(timeout=executor.timeout_sec + 5) as client:
-            resp = await client.post(f"{sandbox_url}/python_exec", json={
-                "lab_id": str(executor.lab_id),
-                "code": code,
-                "timeout_sec": executor.timeout_sec,
-                "max_output_kb": executor.max_output_bytes // 1024,
-            })
+            resp = await client.post(
+                f"{sandbox_url}/python_exec",
+                json={
+                    "lab_id": str(executor.lab_id),
+                    "code": code,
+                    "timeout_sec": executor.timeout_sec,
+                    "max_output_kb": executor.max_output_bytes // 1024,
+                },
+            )
             return resp.json()
     except httpx.TimeoutException:
-        return {"success": False, "output": f"Python execution timed out after {executor.timeout_sec}s"}
+        return {
+            "success": False,
+            "output": f"Python execution timed out after {executor.timeout_sec}s",
+        }
     except Exception as e:
         logger.exception("Sandbox python_exec failed for lab %s", executor.lab_id)
         return {"success": False, "output": f"Sandbox error: {e}"}
@@ -58,15 +68,21 @@ async def shell_exec(executor: ToolExecutor, args: dict) -> dict:
     try:
         sandbox_url = await executor.get_sandbox_url()
         async with httpx.AsyncClient(timeout=executor.timeout_sec + 5) as client:
-            resp = await client.post(f"{sandbox_url}/shell_exec", json={
-                "lab_id": str(executor.lab_id),
-                "command": command,
-                "timeout_sec": executor.timeout_sec,
-                "max_output_kb": executor.max_output_bytes // 1024,
-            })
+            resp = await client.post(
+                f"{sandbox_url}/shell_exec",
+                json={
+                    "lab_id": str(executor.lab_id),
+                    "command": command,
+                    "timeout_sec": executor.timeout_sec,
+                    "max_output_kb": executor.max_output_bytes // 1024,
+                },
+            )
             return resp.json()
     except httpx.TimeoutException:
-        return {"success": False, "output": f"Shell execution timed out after {executor.timeout_sec}s"}
+        return {
+            "success": False,
+            "output": f"Shell execution timed out after {executor.timeout_sec}s",
+        }
     except Exception as e:
         logger.exception("Sandbox shell_exec failed for lab %s", executor.lab_id)
         return {"success": False, "output": f"Sandbox error: {e}"}

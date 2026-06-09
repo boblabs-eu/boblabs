@@ -4,14 +4,14 @@ Modular, abstracted pipelines for non-LLM model inference
 (audio, image, video generation).
 """
 
-from app.services.pipelines.base import MediaPipeline, PipelineResult
 from app.services.pipelines.bark import BarkPipeline
+from app.services.pipelines.base import MediaPipeline, PipelineResult
 from app.services.pipelines.coqui_tts import CoquiTTSPipeline
+from app.services.pipelines.ltx_video import LTXVideoPipeline
 from app.services.pipelines.musicgen import MusicGenPipeline
 from app.services.pipelines.riffusion import RiffusionPipeline
 from app.services.pipelines.rvc import RVCPipeline
 from app.services.pipelines.stt import STTPipeline
-from app.services.pipelines.ltx_video import LTXVideoPipeline
 from app.services.pipelines.wan_video import WanVideoPipeline
 
 # Registry: provider_type -> pipeline class
@@ -49,15 +49,26 @@ def get_available_pipelines() -> list[dict]:
     for name, cls in PIPELINE_REGISTRY.items():
         # Instantiate with dummy URL just to read class-level metadata
         instance = cls("http://placeholder")
-        result.append({
-            "name": name,
-            "description": instance.tool_description(),
-        })
+        result.append(
+            {
+                "name": name,
+                "description": instance.tool_description(),
+            }
+        )
     return result
 
 
 # Tools that use colon-delimited sub-selections (tool_name:sub_name)
-EXPANDABLE_TOOLS = {"media_pipeline", "mail", "twitter", "youtube", "trading", "defi_data", "web3_portfolio", "media_post"}
+EXPANDABLE_TOOLS = {
+    "media_pipeline",
+    "mail",
+    "twitter",
+    "youtube",
+    "trading",
+    "defi_data",
+    "web3_portfolio",
+    "media_post",
+}
 
 
 def extract_pipeline_names(tool_names: list[str]) -> list[str]:
@@ -67,7 +78,7 @@ def extract_pipeline_names(tool_names: list[str]) -> list[str]:
     returns ['riffusion', 'cogvideo']
     """
     prefix = "media_pipeline:"
-    return [n[len(prefix):] for n in tool_names if n.startswith(prefix)]
+    return [n[len(prefix) :] for n in tool_names if n.startswith(prefix)]
 
 
 def extract_subtool_permissions(tool_names: list[str]) -> dict[str, list[str]]:

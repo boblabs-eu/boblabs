@@ -47,6 +47,7 @@ CACHE_OG = "public, max-age=3600, s-maxage=86400, immutable"
 
 # ── Helpers ──────────────────────────────────────
 
+
 def _esc(s: str | None) -> str:
     return html.escape(s or "", quote=True)
 
@@ -95,6 +96,7 @@ def _og_url(slug: str, updated_at: datetime | None) -> str:
 
 # ── Prerender: /blog (index for bots) ────────────
 
+
 @router.get("/blog", response_class=HTMLResponse)
 async def prerender_blog_index(db: DbSession):
     repo = BlogPostRepository(db)
@@ -106,8 +108,8 @@ async def prerender_blog_index(db: DbSession):
 
     items_html = "\n".join(
         f'<li><a href="{_esc(_post_url(p.slug))}"><strong>{_esc(p.title)}</strong></a>'
-        f' <small>by {_esc(p.identity)}</small>'
-        f'<p>{_esc(_excerpt(p.summary or p.content, 240))}</p></li>'
+        f" <small>by {_esc(p.identity)}</small>"
+        f"<p>{_esc(_excerpt(p.summary or p.content, 240))}</p></li>"
         for p in posts
     )
 
@@ -144,6 +146,7 @@ async def prerender_blog_index(db: DbSession):
 
 # ── Prerender: /blog/{slug} ──────────────────────
 
+
 @router.get("/blog/{slug}", response_class=HTMLResponse)
 async def prerender_blog_post(slug: str, db: DbSession):
     repo = BlogPostRepository(db)
@@ -175,14 +178,11 @@ async def prerender_blog_post(slug: str, db: DbSession):
         "url": canonical,
         "keywords": ", ".join(post.tags or []),
     }
-    import json as _json
     ld_json = _json.dumps(ld, ensure_ascii=False)
 
     # Body — paragraph-split, escaped. Crawlers ingest this as the article text.
     paragraphs = "\n".join(
-        f"<p>{_esc(line.strip())}</p>"
-        for line in (post.content or "").split("\n")
-        if line.strip()
+        f"<p>{_esc(line.strip())}</p>" for line in (post.content or "").split("\n") if line.strip()
     )
     tags_html = " ".join(f'<span class="tag">{_esc(t)}</span>' for t in (post.tags or []))
 
@@ -231,6 +231,7 @@ async def prerender_blog_post(slug: str, db: DbSession):
 
 # ── /sitemap.xml ─────────────────────────────────
 
+
 @router.get("/sitemap.xml")
 async def sitemap_xml(db: DbSession):
     repo = BlogPostRepository(db)
@@ -263,6 +264,7 @@ async def sitemap_xml(db: DbSession):
 
 
 # ── /rss.xml ─────────────────────────────────────
+
 
 @router.get("/rss.xml")
 async def rss_xml(db: DbSession):
@@ -306,6 +308,7 @@ async def rss_xml(db: DbSession):
 
 
 # ── /og/blog/{slug}.png ─────────────────────────
+
 
 @router.get("/og/blog/{slug}.png")
 async def og_blog_image(slug: str, request: Request, db: DbSession):

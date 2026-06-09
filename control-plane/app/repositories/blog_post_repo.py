@@ -37,15 +37,11 @@ class BlogPostRepository:
         return list(result.scalars().all())
 
     async def get_by_id(self, post_id: UUID) -> BlogPost | None:
-        result = await self.db.execute(
-            select(BlogPost).where(BlogPost.id == post_id)
-        )
+        result = await self.db.execute(select(BlogPost).where(BlogPost.id == post_id))
         return result.scalar_one_or_none()
 
     async def get_by_slug(self, slug: str) -> BlogPost | None:
-        result = await self.db.execute(
-            select(BlogPost).where(BlogPost.slug == slug)
-        )
+        result = await self.db.execute(select(BlogPost).where(BlogPost.slug == slug))
         return result.scalar_one_or_none()
 
     async def _resolve_unique_slug(self, base: str) -> str:
@@ -81,6 +77,7 @@ class BlogPostRepository:
         unlikely to collide that many times in a row).
         """
         from sqlalchemy.exc import IntegrityError
+
         base = slugify(slug) if slug else slugify(title)
         candidate = await self._resolve_unique_slug(base)
 
@@ -102,12 +99,11 @@ class BlogPostRepository:
                 # Race: another transaction took our slug between the
                 # SELECT and the INSERT. Bump the suffix and retry.
                 await self.db.rollback()
-                candidate = await self._resolve_unique_slug(
-                    f"{base}-{attempt + 2}"
-                )
+                candidate = await self._resolve_unique_slug(f"{base}-{attempt + 2}")
         # All retries collided — surface a clean error rather than the
         # raw IntegrityError so the route returns a 409.
         from fastapi import HTTPException
+
         raise HTTPException(
             status_code=409,
             detail="Could not allocate a unique slug after 5 attempts.",
@@ -141,6 +137,7 @@ class BlogTokenRepository:
     async def create(self, label: str) -> BlogToken:
         token_value = f"blog_{secrets.token_urlsafe(32)}"
         import hashlib
+
         token = BlogToken(
             token=token_value,
             token_hash=hashlib.sha256(token_value.encode("utf-8")).hexdigest(),
@@ -160,16 +157,13 @@ class BlogTokenRepository:
         """
         import hashlib
         import hmac
+
         digest = hashlib.sha256(token_str.encode("utf-8")).hexdigest()
-        result = await self.db.execute(
-            select(BlogToken).where(BlogToken.token_hash == digest)
-        )
+        result = await self.db.execute(select(BlogToken).where(BlogToken.token_hash == digest))
         record = result.scalar_one_or_none()
         if record is None:
             # Dual-read fallback.
-            result = await self.db.execute(
-                select(BlogToken).where(BlogToken.token == token_str)
-            )
+            result = await self.db.execute(select(BlogToken).where(BlogToken.token == token_str))
             record = result.scalar_one_or_none()
         if not record or record.revoked:
             return None
@@ -182,15 +176,11 @@ class BlogTokenRepository:
         return record
 
     async def revoke(self, token_id: UUID) -> bool:
-        token = await self.db.execute(
-            select(BlogToken).where(BlogToken.id == token_id)
-        )
+        token = await self.db.execute(select(BlogToken).where(BlogToken.id == token_id))
         if not token.scalar_one_or_none():
             return False
         await self.db.execute(
-            update(BlogToken)
-            .where(BlogToken.id == token_id)
-            .values(revoked=True)
+            update(BlogToken).where(BlogToken.id == token_id).values(revoked=True)
         )
         await self.db.flush()
         return True

@@ -13,7 +13,6 @@ API contract (gpu-services/stt-api):
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -71,9 +70,9 @@ class STTPipeline(MediaPipeline):
             logger.error(msg)
             return PipelineResult(success=False, error=msg, params_used=clean)
 
-        transcript = data.get("text", "")
-        segments = data.get("segments", [])
-        language = data.get("language", "unknown")
+        data.get("text", "")
+        data.get("segments", [])
+        data.get("language", "unknown")
         duration = data.get("duration", 0.0)
 
         return PipelineResult(
@@ -107,7 +106,7 @@ class STTPipeline(MediaPipeline):
         if model:
             raw = str(model).strip()
             if raw.startswith("whisper-"):
-                raw = raw[len("whisper-"):]
+                raw = raw[len("whisper-") :]
             if raw:
                 out["model"] = raw[:64]
 

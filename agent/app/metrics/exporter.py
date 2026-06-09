@@ -4,19 +4,20 @@ Exposes a /metrics HTTP endpoint for Prometheus scraping.
 """
 
 import logging
+
 from aiohttp import web
 from prometheus_client import (
-    Gauge,
-    generate_latest,
     CONTENT_TYPE_LATEST,
     CollectorRegistry,
+    Gauge,
+    generate_latest,
 )
 
-from app.collectors.cpu import get_cpu_usage, get_cpu_temperature
-from app.collectors.gpu import get_gpu_metrics, get_gpu_info
+from app.collectors.cpu import get_cpu_temperature, get_cpu_usage
+from app.collectors.disk import get_disk_usage
+from app.collectors.gpu import get_gpu_info, get_gpu_metrics
 from app.collectors.memory import get_memory_usage
 from app.collectors.network import get_network_io
-from app.collectors.disk import get_disk_usage
 
 logger = logging.getLogger(__name__)
 
@@ -31,15 +32,25 @@ ram_total_gauge = Gauge("bob_ram_total_bytes", "Total RAM", registry=registry)
 ram_used_gauge = Gauge("bob_ram_used_bytes", "Used RAM", registry=registry)
 ram_percent_gauge = Gauge("bob_ram_usage_percent", "RAM usage percentage", registry=registry)
 
-gpu_usage_gauge = Gauge("bob_gpu_usage_percent", "GPU utilization", ["gpu_index"], registry=registry)
-gpu_temp_gauge = Gauge("bob_gpu_temperature_celsius", "GPU temperature", ["gpu_index"], registry=registry)
-gpu_mem_used_gauge = Gauge("bob_gpu_memory_used_mb", "GPU memory used", ["gpu_index"], registry=registry)
-gpu_power_gauge = Gauge("bob_gpu_power_draw_watts", "GPU power draw", ["gpu_index"], registry=registry)
+gpu_usage_gauge = Gauge(
+    "bob_gpu_usage_percent", "GPU utilization", ["gpu_index"], registry=registry
+)
+gpu_temp_gauge = Gauge(
+    "bob_gpu_temperature_celsius", "GPU temperature", ["gpu_index"], registry=registry
+)
+gpu_mem_used_gauge = Gauge(
+    "bob_gpu_memory_used_mb", "GPU memory used", ["gpu_index"], registry=registry
+)
+gpu_power_gauge = Gauge(
+    "bob_gpu_power_draw_watts", "GPU power draw", ["gpu_index"], registry=registry
+)
 
 net_sent_gauge = Gauge("bob_network_bytes_sent", "Network bytes sent", registry=registry)
 net_recv_gauge = Gauge("bob_network_bytes_recv", "Network bytes received", registry=registry)
 
-disk_usage_gauge = Gauge("bob_disk_usage_percent", "Disk usage percentage", ["mountpoint"], registry=registry)
+disk_usage_gauge = Gauge(
+    "bob_disk_usage_percent", "Disk usage percentage", ["mountpoint"], registry=registry
+)
 
 
 def update_metrics() -> None:

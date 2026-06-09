@@ -38,7 +38,10 @@ def run(args: dict, output_dir: str) -> dict:
         import torchaudio
         from diffusers import StableAudioPipeline
     except ImportError as e:
-        return {"success": False, "message": f"Missing dependency: {e}. Install: pip install torch torchaudio diffusers transformers einops"}
+        return {
+            "success": False,
+            "message": f"Missing dependency: {e}. Install: pip install torch torchaudio diffusers transformers einops",
+        }
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if device == "cuda" else torch.float32

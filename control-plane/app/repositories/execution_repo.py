@@ -6,7 +6,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.execution import WorkflowExecution, ExecutionLog, CommandHistory
+from app.models.execution import CommandHistory, ExecutionLog, WorkflowExecution
 
 
 class ExecutionRepository:
@@ -46,9 +46,7 @@ class ExecutionRepository:
     async def update_execution(self, execution_id: UUID, **kwargs) -> None:
         """Update execution status."""
         await self.db.execute(
-            update(WorkflowExecution)
-            .where(WorkflowExecution.id == execution_id)
-            .values(**kwargs)
+            update(WorkflowExecution).where(WorkflowExecution.id == execution_id).values(**kwargs)
         )
         await self.db.flush()
 

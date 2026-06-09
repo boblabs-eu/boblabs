@@ -24,9 +24,9 @@ WIDTH = 1200
 HEIGHT = 630
 PADDING = 72
 
-BG_TOP = (15, 18, 30)        # near-black
-BG_BOTTOM = (28, 32, 56)     # subtle dark-blue gradient
-ACCENT = (122, 162, 247)     # Bob Labs accent (cool blue)
+BG_TOP = (15, 18, 30)  # near-black
+BG_BOTTOM = (28, 32, 56)  # subtle dark-blue gradient
+ACCENT = (122, 162, 247)  # Bob Labs accent (cool blue)
 FG_TITLE = (245, 247, 252)
 FG_SUMMARY = (180, 188, 204)
 FG_FOOTER = (140, 148, 168)

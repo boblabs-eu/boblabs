@@ -86,11 +86,14 @@ def _get_quantization():
     if QUANTIZATION in ("fp8-cast", "fp8-scaled-mm"):
         try:
             from ltx_core.quantization import QuantizationPolicy
+
             if QUANTIZATION == "fp8-cast":
                 return QuantizationPolicy.fp8_cast()
             return QuantizationPolicy.fp8_scaled_mm()
         except Exception as e:
-            logger.warning("Failed to load FP8 quantization (%s), running without: %s", QUANTIZATION, e)
+            logger.warning(
+                "Failed to load FP8 quantization (%s), running without: %s", QUANTIZATION, e
+            )
     return None
 
 
@@ -136,15 +139,19 @@ def _ensure_model(mode: str | None = None):
             if DISTILLED_LORA_PATH and os.path.isfile(DISTILLED_LORA_PATH):
                 distilled_lora = [
                     LoraPathStrengthAndSDOps(
-                        DISTILLED_LORA_PATH, 0.6, LTXV_LORA_COMFY_RENAMING_MAP,
+                        DISTILLED_LORA_PATH,
+                        0.6,
+                        LTXV_LORA_COMFY_RENAMING_MAP,
                     ),
                 ]
 
             if mode == "two_stage":
                 from ltx_pipelines.ti2vid_two_stages import TI2VidTwoStagesPipeline
+
                 PipelineCls = TI2VidTwoStagesPipeline
             else:
                 from ltx_pipelines.ti2vid_two_stages_hq import TI2VidTwoStagesHQPipeline
+
                 PipelineCls = TI2VidTwoStagesHQPipeline
 
             kwargs = dict(
@@ -165,7 +172,8 @@ def _ensure_model(mode: str | None = None):
         _last_used = time.time()
         logger.info(
             "LTX-2 pipeline loaded in %.1fs (mode=%s)",
-            time.time() - start, mode,
+            time.time() - start,
+            mode,
         )
 
 
@@ -205,30 +213,40 @@ threading.Thread(target=_idle_watcher, daemon=True).start()
 
 class GenerateRequest(BaseModel):
     prompt: str = Field(
-        ..., min_length=1, max_length=2000,
+        ...,
+        min_length=1,
+        max_length=2000,
         description="Cinematographic text prompt describing the video",
     )
     image: str | None = Field(
-        None, description="Base64-encoded image for image-to-video conditioning",
+        None,
+        description="Base64-encoded image for image-to-video conditioning",
     )
     width: int = Field(768, ge=128, le=1920, description="Width (divisible by 32)")
     height: int = Field(512, ge=128, le=1920, description="Height (divisible by 32)")
     num_frames: int = Field(
-        97, ge=9, le=257,
+        97,
+        ge=9,
+        le=257,
         description="Frame count (must be 8k+1, e.g. 9, 17, 25, ..., 97, ..., 257)",
     )
     num_inference_steps: int = Field(
-        40, ge=1, le=100,
+        40,
+        ge=1,
+        le=100,
         description="Denoising steps (ignored for distilled mode)",
     )
     guidance_scale: float = Field(
-        3.0, ge=1.0, le=20.0,
+        3.0,
+        ge=1.0,
+        le=20.0,
         description="CFG scale (ignored for distilled mode)",
     )
     seed: int = Field(-1, description="Random seed (-1 for random)")
     frame_rate: float = Field(25.0, ge=1.0, le=60.0, description="Output FPS")
     enhance_prompt: bool = Field(
-        False, description="Auto-enhance prompt via LLM",
+        False,
+        description="Auto-enhance prompt via LLM",
     )
 
 
@@ -302,6 +320,7 @@ def generate(req: GenerateRequest):
     try:
         # Free any lingering GPU memory before loading models
         import gc
+
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -331,7 +350,11 @@ def generate(req: GenerateRequest):
 
             logger.info(
                 "Generating video: %dx%d, %d frames, seed=%d, mode=%s",
-                req.width, req.height, req.num_frames, seed, _pipeline_mode,
+                req.width,
+                req.height,
+                req.num_frames,
+                seed,
+                _pipeline_mode,
             )
             t0 = time.time()
 
@@ -432,8 +455,12 @@ def generate(req: GenerateRequest):
 
 if __name__ == "__main__":
     logger.info("Starting LTX-Video API on %s:%d", HOST, PORT)
-    logger.info("Pipeline: %s | Quantization: %s | Streaming prefetch: %s",
-                DEFAULT_PIPELINE, QUANTIZATION, STREAMING_PREFETCH or "disabled")
+    logger.info(
+        "Pipeline: %s | Quantization: %s | Streaming prefetch: %s",
+        DEFAULT_PIPELINE,
+        QUANTIZATION,
+        STREAMING_PREFETCH or "disabled",
+    )
     logger.info("Checkpoint: %s", CHECKPOINT_PATH)
     logger.info("Gemma root: %s", GEMMA_ROOT)
     uvicorn.run(app, host=HOST, port=PORT, timeout_keep_alive=600)

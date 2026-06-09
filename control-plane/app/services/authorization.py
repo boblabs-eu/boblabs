@@ -90,8 +90,9 @@ async def require_infra_access(
     if user.get("role") == "admin":
         return user
 
-    from app.models.platform_settings import PlatformSettings
     from sqlalchemy import select
+
+    from app.models.platform_settings import PlatformSettings
 
     result = await db.execute(
         select(PlatformSettings).where(PlatformSettings.key == "infra_access")

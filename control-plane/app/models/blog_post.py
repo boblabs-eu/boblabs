@@ -3,8 +3,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Text, DateTime, Boolean, func
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Boolean, DateTime, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -15,18 +15,14 @@ class BlogPost(Base):
 
     __tablename__ = "blog_posts"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     slug: Mapped[str] = mapped_column(String(200), unique=True, nullable=False)
     content: Mapped[str] = mapped_column(Text, default="")
     summary: Mapped[str] = mapped_column(String(1000), default="")
     identity: Mapped[str] = mapped_column(String(255), default="admin")
     tags: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -37,15 +33,11 @@ class BlogToken(Base):
 
     __tablename__ = "blog_tokens"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     token: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     # Cluster K — SHA-256 hex of the plaintext token. Same dual-read
     # deprecation pattern as access_tokens.
     token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     label: Mapped[str] = mapped_column(String(255), default="")
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

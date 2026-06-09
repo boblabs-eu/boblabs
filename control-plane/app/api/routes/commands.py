@@ -5,11 +5,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.dependencies import DbSession
-from app.schemas.command import CommandRequest, BatchCommandRequest, CommandResponse
-from app.services.command_service import CommandService
+from app.schemas.command import BatchCommandRequest, CommandRequest, CommandResponse
 from app.services.authorization import require_infra_access
+from app.services.command_service import CommandService
 
-router = APIRouter(prefix="/commands", tags=["commands"], dependencies=[Depends(require_infra_access)])
+router = APIRouter(
+    prefix="/commands", tags=["commands"], dependencies=[Depends(require_infra_access)]
+)
 
 
 @router.post("/servers/{server_id}", response_model=dict)

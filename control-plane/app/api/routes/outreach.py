@@ -10,6 +10,7 @@ only write to the lab workspace. Keeping the queue file-backed means any agent
 that writes the right file shape participates automatically — no schema, no
 migration, no special tool.
 """
+
 from __future__ import annotations
 
 import logging
@@ -21,7 +22,7 @@ from pathlib import Path
 from uuid import UUID
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -39,6 +40,7 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.DOTALL)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _parse_draft(path: Path) -> dict | None:
     """Parse a draft file. Returns None if invalid.
@@ -149,6 +151,7 @@ async def _require_lab_permission(
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
+
 class DraftSummary(BaseModel):
     id: str
     lab_id: str
@@ -175,6 +178,7 @@ class DraftUpdate(BaseModel):
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
+
 
 @router.get("/drafts", response_model=list[DraftSummary])
 async def list_drafts(
@@ -383,6 +387,7 @@ async def send_draft(
     msg.attach(MIMEText(body, "plain", "utf-8"))
 
     import aiosmtplib
+
     try:
         await aiosmtplib.send(
             msg,

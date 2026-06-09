@@ -13,13 +13,21 @@ TOOLS = {
     "file_read": {
         "description": "Read a file from the lab workspace. Path must be relative to the lab folder.",
         "parameters": {
-            "path": {"type": "string", "description": "Relative file path to read", "required": True},
+            "path": {
+                "type": "string",
+                "description": "Relative file path to read",
+                "required": True,
+            },
         },
     },
     "file_write": {
         "description": "Write content to a file in the lab output folder. Path must be relative.",
         "parameters": {
-            "path": {"type": "string", "description": "Relative file path (written to output/)", "required": True},
+            "path": {
+                "type": "string",
+                "description": "Relative file path (written to output/)",
+                "required": True,
+            },
             "content": {"type": "string", "description": "File content to write", "required": True},
         },
     },
@@ -31,7 +39,7 @@ async def file_read(executor: ToolExecutor, args: dict) -> dict:
     if not rel_path:
         return {"success": False, "output": "file_read requires 'path'"}
 
-    clean_path = re.sub(r'^output/', '', rel_path)
+    clean_path = re.sub(r"^output/", "", rel_path)
 
     target = None
     for base in (executor.workspace, executor.workspace / "output"):
@@ -72,7 +80,7 @@ async def file_read(executor: ToolExecutor, args: dict) -> dict:
     try:
         content = target.read_text(errors="replace")
         if len(content) > executor.max_output_bytes:
-            content = content[:executor.max_output_bytes] + "\n... [truncated]"
+            content = content[: executor.max_output_bytes] + "\n... [truncated]"
         return {"success": True, "output": content}
     except Exception as e:
         return {"success": False, "output": f"Read error: {e}"}
@@ -84,11 +92,14 @@ async def file_write(executor: ToolExecutor, args: dict) -> dict:
     if not rel_path:
         return {"success": False, "output": "file_write requires 'path'"}
 
-    rel_path = re.sub(r'^output/', '', rel_path)
+    rel_path = re.sub(r"^output/", "", rel_path)
     rel_path = rel_path.rstrip("/")
 
     if not rel_path:
-        return {"success": False, "output": "file_write requires a valid file path, not just a directory."}
+        return {
+            "success": False,
+            "output": "file_write requires a valid file path, not just a directory.",
+        }
 
     output_dir = executor.workspace / "output"
     output_dir.mkdir(exist_ok=True)
@@ -96,7 +107,10 @@ async def file_write(executor: ToolExecutor, args: dict) -> dict:
     try:
         target = (output_dir / rel_path).resolve()
         if not target.is_relative_to(output_dir.resolve()):
-            return {"success": False, "output": "Path traversal denied. Files can only be written to output/."}
+            return {
+                "success": False,
+                "output": "Path traversal denied. Files can only be written to output/.",
+            }
     except Exception:
         return {"success": False, "output": "Invalid path."}
 

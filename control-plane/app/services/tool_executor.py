@@ -17,8 +17,6 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import httpx
-
 logger = logging.getLogger(__name__)
 
 LAB_RESOURCES_ROOT = Path(os.environ.get("LAB_RESOURCES_PATH", "/data/lab_resources"))
@@ -28,30 +26,30 @@ from app.services.tools import BUILTIN_TOOLS, TOOL_HANDLERS  # noqa: E402
 
 # Regex to find tool calls in agent responses
 TOOL_CALL_RE = re.compile(
-    r'<tool_call>\s*(\{.*?\})\s*</tool_call>',
+    r"<tool_call>\s*(\{.*?\})\s*</tool_call>",
     re.DOTALL,
 )
 
 # Lenient: <tool_call> without closing tag (model forgot </tool_call>)
 TOOL_CALL_OPEN_RE = re.compile(
-    r'<tool_call>\s*(\{.+)',
+    r"<tool_call>\s*(\{.+)",
     re.DOTALL,
 )
 
 # XML-style: <tool_call><function=name><parameter=key>value</parameter>...</function></tool_call>
 TOOL_CALL_XML_RE = re.compile(
-    r'<tool_call>\s*<function=(\w+)>(.*?)</function>\s*</tool_call>',
+    r"<tool_call>\s*<function=(\w+)>(.*?)</function>\s*</tool_call>",
     re.DOTALL,
 )
 
 # XML parameter extraction: <parameter=key>value</parameter>
 XML_PARAM_RE = re.compile(
-    r'<parameter=(\w+)>(.*?)</parameter>',
+    r"<parameter=(\w+)>(.*?)</parameter>",
     re.DOTALL,
 )
 
 # Extract fenced code blocks
-CODE_BLOCK_RE = re.compile(r'```\w*\n(.*?)```', re.DOTALL)
+CODE_BLOCK_RE = re.compile(r"```\w*\n(.*?)```", re.DOTALL)
 
 # Fallback regex: detect implicit "Save as: filename" at the end of a response
 # Matches patterns like "Save as: file.md", "Saved as: file.txt", "File saved: out.py"
@@ -82,7 +80,7 @@ def _extract_balanced_json(text: str) -> str | None:
             escape_next = False
             continue
         if in_string:
-            if ch == '\\':
+            if ch == "\\":
                 escape_next = True
             elif ch == '"':
                 in_string = False
@@ -90,14 +88,14 @@ def _extract_balanced_json(text: str) -> str | None:
         if ch == '"':
             in_string = True
             continue
-        if ch == '{':
+        if ch == "{":
             if depth == 0:
                 start = i
             depth += 1
-        elif ch == '}':
+        elif ch == "}":
             depth -= 1
             if depth == 0 and start is not None:
-                return text[start:i + 1]
+                return text[start : i + 1]
     return None
 
 
@@ -113,11 +111,11 @@ def _repair_tool_json(raw_json: str, full_content: str) -> str | None:
     m = re.search(r'("content"\s*:\s*)([a-zA-Z_]\w*)(\s*\})', raw_json)
     if m:
         # Get code blocks from full response, skip blocks containing <tool_call>
-        blocks = [b for b in CODE_BLOCK_RE.findall(full_content) if '<tool_call>' not in b]
+        blocks = [b for b in CODE_BLOCK_RE.findall(full_content) if "<tool_call>" not in b]
         if blocks:
             code_content = blocks[-1]
             escaped = json.dumps(code_content)
-            fixed = raw_json[:m.start(2)] + escaped + raw_json[m.end(2):]
+            fixed = raw_json[: m.start(2)] + escaped + raw_json[m.end(2) :]
             try:
                 json.loads(fixed)
                 return fixed
@@ -131,7 +129,7 @@ def _repair_tool_json(raw_json: str, full_content: str) -> str | None:
         fname = re.search(r'open\(["\']([^"\']+)', m.group(2))
         if fname:
             replacement = json.dumps(f"exec(open('{fname.group(1)}').read())")
-            fixed = raw_json[:m.start(2)] + replacement + raw_json[m.end(2):]
+            fixed = raw_json[: m.start(2)] + replacement + raw_json[m.end(2) :]
             try:
                 json.loads(fixed)
                 return fixed
@@ -173,7 +171,7 @@ def parse_tool_calls(content: str, agent_tools: list[str] | None = None) -> list
 
     # Preprocess: strip comment prefixes from tool_call tags
     # Models sometimes write "# <tool_call>" inside code blocks
-    cleaned = re.sub(r'#\s*(</?tool_call>)', r'\1', content)
+    cleaned = re.sub(r"#\s*(</?tool_call>)", r"\1", content)
 
     # --- Strategy 1: standard <tool_call>...</tool_call> ---
     for match in TOOL_CALL_RE.finditer(cleaned):
@@ -204,8 +202,9 @@ def parse_tool_calls(content: str, agent_tools: list[str] | None = None) -> list
     # --- Strategy 1c: XML-style without closing </tool_call> ---
     if not calls:
         xml_open = re.finditer(
-            r'<tool_call>\s*<function=(\w+)>(.*?)</function>',
-            cleaned, re.DOTALL,
+            r"<tool_call>\s*<function=(\w+)>(.*?)</function>",
+            cleaned,
+            re.DOTALL,
         )
         for match in xml_open:
             func_name = match.group(1)
@@ -239,16 +238,20 @@ def parse_tool_calls(content: str, agent_tools: list[str] | None = None) -> list
         if save_match:
             filename = save_match.group(1)
             # Extract content: everything before the "Save as:" line
-            file_content = content[:save_match.start()].rstrip()
+            file_content = content[: save_match.start()].rstrip()
             # Strip trailing "---" separator if present
             if file_content.endswith("---"):
                 file_content = file_content[:-3].rstrip()
             if file_content:
-                logger.info("Implicit file_write detected: %s (%d bytes)", filename, len(file_content))
-                calls.append({
-                    "name": "file_write",
-                    "arguments": {"path": filename, "content": file_content},
-                })
+                logger.info(
+                    "Implicit file_write detected: %s (%d bytes)", filename, len(file_content)
+                )
+                calls.append(
+                    {
+                        "name": "file_write",
+                        "arguments": {"path": filename, "content": file_content},
+                    }
+                )
 
     return calls
 
@@ -256,6 +259,7 @@ def parse_tool_calls(content: str, agent_tools: list[str] | None = None) -> list
 def _build_pipeline_description(pipeline_names: list[str]) -> str:
     """Build dynamic media_pipeline description for selected pipelines."""
     from app.services.pipelines import PIPELINE_REGISTRY
+
     parts = []
     for name in pipeline_names:
         cls = PIPELINE_REGISTRY.get(name)
@@ -272,7 +276,11 @@ def _build_pipeline_description(pipeline_names: list[str]) -> str:
 
 def format_tool_descriptions(tool_names: list[str]) -> str:
     """Build tool description text for injection into agent system prompt."""
-    from app.services.pipelines import extract_pipeline_names, extract_subtool_permissions, normalize_tool_names
+    from app.services.pipelines import (
+        extract_pipeline_names,
+        extract_subtool_permissions,
+        normalize_tool_names,
+    )
 
     if not tool_names:
         return ""
@@ -325,7 +333,9 @@ def format_tool_descriptions(tool_names: list[str]) -> str:
                 req = " (required)" if pinfo.get("required") else ""
                 if pname == "pipeline":
                     # Restrict to selected pipelines
-                    param_strs.append(f"pipeline: string (required) — one of: {', '.join(selected_pipelines)}")
+                    param_strs.append(
+                        f"pipeline: string (required) — one of: {', '.join(selected_pipelines)}"
+                    )
                 else:
                     param_strs.append(f"{pname}: {pinfo['type']}{req}")
             lines.append(f"- **{name}**({', '.join(param_strs)}): {desc}")
@@ -333,7 +343,10 @@ def format_tool_descriptions(tool_names: list[str]) -> str:
 
         # Dynamic action constraint for expandable tools (mail, twitter, trading, defi_data, web3_portfolio)
         allowed_actions = subtool_perms.get(name)
-        if name in ("mail", "twitter", "trading", "defi_data", "web3_portfolio") and allowed_actions:
+        if (
+            name in ("mail", "twitter", "trading", "defi_data", "web3_portfolio")
+            and allowed_actions
+        ):
             tool = BUILTIN_TOOLS[name]
             action_str = ", ".join(allowed_actions)
             desc = tool["description"] + f" Allowed actions: {action_str}."
@@ -362,12 +375,24 @@ def format_tool_descriptions(tool_names: list[str]) -> str:
     if "excalidraw" in normalized:
         lines.append("")
         lines.append("### Excalidraw Quick Reference")
-        lines.append("- elements: JSON array of element objects (rectangle, ellipse, diamond, arrow, text)")
-        lines.append("- **CRITICAL**: Use container binding for labels: shape needs `boundElements: [{\"id\": \"t_id\", \"type\": \"text\"}]`, text needs `containerId: \"shape_id\"`. Do NOT use `\"label\"` property — it doesn't exist.")
-        lines.append("- Always include `fontFamily: 1`, `originalText`, `autoResize: true` on text elements")
-        lines.append("- Arrow bindings: `startBinding/endBinding: { \"elementId\": \"id\", \"fixedPoint\": [x, y] }` where right=[1,0.5], left=[0,0.5], top=[0.5,0], bottom=[0.5,1]")
-        lines.append("- Colors: Blue=#a5d8ff, Green=#b2f2bb, Orange=#ffd8a8, Purple=#d0bfff, Red=#ffc9c9, Yellow=#fff3bf, Teal=#c3fae8")
-        lines.append("- Min font: 16 body, 20 titles. Min shape: 120x60. Z-order: first=back, last=front")
+        lines.append(
+            "- elements: JSON array of element objects (rectangle, ellipse, diamond, arrow, text)"
+        )
+        lines.append(
+            '- **CRITICAL**: Use container binding for labels: shape needs `boundElements: [{"id": "t_id", "type": "text"}]`, text needs `containerId: "shape_id"`. Do NOT use `"label"` property — it doesn\'t exist.'
+        )
+        lines.append(
+            "- Always include `fontFamily: 1`, `originalText`, `autoResize: true` on text elements"
+        )
+        lines.append(
+            '- Arrow bindings: `startBinding/endBinding: { "elementId": "id", "fixedPoint": [x, y] }` where right=[1,0.5], left=[0,0.5], top=[0.5,0], bottom=[0.5,1]'
+        )
+        lines.append(
+            "- Colors: Blue=#a5d8ff, Green=#b2f2bb, Orange=#ffd8a8, Purple=#d0bfff, Red=#ffc9c9, Yellow=#fff3bf, Teal=#c3fae8"
+        )
+        lines.append(
+            "- Min font: 16 body, 20 titles. Min shape: 120x60. Z-order: first=back, last=front"
+        )
 
     lines.append("")
     return "\n".join(lines)
@@ -379,7 +404,11 @@ def build_native_tools_schema(tool_names: list[str]) -> list[dict]:
     Works with Ollama (0.3+), vLLM, and OpenAI-compatible APIs.
     Handles media_pipeline:* and mail:*/twitter:* sub-selections.
     """
-    from app.services.pipelines import extract_pipeline_names, extract_subtool_permissions, normalize_tool_names
+    from app.services.pipelines import (
+        extract_pipeline_names,
+        extract_subtool_permissions,
+        normalize_tool_names,
+    )
 
     selected_pipelines = extract_pipeline_names(tool_names)
     subtool_perms = extract_subtool_permissions(tool_names)
@@ -411,7 +440,11 @@ def build_native_tools_schema(tool_names: list[str]) -> list[dict]:
                 prop["enum"] = selected_pipelines
                 prop["description"] = f"Pipeline to use. One of: {', '.join(selected_pipelines)}"
             # Constrain action param for expandable tools
-            if name in ("mail", "twitter", "trading", "defi_data", "web3_portfolio") and pname == "action" and allowed_actions:
+            if (
+                name in ("mail", "twitter", "trading", "defi_data", "web3_portfolio")
+                and pname == "action"
+                and allowed_actions
+            ):
                 prop["enum"] = allowed_actions
                 prop["description"] = f"Action to perform. One of: {', '.join(allowed_actions)}"
             properties[pname] = prop
@@ -419,21 +452,26 @@ def build_native_tools_schema(tool_names: list[str]) -> list[dict]:
                 required.append(pname)
 
         desc = description
-        if name in ("mail", "twitter", "trading", "defi_data", "web3_portfolio") and allowed_actions:
+        if (
+            name in ("mail", "twitter", "trading", "defi_data", "web3_portfolio")
+            and allowed_actions
+        ):
             desc += f" Allowed actions: {', '.join(allowed_actions)}."
 
-        schemas.append({
-            "type": "function",
-            "function": {
-                "name": name,
-                "description": desc,
-                "parameters": {
-                    "type": "object",
-                    "properties": properties,
-                    "required": required,
+        schemas.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": desc,
+                    "parameters": {
+                        "type": "object",
+                        "properties": properties,
+                        "required": required,
+                    },
                 },
-            },
-        })
+            }
+        )
     return schemas
 
 
@@ -458,7 +496,9 @@ class ToolExecutor:
         self.container_memory_mb = container_memory_mb
         self._call_agent_handler = call_agent_handler
         self._subtool_permissions = subtool_permissions or {}
-        self._allowed_pipelines = allowed_pipelines or self._subtool_permissions.get("media_pipeline", [])
+        self._allowed_pipelines = allowed_pipelines or self._subtool_permissions.get(
+            "media_pipeline", []
+        )
         self.workspace = LAB_RESOURCES_ROOT / str(lab_id)
         self.workspace.mkdir(parents=True, exist_ok=True)
         # Ensure output subdirectory exists
@@ -475,9 +515,10 @@ class ToolExecutor:
         know them by original_name only.  Symlinks let imports and execution work.
         """
         import re as _re
+
         for f in self.workspace.iterdir():
             if f.is_file() and not f.name.startswith("_") and not f.is_symlink():
-                m = _re.match(r'^[0-9a-f]{8}_(.+)$', f.name)
+                m = _re.match(r"^[0-9a-f]{8}_(.+)$", f.name)
                 if m:
                     link = self.workspace / m.group(1)
                     if not link.exists():
@@ -510,10 +551,15 @@ class ToolExecutor:
             )
             # Truncate output
             if len(result.get("output", "")) > self.max_output_bytes:
-                result["output"] = result["output"][:self.max_output_bytes] + "\n... [output truncated]"
+                result["output"] = (
+                    result["output"][: self.max_output_bytes] + "\n... [output truncated]"
+                )
             return result
         except asyncio.TimeoutError:
-            return {"success": False, "output": f"Tool '{tool_name}' timed out after {effective_timeout}s"}
+            return {
+                "success": False,
+                "output": f"Tool '{tool_name}' timed out after {effective_timeout}s",
+            }
         except Exception as e:
             logger.exception("Tool '%s' failed for lab %s", tool_name, self.lab_id)
             return {"success": False, "output": f"Tool error: {str(e)}"}
@@ -526,4 +572,5 @@ class ToolExecutor:
         untrusted execution is confined to the per-lab sandbox.
         """
         from app.services.container_manager import ensure_sandbox
+
         return await ensure_sandbox(self.lab_id, memory_mb=self.container_memory_mb)

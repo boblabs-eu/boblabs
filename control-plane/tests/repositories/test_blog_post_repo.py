@@ -11,7 +11,6 @@ the same slug — the retry should bump and succeed.
 from __future__ import annotations
 
 import pytest
-
 from app.repositories.blog_post_repo import BlogPostRepository, slugify
 
 pytestmark = pytest.mark.repo

@@ -15,10 +15,9 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy import select
-
 from app.models.orchestrator import AIProvider
 from app.models.server import Server
+from sqlalchemy import select
 
 pytestmark = pytest.mark.regression
 
@@ -45,9 +44,7 @@ async def test_auto_discovered_ollama_provider_is_pending(db):
         db_session_factory=async_session,
     )
 
-    row = (await db.execute(
-        select(AIProvider).where(AIProvider.name == "test-agent")
-    )).scalar_one()
+    row = (await db.execute(select(AIProvider).where(AIProvider.name == "test-agent"))).scalar_one()
     assert row.pending_approval is True, (
         "auto-discovered provider must default to pending_approval=True — cluster I regression"
     )
@@ -64,8 +61,11 @@ async def test_existing_provider_not_demoted_by_resync(db):
     from app.websocket.agent_handler import _sync_ollama_models
 
     server = Server(
-        id=uuid.uuid4(), name="approved-agent",
-        host="gpu-2.example.com", agent_token="x", status="online",
+        id=uuid.uuid4(),
+        name="approved-agent",
+        host="gpu-2.example.com",
+        agent_token="x",
+        status="online",
     )
     db.add(server)
     await db.commit()
@@ -98,6 +98,7 @@ async def test_existing_provider_not_demoted_by_resync(db):
 async def test_dispatcher_filters_pending_providers(db):
     """Spot-check that lab_dispatcher excludes pending_approval rows."""
     import inspect
+
     from app.services import lab_dispatcher
 
     src = inspect.getsource(lab_dispatcher)

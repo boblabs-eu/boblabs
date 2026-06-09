@@ -19,18 +19,18 @@ from croniter import croniter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.orchestrator import CronJob, Lab, LabAgent, LabScheduleLog, LibraryAgent
+from app.models.orchestrator import Lab, LabAgent, LibraryAgent
 from app.repositories.lab_repo import (
     CronJobRepository,
-    LabRepository,
     LabAgentRepository,
-    LabMessageRepository,
-    LabResourceRepository,
     LabMemoryRepository,
+    LabMessageRepository,
+    LabRepository,
+    LabResourceRepository,
     LabScheduleLogRepository,
     ToolSetRepository,
 )
-from app.services.lab_runner import LabRunner, get_runner, _broadcast_lab_event
+from app.services.lab_runner import LabRunner, _broadcast_lab_event, get_runner
 from app.services.pipelines import extract_pipeline_names, extract_subtool_permissions
 from app.services.rag_service import augment_tool_names_with_rag_access
 from app.services.web3_access_service import augment_tool_names_with_web3_access
@@ -67,7 +67,9 @@ async def _check_lab_crons(db: AsyncSession, session_factory: async_sessionmaker
                 next_run = next_run.replace(tzinfo=timezone.utc)
 
             if next_run <= now:
-                logger.info("Cron trigger for lab '%s' (expression: %s)", lab.name, lab.cron_expression)
+                logger.info(
+                    "Cron trigger for lab '%s' (expression: %s)", lab.name, lab.cron_expression
+                )
 
                 # Update next_run_at
                 lab_repo = LabRepository(db)
@@ -89,14 +91,16 @@ async def _check_lab_crons(db: AsyncSession, session_factory: async_sessionmaker
                 runner = LabRunner(lab.id, session_factory)
                 asyncio.create_task(runner.run())
 
-                await manager.broadcast_to_clients({
-                    "type": "lab.cron.triggered",
-                    "payload": {
-                        "lab_id": str(lab.id),
-                        "lab_name": lab.name,
-                        "cron_expression": lab.cron_expression,
-                    },
-                })
+                await manager.broadcast_to_clients(
+                    {
+                        "type": "lab.cron.triggered",
+                        "payload": {
+                            "lab_id": str(lab.id),
+                            "lab_name": lab.name,
+                            "cron_expression": lab.cron_expression,
+                        },
+                    }
+                )
         except Exception as e:
             logger.error("Cron check failed for lab '%s': %s", lab.name, e)
 
@@ -137,19 +141,20 @@ async def _check_agent_crons(db: AsyncSession, session_factory: async_sessionmak
                 lab.id,
                 since=prev_trigger - timedelta(seconds=10),
             )
-            already_injected = any(
-                m.content.startswith(f"[CRON:{agent.name}]")
-                for m in recent
-            )
+            already_injected = any(m.content.startswith(f"[CRON:{agent.name}]") for m in recent)
             if already_injected:
                 continue
 
-            instruction = agent.cron_instruction or f"Execute your scheduled task (agent: {agent.name})"
+            instruction = (
+                agent.cron_instruction or f"Execute your scheduled task (agent: {agent.name})"
+            )
             inject_content = f"[CRON:{agent.name}] {instruction}"
 
             logger.info(
                 "Agent cron trigger: '%s' in lab '%s' (expression: %s)",
-                agent.name, lab.name, agent.cron_expression,
+                agent.name,
+                lab.name,
+                agent.cron_expression,
             )
 
             # Record the CRON event in the feed
@@ -165,20 +170,20 @@ async def _check_agent_crons(db: AsyncSession, session_factory: async_sessionmak
             )
             await db.commit()
 
-            await manager.broadcast_to_clients({
-                "type": "lab.agent.cron.triggered",
-                "payload": {
-                    "lab_id": str(lab.id),
-                    "agent_name": agent.name,
-                    "instruction": instruction[:200],
-                },
-            })
+            await manager.broadcast_to_clients(
+                {
+                    "type": "lab.agent.cron.triggered",
+                    "payload": {
+                        "lab_id": str(lab.id),
+                        "agent_name": agent.name,
+                        "instruction": instruction[:200],
+                    },
+                }
+            )
 
             # Execute the agent task directly (in a background task so
             # the scheduler loop isn't blocked by LLM calls / tool loops).
-            asyncio.create_task(
-                _execute_agent_cron(session_factory, lab.id, agent.id, instruction)
-            )
+            asyncio.create_task(_execute_agent_cron(session_factory, lab.id, agent.id, instruction))
         except Exception as e:
             logger.error("Agent cron check failed for '%s': %s", agent.name, e)
 
@@ -193,15 +198,14 @@ async def _execute_agent_cron(
 
     Opens its own DB session so it's fully independent of the scheduler.
     """
+    from app.services.container_manager import ensure_sandbox
     from app.services.lab_dispatcher import LabDispatcher
     from app.services.lab_runner import LabRunner, _extract_and_save_images
     from app.services.tool_executor import (
         ToolExecutor,
         build_native_tools_schema,
-        format_tool_descriptions,
         parse_tool_calls,
     )
-    from app.services.container_manager import ensure_sandbox
 
     async with session_factory() as db:
         try:
@@ -215,7 +219,9 @@ async def _execute_agent_cron(
             lab = await lab_repo.get_by_id(lab_id)
             agent = await agent_repo.get_by_id(agent_id)
             if not lab or not agent:
-                logger.error("CRON exec: lab or agent not found (lab=%s, agent=%s)", lab_id, agent_id)
+                logger.error(
+                    "CRON exec: lab or agent not found (lab=%s, agent=%s)", lab_id, agent_id
+                )
                 return
 
             # Record task assignment
@@ -231,16 +237,22 @@ async def _execute_agent_cron(
             )
             await db.commit()
 
-            await _broadcast_lab_event(lab.id, "lab.task.start", {
-                "agent": agent.name,
-                "instruction": instruction[:200],
-                "iteration": lab.current_iteration,
-                "source": "cron",
-            })
+            await _broadcast_lab_event(
+                lab.id,
+                "lab.task.start",
+                {
+                    "agent": agent.name,
+                    "instruction": instruction[:200],
+                    "iteration": lab.current_iteration,
+                    "source": "cron",
+                },
+            )
 
             # ── Resolve tools ──
             agent_tools = await LabRunner._resolve_tools(
-                ts_repo, agent.tools, agent.tool_set_id,
+                ts_repo,
+                agent.tools,
+                agent.tool_set_id,
                 getattr(agent, "tool_set_ids", None),
             )
             agent_tools = await augment_tool_names_with_rag_access(db, lab.id, agent_tools)
@@ -252,7 +264,9 @@ async def _execute_agent_cron(
             lab_resources = await res_repo.get_by_lab(lab.id)
 
             msgs = LabRunner._build_agent_messages(
-                agent, instruction, lab,
+                agent,
+                instruction,
+                lab,
                 memories=agent_memories,
                 resources=lab_resources,
                 resolved_tools=agent_tools,
@@ -286,7 +300,9 @@ async def _execute_agent_cron(
                 while total_tool_calls < max_calls:
                     native_tc = result.get("tool_calls")
                     if native_tc:
-                        tool_calls = [{"name": tc["name"], "arguments": tc["arguments"]} for tc in native_tc]
+                        tool_calls = [
+                            {"name": tc["name"], "arguments": tc["arguments"]} for tc in native_tc
+                        ]
                     else:
                         tool_calls = parse_tool_calls(result["content"], agent_tools=agent_tools)
 
@@ -296,7 +312,9 @@ async def _execute_agent_cron(
                     # Save intermediate agent message
                     msg_content = result.get("content", "")
                     if not msg_content and result.get("tool_calls"):
-                        msg_content = json.dumps({"tool_calls": [tc["name"] for tc in result["tool_calls"]]})
+                        msg_content = json.dumps(
+                            {"tool_calls": [tc["name"] for tc in result["tool_calls"]]}
+                        )
                     if msg_content:
                         await msg_repo.create(
                             lab_id=lab.id,
@@ -344,7 +362,11 @@ async def _execute_agent_cron(
                                     sender_name=agent.name,
                                     content=f"\U0001f4c4 File {fe_action}: **{fe_path}** ({fe_size} bytes)",
                                     message_type="file_event",
-                                    extra={"file_action": fe_action, "file_path": fe_path, "size_bytes": fe_size},
+                                    extra={
+                                        "file_action": fe_action,
+                                        "file_path": fe_path,
+                                        "size_bytes": fe_size,
+                                    },
                                 )
                                 await db.commit()
 
@@ -364,16 +386,24 @@ async def _execute_agent_cron(
                         )
                         await db.commit()
 
-                        await _broadcast_lab_event(lab.id, "lab.tool.result", {
-                            "agent": agent.name,
-                            "tool": tc["name"],
-                            "success": success,
-                        })
+                        await _broadcast_lab_event(
+                            lab.id,
+                            "lab.tool.result",
+                            {
+                                "agent": agent.name,
+                                "tool": tc["name"],
+                                "success": success,
+                            },
+                        )
 
                         tool_results_parts.append(
                             f'<tool_result name="{tc["name"]}" success="{success}">\n{tool_output}\n</tool_result>'
                         )
-                        tc_id = native_tc[i].get("id", f"call_{i}") if native_tc and i < len(native_tc) else f"call_{i}"
+                        tc_id = (
+                            native_tc[i].get("id", f"call_{i}")
+                            if native_tc and i < len(native_tc)
+                            else f"call_{i}"
+                        )
                         tool_results_data.append({"tool_call_id": tc_id, "output": tool_output})
 
                     if not tool_results_parts:
@@ -381,25 +411,43 @@ async def _execute_agent_cron(
 
                     # Build follow-up messages for agent
                     if native_tc:
-                        msgs.append({"role": "assistant", "content": result.get("content", ""), "tool_calls": native_tc})
+                        msgs.append(
+                            {
+                                "role": "assistant",
+                                "content": result.get("content", ""),
+                                "tool_calls": native_tc,
+                            }
+                        )
                         for trd in tool_results_data:
-                            msgs.append({"role": "tool", "tool_call_id": trd["tool_call_id"], "content": trd["output"]})
+                            msgs.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": trd["tool_call_id"],
+                                    "content": trd["output"],
+                                }
+                            )
                     else:
                         msgs.append({"role": "assistant", "content": result["content"]})
                         msgs.append({"role": "user", "content": "\n".join(tool_results_parts)})
 
-                    result = await dispatcher.call_agent(agent, msgs, lab_id=lab.id, tools=native_tools)
+                    result = await dispatcher.call_agent(
+                        agent, msgs, lab_id=lab.id, tools=native_tools
+                    )
 
             # ── Save final result ──
             result_content = result.get("content", "")
             if not result_content:
                 if result.get("tool_calls"):
-                    result_content = json.dumps({"tool_calls": [tc["name"] for tc in result["tool_calls"]]})
+                    result_content = json.dumps(
+                        {"tool_calls": [tc["name"] for tc in result["tool_calls"]]}
+                    )
                 else:
                     result_content = "(no text output)"
 
             extra = {}
-            generated_images = _extract_and_save_images(result_content, lab.id, lab.current_iteration)
+            generated_images = _extract_and_save_images(
+                result_content, lab.id, lab.current_iteration
+            )
             if generated_images:
                 img_refs = []
                 for img_meta in generated_images:
@@ -409,10 +457,12 @@ async def _execute_agent_cron(
                         original_name=img_meta["original_name"],
                         content_type=img_meta["content_type"],
                     )
-                    img_refs.append({
-                        "resource_id": str(res_obj.id),
-                        "filename": img_meta["filename"],
-                    })
+                    img_refs.append(
+                        {
+                            "resource_id": str(res_obj.id),
+                            "filename": img_meta["filename"],
+                        }
+                    )
                 extra["images"] = img_refs
 
             await msg_repo.create(
@@ -432,16 +482,22 @@ async def _execute_agent_cron(
             )
             await db.commit()
 
-            await _broadcast_lab_event(lab.id, "lab.task.complete", {
-                "agent": agent.name,
-                "iteration": lab.current_iteration,
-                "source": "cron",
-            })
+            await _broadcast_lab_event(
+                lab.id,
+                "lab.task.complete",
+                {
+                    "agent": agent.name,
+                    "iteration": lab.current_iteration,
+                    "source": "cron",
+                },
+            )
 
             logger.info(
                 "CRON agent '%s' completed task in lab '%s' (tokens: %d→%d)",
-                agent.name, lab.name,
-                result.get("tokens_in", 0), result.get("tokens_out", 0),
+                agent.name,
+                lab.name,
+                result.get("tokens_in", 0),
+                result.get("tokens_out", 0),
             )
         except Exception as e:
             logger.exception("CRON exec failed for agent '%s' in lab %s: %s", agent_id, lab_id, e)
@@ -467,6 +523,7 @@ async def _check_lab_cron_jobs(db: AsyncSession, session_factory: async_sessionm
         for cj_id_str in cron_ids:
             try:
                 import uuid as _uuid
+
                 cj_id = _uuid.UUID(str(cj_id_str))
                 cj = await cron_repo.get_by_id(cj_id)
                 if not cj:
@@ -485,16 +542,16 @@ async def _check_lab_cron_jobs(db: AsyncSession, session_factory: async_sessionm
                     lab.id,
                     since=prev_trigger - timedelta(seconds=10),
                 )
-                already = any(
-                    m.content.startswith(f"[CRON-JOB:{cj.name}]")
-                    for m in recent
-                )
+                already = any(m.content.startswith(f"[CRON-JOB:{cj.name}]") for m in recent)
                 if already:
                     continue
 
                 logger.info(
                     "Lab CRON job trigger: '%s' in lab '%s' (method: %s, expression: %s)",
-                    cj.name, lab.name, cj.method, cj.expression,
+                    cj.name,
+                    lab.name,
+                    cj.method,
+                    cj.expression,
                 )
 
                 instruction = cj.instruction or f"Scheduled task: {cj.name}"
@@ -541,19 +598,25 @@ async def _check_lab_cron_jobs(db: AsyncSession, session_factory: async_sessionm
                         # No runner at all — start a new one so it picks up the inject
                         new_runner = LabRunner(lab.id, session_factory)
                         asyncio.create_task(new_runner.run())
-                        logger.info("Started new runner for lab '%s' (orchestrator inject)", lab.name)
+                        logger.info(
+                            "Started new runner for lab '%s' (orchestrator inject)", lab.name
+                        )
 
-                await manager.broadcast_to_clients({
-                    "type": "lab.cron_job.triggered",
-                    "payload": {
-                        "lab_id": str(lab.id),
-                        "lab_name": lab.name,
-                        "cron_name": cj.name,
-                        "method": cj.method,
-                    },
-                })
+                await manager.broadcast_to_clients(
+                    {
+                        "type": "lab.cron_job.triggered",
+                        "payload": {
+                            "lab_id": str(lab.id),
+                            "lab_name": lab.name,
+                            "cron_name": cj.name,
+                            "method": cj.method,
+                        },
+                    }
+                )
             except Exception as e:
-                logger.error("Lab CRON job check failed for '%s' in lab '%s': %s", cj_id_str, lab.name, e)
+                logger.error(
+                    "Lab CRON job check failed for '%s' in lab '%s': %s", cj_id_str, lab.name, e
+                )
 
 
 async def _execute_lab_cron_cmd(
@@ -583,6 +646,7 @@ async def _execute_lab_cron_cmd(
     has the shell_exec tool granted.
     """
     import httpx
+
     from app.services.container_manager import ensure_sandbox
 
     async with session_factory() as db:
@@ -625,7 +689,8 @@ async def _execute_lab_cron_cmd(
                 else:
                     logger.exception(
                         "Lab CRON cmd '%s' in lab %s: ensure_sandbox failed",
-                        cron_name, lab_id,
+                        cron_name,
+                        lab_id,
                     )
                     await _record(
                         f"[CRON-JOB:{cron_name}] direct_cmd_exec failed: "
@@ -652,7 +717,9 @@ async def _execute_lab_cron_cmd(
         except httpx.HTTPError as exc:
             logger.warning(
                 "Lab CRON cmd '%s' in lab %s: sandbox HTTP error: %s",
-                cron_name, lab_id, exc,
+                cron_name,
+                lab_id,
+                exc,
             )
             await _record(
                 f"[CRON-JOB:{cron_name}] direct_cmd_exec failed: sandbox "
@@ -662,7 +729,8 @@ async def _execute_lab_cron_cmd(
         except Exception:
             logger.exception(
                 "Lab CRON cmd '%s' in lab %s: unexpected error contacting sandbox",
-                cron_name, lab_id,
+                cron_name,
+                lab_id,
             )
             await _record(
                 f"[CRON-JOB:{cron_name}] direct_cmd_exec failed: unexpected "
@@ -675,26 +743,29 @@ async def _execute_lab_cron_cmd(
         if len(output) > max_output_kb * 1024:
             output = output[: max_output_kb * 1024] + "\n... [truncated]"
         status_tag = "success" if success else "failed"
-        await _record(
-            f"[CRON-JOB:{cron_name}] result ({status_tag}):\n```\n{output}\n```"
-        )
+        await _record(f"[CRON-JOB:{cron_name}] result ({status_tag}):\n```\n{output}\n```")
 
-        await _broadcast_lab_event(lab.id, "lab.cron_job.result", {
-            "cron_name": cron_name,
-            "success": success,
-        })
+        await _broadcast_lab_event(
+            lab.id,
+            "lab.cron_job.result",
+            {
+                "cron_name": cron_name,
+                "success": success,
+            },
+        )
 
         logger.info(
             "Lab CRON cmd '%s' in lab '%s' completed (%s)",
-            cron_name, lab.name, status_tag,
+            cron_name,
+            lab.name,
+            status_tag,
         )
 
 
 async def _recover_stuck_labs(db: AsyncSession, session_factory: async_sessionmaker) -> None:
     """After a restart, labs stuck in 'running' have no runner. Reset to paused."""
-    result = await db.execute(
-        select(Lab).where(Lab.status == "running")
-    )
+    now = datetime.now(timezone.utc)
+    result = await db.execute(select(Lab).where(Lab.status == "running"))
     labs = result.scalars().all()
     for lab in labs:
         runner = get_runner(lab.id)
@@ -720,9 +791,7 @@ async def _recover_stuck_labs(db: AsyncSession, session_factory: async_sessionma
             await db.commit()
 
 
-async def _check_library_agent_crons(
-    db: AsyncSession, session_factory: async_sessionmaker
-) -> None:
+async def _check_library_agent_crons(db: AsyncSession, session_factory: async_sessionmaker) -> None:
     """Fire cron-scheduled consumer-app library agents.
 
     Each tick spawns an ephemeral single-agent lab via
@@ -771,20 +840,20 @@ async def _check_library_agent_crons(
                 continue
 
             tick_iso = prev_trigger.replace(microsecond=0).isoformat()
-            run_tag = (
-                f"app:{app_id}:agent_run:{short_name}:cron:{tick_iso}"
-            )
+            run_tag = f"app:{app_id}:agent_run:{short_name}:cron:{tick_iso}"
 
             # Deduplicate: skip if we already spawned a lab for this tick.
             from sqlalchemy import text as sql_text
 
             existing = (
-                await db.execute(
-                    select(Lab)
-                    .where(sql_text("acl->>'tag' = :t"))
-                    .params(t=run_tag)
+                (
+                    await db.execute(
+                        select(Lab).where(sql_text("acl->>'tag' = :t")).params(t=run_tag)
+                    )
                 )
-            ).scalars().first()
+                .scalars()
+                .first()
+            )
             if existing:
                 continue
 
@@ -805,7 +874,7 @@ async def _check_library_agent_crons(
             from app.schemas.orchestrator import RagAccessRef
 
             rag_access: list[RagAccessRef] = []
-            for entry in (agent.callable_agents or []):
+            for entry in agent.callable_agents or []:
                 if isinstance(entry, dict) and "__app_meta__" in entry:
                     raw = entry["__app_meta__"].get("rag_access") or []
                     rag_access = [RagAccessRef(**r) for r in raw]
@@ -821,19 +890,21 @@ async def _check_library_agent_crons(
 
             # Strip the sentinel from the cloned LabAgent.callable_agents.
             la_rows = (
-                await db.execute(select(LabAgent).where(LabAgent.lab_id == lab.id))
-            ).scalars().all()
+                (await db.execute(select(LabAgent).where(LabAgent.lab_id == lab.id)))
+                .scalars()
+                .all()
+            )
             if la_rows:
                 cleaned = [
-                    e for e in (la_rows[0].callable_agents or [])
+                    e
+                    for e in (la_rows[0].callable_agents or [])
                     if not (isinstance(e, dict) and "__app_meta__" in e)
                 ]
                 await LabAgentRepository(db).update(la_rows[0].id, callable_agents=cleaned)
 
             # Inject cron_instruction so the runner picks it up.
             instruction = (
-                agent.cron_instruction
-                or f"Execute your scheduled task (agent: {short_name})"
+                agent.cron_instruction or f"Execute your scheduled task (agent: {short_name})"
             )
             await LabMessageRepository(db).create(
                 lab_id=lab.id,
@@ -846,7 +917,10 @@ async def _check_library_agent_crons(
 
             logger.info(
                 "[lib-agent-cron] app=%s agent=%s lab=%s tick=%s",
-                app_id, short_name, lab.id, tick_iso,
+                app_id,
+                short_name,
+                lab.id,
+                tick_iso,
             )
 
             # Spawn the runner in background — the lab is left in DB for
@@ -856,7 +930,9 @@ async def _check_library_agent_crons(
         except Exception as e:
             logger.error(
                 "[lib-agent-cron] failed for agent '%s': %s",
-                agent.name, e, exc_info=True,
+                agent.name,
+                e,
+                exc_info=True,
             )
 
 

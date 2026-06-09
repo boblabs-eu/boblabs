@@ -12,9 +12,6 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from fastapi import HTTPException
-from sqlalchemy import select
-
 from app.models.orchestrator import Lab
 from app.services.authorization import (
     Permission,
@@ -22,7 +19,8 @@ from app.services.authorization import (
     filter_query_by_access,
     get_default_acl,
 )
-
+from fastapi import HTTPException
+from sqlalchemy import select
 
 # ── check_permission — admin bypass ────────────────────────────────
 
@@ -141,10 +139,12 @@ def test_get_default_acl_shape():
 @pytest.mark.asyncio
 async def test_filter_query_by_access_admin_sees_all(db, admin_user, regular_user):
     # Create two labs owned by different non-admin users.
-    db.add_all([
-        Lab(id=uuid.uuid4(), name="a", acl={"owner": "u1@x", "editors": [], "viewers": []}),
-        Lab(id=uuid.uuid4(), name="b", acl={"owner": "u2@x", "editors": [], "viewers": []}),
-    ])
+    db.add_all(
+        [
+            Lab(id=uuid.uuid4(), name="a", acl={"owner": "u1@x", "editors": [], "viewers": []}),
+            Lab(id=uuid.uuid4(), name="b", acl={"owner": "u2@x", "editors": [], "viewers": []}),
+        ]
+    )
     await db.commit()
 
     q = filter_query_by_access(select(Lab), Lab, admin_user)
@@ -154,12 +154,20 @@ async def test_filter_query_by_access_admin_sees_all(db, admin_user, regular_use
 
 @pytest.mark.asyncio
 async def test_filter_query_by_access_user_sees_owned_only(db, regular_user):
-    db.add_all([
-        Lab(id=uuid.uuid4(), name="mine",
-            acl={"owner": regular_user["sub"], "editors": [], "viewers": []}),
-        Lab(id=uuid.uuid4(), name="not-mine",
-            acl={"owner": "other@x", "editors": [], "viewers": []}),
-    ])
+    db.add_all(
+        [
+            Lab(
+                id=uuid.uuid4(),
+                name="mine",
+                acl={"owner": regular_user["sub"], "editors": [], "viewers": []},
+            ),
+            Lab(
+                id=uuid.uuid4(),
+                name="not-mine",
+                acl={"owner": "other@x", "editors": [], "viewers": []},
+            ),
+        ]
+    )
     await db.commit()
 
     q = filter_query_by_access(select(Lab), Lab, regular_user)
@@ -170,12 +178,20 @@ async def test_filter_query_by_access_user_sees_owned_only(db, regular_user):
 
 @pytest.mark.asyncio
 async def test_filter_query_by_access_user_sees_editor_rows(db, regular_user):
-    db.add_all([
-        Lab(id=uuid.uuid4(), name="editor-on-this",
-            acl={"owner": "other@x", "editors": [regular_user["sub"]], "viewers": []}),
-        Lab(id=uuid.uuid4(), name="not-mine",
-            acl={"owner": "other@x", "editors": [], "viewers": []}),
-    ])
+    db.add_all(
+        [
+            Lab(
+                id=uuid.uuid4(),
+                name="editor-on-this",
+                acl={"owner": "other@x", "editors": [regular_user["sub"]], "viewers": []},
+            ),
+            Lab(
+                id=uuid.uuid4(),
+                name="not-mine",
+                acl={"owner": "other@x", "editors": [], "viewers": []},
+            ),
+        ]
+    )
     await db.commit()
 
     q = filter_query_by_access(select(Lab), Lab, regular_user)
@@ -186,12 +202,20 @@ async def test_filter_query_by_access_user_sees_editor_rows(db, regular_user):
 
 @pytest.mark.asyncio
 async def test_filter_query_by_access_user_sees_viewer_rows(db, viewer_user):
-    db.add_all([
-        Lab(id=uuid.uuid4(), name="viewer-on-this",
-            acl={"owner": "other@x", "editors": [], "viewers": [viewer_user["sub"]]}),
-        Lab(id=uuid.uuid4(), name="not-mine",
-            acl={"owner": "other@x", "editors": [], "viewers": []}),
-    ])
+    db.add_all(
+        [
+            Lab(
+                id=uuid.uuid4(),
+                name="viewer-on-this",
+                acl={"owner": "other@x", "editors": [], "viewers": [viewer_user["sub"]]},
+            ),
+            Lab(
+                id=uuid.uuid4(),
+                name="not-mine",
+                acl={"owner": "other@x", "editors": [], "viewers": []},
+            ),
+        ]
+    )
     await db.commit()
 
     q = filter_query_by_access(select(Lab), Lab, viewer_user)
@@ -202,8 +226,13 @@ async def test_filter_query_by_access_user_sees_viewer_rows(db, viewer_user):
 
 @pytest.mark.asyncio
 async def test_filter_query_by_access_returns_empty_for_outsider(db, other_user):
-    db.add(Lab(id=uuid.uuid4(), name="not-yours",
-               acl={"owner": "x@x", "editors": ["y@x"], "viewers": ["z@x"]}))
+    db.add(
+        Lab(
+            id=uuid.uuid4(),
+            name="not-yours",
+            acl={"owner": "x@x", "editors": ["y@x"], "viewers": ["z@x"]},
+        )
+    )
     await db.commit()
     q = filter_query_by_access(select(Lab), Lab, other_user)
     rows = (await db.execute(q)).scalars().all()

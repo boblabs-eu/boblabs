@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import mimetypes
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
@@ -117,14 +116,14 @@ TOOLS = {
 
 # ── Helpers ───────────────────────────────────
 
+
 async def _get_postiz_config(executor: ToolExecutor) -> dict | None:
     """Load Postiz API config from ToolConfig table."""
     from sqlalchemy import select
+
     from app.models.orchestrator import ToolConfig
 
-    result = await executor.db.execute(
-        select(ToolConfig).where(ToolConfig.tool_type == "postiz")
-    )
+    result = await executor.db.execute(select(ToolConfig).where(ToolConfig.tool_type == "postiz"))
     tc = result.scalar_one_or_none()
     if not tc or not tc.config:
         return None
@@ -179,6 +178,7 @@ async def _postiz_request(
 
 # ── Main dispatcher ──────────────────────────
 
+
 async def postiz(executor: ToolExecutor, args: dict) -> dict:
     """Postiz tool: social media scheduling via Postiz Public API."""
     action = (args.get("action") or "").strip().lower()
@@ -195,13 +195,17 @@ async def postiz(executor: ToolExecutor, args: dict) -> dict:
 
     cfg = await _get_postiz_config(executor)
     if not cfg:
-        return _fail("Postiz not configured. Ask the admin to set up API URL and key in Settings → Tool Configs → Postiz.")
+        return _fail(
+            "Postiz not configured. Ask the admin to set up API URL and key in Settings → Tool Configs → Postiz."
+        )
 
     api_url = (cfg.get("api_url") or "").rstrip("/")
     api_key = cfg.get("api_key") or ""
 
     if not api_url or not api_key:
-        return _fail("Postiz config incomplete — need api_url and api_key in Settings → Tool Configs → Postiz.")
+        return _fail(
+            "Postiz config incomplete — need api_url and api_key in Settings → Tool Configs → Postiz."
+        )
 
     base = f"{api_url}/public/v1"
 
@@ -227,9 +231,8 @@ async def postiz(executor: ToolExecutor, args: dict) -> dict:
 
 # ── Actions ───────────────────────────────────
 
-async def _list_integrations(
-    executor: ToolExecutor, args: dict, base: str, api_key: str
-) -> dict:
+
+async def _list_integrations(executor: ToolExecutor, args: dict, base: str, api_key: str) -> dict:
     ok, data = await _postiz_request("GET", f"{base}/integrations", api_key)
     if not ok:
         return _fail(str(data))
@@ -240,15 +243,15 @@ async def _list_integrations(
     lines = [f"Found {len(data)} integration(s):\n"]
     for i, intg in enumerate(data, 1):
         name = intg.get("name", "?")
-        provider = intg.get("providerIdentifier") or intg.get("identifier") or intg.get("provider", "?")
+        provider = (
+            intg.get("providerIdentifier") or intg.get("identifier") or intg.get("provider", "?")
+        )
         intg_id = intg.get("id", "?")
         lines.append(f"{i}. {name} ({provider}) — id: {intg_id}")
     return _ok("\n".join(lines))
 
 
-async def _get_settings(
-    executor: ToolExecutor, args: dict, base: str, api_key: str
-) -> dict:
+async def _get_settings(executor: ToolExecutor, args: dict, base: str, api_key: str) -> dict:
     integration_id = (args.get("integration_ids") or "").strip()
     if not integration_id:
         return _fail("get_settings requires 'integration_ids' (single integration ID)")
@@ -256,16 +259,16 @@ async def _get_settings(
     # Take the first ID if multiple provided
     integration_id = integration_id.split(",")[0].strip()
 
-    ok, data = await _postiz_request("GET", f"{base}/integration-settings/{integration_id}", api_key)
+    ok, data = await _postiz_request(
+        "GET", f"{base}/integration-settings/{integration_id}", api_key
+    )
     if not ok:
         return _fail(str(data))
 
     return _ok(json.dumps(data, indent=2))
 
 
-async def _trigger_tool(
-    executor: ToolExecutor, args: dict, base: str, api_key: str
-) -> dict:
+async def _trigger_tool(executor: ToolExecutor, args: dict, base: str, api_key: str) -> dict:
     integration_id = (args.get("integration_ids") or "").strip()
     if not integration_id:
         return _fail("trigger_tool requires 'integration_ids' (single integration ID)")
@@ -273,7 +276,9 @@ async def _trigger_tool(
 
     method_name = (args.get("method_name") or "").strip()
     if not method_name:
-        return _fail("trigger_tool requires 'method_name' (e.g. getFlairs, getPlaylists, getChannels)")
+        return _fail(
+            "trigger_tool requires 'method_name' (e.g. getFlairs, getPlaylists, getChannels)"
+        )
 
     method_data: dict = {}
     raw_data = (args.get("method_data") or "").strip()
@@ -295,16 +300,16 @@ async def _trigger_tool(
     return _ok(json.dumps(data, indent=2))
 
 
-async def _create_post(
-    executor: ToolExecutor, args: dict, base: str, api_key: str
-) -> dict:
+async def _create_post(executor: ToolExecutor, args: dict, base: str, api_key: str) -> dict:
     integration_ids = (args.get("integration_ids") or "").strip()
     if not integration_ids:
         return _fail("create_post requires 'integration_ids' (comma-separated)")
 
     date = (args.get("date") or "").strip()
     if not date:
-        return _fail("create_post requires 'date' (ISO 8601 schedule date, e.g. 2024-12-31T12:00:00Z)")
+        return _fail(
+            "create_post requires 'date' (ISO 8601 schedule date, e.g. 2024-12-31T12:00:00Z)"
+        )
 
     content_raw = (args.get("content") or "").strip()
     if not content_raw:
@@ -321,7 +326,9 @@ async def _create_post(
     except (json.JSONDecodeError, TypeError):
         content_list = [content_raw]
 
-    media_list = [u.strip() for u in media_urls_raw.split(",") if u.strip()] if media_urls_raw else []
+    media_list = (
+        [u.strip() for u in media_urls_raw.split(",") if u.strip()] if media_urls_raw else []
+    )
 
     # Build post body
     ids = [i.strip() for i in integration_ids.split(",") if i.strip()]
@@ -353,12 +360,12 @@ async def _create_post(
         return _fail(str(data))
 
     post_id = data.get("id") or data.get("postId") or "unknown"
-    return _ok(f"Post created (id: {post_id}, type: {post_type}, date: {date}, integrations: {', '.join(ids)})")
+    return _ok(
+        f"Post created (id: {post_id}, type: {post_type}, date: {date}, integrations: {', '.join(ids)})"
+    )
 
 
-async def _list_posts(
-    executor: ToolExecutor, args: dict, base: str, api_key: str
-) -> dict:
+async def _list_posts(executor: ToolExecutor, args: dict, base: str, api_key: str) -> dict:
     params: dict = {}
     if args.get("start_date"):
         params["startDate"] = args["start_date"]
@@ -390,9 +397,7 @@ async def _list_posts(
     return _ok("\n".join(lines))
 
 
-async def _delete_post(
-    executor: ToolExecutor, args: dict, base: str, api_key: str
-) -> dict:
+async def _delete_post(executor: ToolExecutor, args: dict, base: str, api_key: str) -> dict:
     post_id = (args.get("post_id") or "").strip()
     if not post_id:
         return _fail("delete_post requires 'post_id'")
@@ -404,9 +409,7 @@ async def _delete_post(
     return _ok(f"Post {post_id} deleted.")
 
 
-async def _change_status(
-    executor: ToolExecutor, args: dict, base: str, api_key: str
-) -> dict:
+async def _change_status(executor: ToolExecutor, args: dict, base: str, api_key: str) -> dict:
     post_id = (args.get("post_id") or "").strip()
     if not post_id:
         return _fail("change_status requires 'post_id'")
@@ -424,9 +427,7 @@ async def _change_status(
     return _ok(f"Post {post_id} status changed to '{status}'.")
 
 
-async def _upload_media(
-    executor: ToolExecutor, args: dict, base: str, api_key: str
-) -> dict:
+async def _upload_media(executor: ToolExecutor, args: dict, base: str, api_key: str) -> dict:
     file_path = (args.get("file_path") or "").strip()
     if not file_path:
         return _fail("upload_media requires 'file_path' (workspace-relative path)")
@@ -483,12 +484,12 @@ async def _upload_media(
         return _fail(f"Upload error: {e}")
 
     url = data.get("path") or data.get("url") or json.dumps(data)
-    return _ok(f"Uploaded: {file_path}\nURL: {url}\nUse this URL in create_post media_urls parameter.")
+    return _ok(
+        f"Uploaded: {file_path}\nURL: {url}\nUse this URL in create_post media_urls parameter."
+    )
 
 
-async def _get_analytics(
-    executor: ToolExecutor, args: dict, base: str, api_key: str
-) -> dict:
+async def _get_analytics(executor: ToolExecutor, args: dict, base: str, api_key: str) -> dict:
     integration_id = (args.get("integration_ids") or "").strip()
     if not integration_id:
         return _fail("get_analytics requires 'integration_ids' (single integration ID)")
@@ -505,18 +506,14 @@ async def _get_analytics(
     return _ok(json.dumps(data, indent=2))
 
 
-async def _get_post_analytics(
-    executor: ToolExecutor, args: dict, base: str, api_key: str
-) -> dict:
+async def _get_post_analytics(executor: ToolExecutor, args: dict, base: str, api_key: str) -> dict:
     post_id = (args.get("post_id") or "").strip()
     if not post_id:
         return _fail("get_post_analytics requires 'post_id'")
 
     days = int(args.get("days", 7))
 
-    ok, data = await _postiz_request(
-        "GET", f"{base}/analytics/post/{post_id}?date={days}", api_key
-    )
+    ok, data = await _postiz_request("GET", f"{base}/analytics/post/{post_id}?date={days}", api_key)
     if not ok:
         return _fail(str(data))
 

@@ -11,7 +11,6 @@ import json
 import logging
 import os
 from decimal import Decimal
-from typing import Any
 
 import httpx
 from eth_account import Account
@@ -122,26 +121,123 @@ def assert_swap_router_allowed(chain: str, tx_to: str) -> None:
             "CHAIN_CONFIG['{chain}'] and to _SWAP_ROUTER_KEYS."
         )
 
+
 # ── Minimal ABIs ─────────────────────────────────────────────────────────
 
 ERC20_ABI = [
-    {"constant": True, "inputs": [], "name": "symbol", "outputs": [{"name": "", "type": "string"}], "type": "function"},
-    {"constant": True, "inputs": [], "name": "decimals", "outputs": [{"name": "", "type": "uint8"}], "type": "function"},
-    {"constant": True, "inputs": [{"name": "owner", "type": "address"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "type": "function"},
-    {"constant": True, "inputs": [{"name": "owner", "type": "address"}, {"name": "spender", "type": "address"}], "name": "allowance", "outputs": [{"name": "", "type": "uint256"}], "type": "function"},
-    {"constant": False, "inputs": [{"name": "spender", "type": "address"}, {"name": "amount", "type": "uint256"}], "name": "approve", "outputs": [{"name": "", "type": "bool"}], "type": "function"},
-    {"constant": False, "inputs": [{"name": "to", "type": "address"}, {"name": "amount", "type": "uint256"}], "name": "transfer", "outputs": [{"name": "", "type": "bool"}], "type": "function"},
+    {
+        "constant": True,
+        "inputs": [],
+        "name": "symbol",
+        "outputs": [{"name": "", "type": "string"}],
+        "type": "function",
+    },
+    {
+        "constant": True,
+        "inputs": [],
+        "name": "decimals",
+        "outputs": [{"name": "", "type": "uint8"}],
+        "type": "function",
+    },
+    {
+        "constant": True,
+        "inputs": [{"name": "owner", "type": "address"}],
+        "name": "balanceOf",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "type": "function",
+    },
+    {
+        "constant": True,
+        "inputs": [{"name": "owner", "type": "address"}, {"name": "spender", "type": "address"}],
+        "name": "allowance",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "type": "function",
+    },
+    {
+        "constant": False,
+        "inputs": [{"name": "spender", "type": "address"}, {"name": "amount", "type": "uint256"}],
+        "name": "approve",
+        "outputs": [{"name": "", "type": "bool"}],
+        "type": "function",
+    },
+    {
+        "constant": False,
+        "inputs": [{"name": "to", "type": "address"}, {"name": "amount", "type": "uint256"}],
+        "name": "transfer",
+        "outputs": [{"name": "", "type": "bool"}],
+        "type": "function",
+    },
 ]
 
 UNISWAP_V2_ROUTER_ABI = [
-    {"inputs": [{"name": "amountIn", "type": "uint256"}, {"name": "path", "type": "address[]"}], "name": "getAmountsOut", "outputs": [{"name": "amounts", "type": "uint256[]"}], "stateMutability": "view", "type": "function"},
-    {"inputs": [{"name": "amountIn", "type": "uint256"}, {"name": "amountOutMin", "type": "uint256"}, {"name": "path", "type": "address[]"}, {"name": "to", "type": "address"}, {"name": "deadline", "type": "uint256"}], "name": "swapExactTokensForTokens", "outputs": [{"name": "amounts", "type": "uint256[]"}], "type": "function"},
-    {"inputs": [{"name": "amountOutMin", "type": "uint256"}, {"name": "path", "type": "address[]"}, {"name": "to", "type": "address"}, {"name": "deadline", "type": "uint256"}], "name": "swapExactETHForTokens", "outputs": [{"name": "amounts", "type": "uint256[]"}], "type": "function", "stateMutability": "payable"},
-    {"inputs": [{"name": "amountIn", "type": "uint256"}, {"name": "amountOutMin", "type": "uint256"}, {"name": "path", "type": "address[]"}, {"name": "to", "type": "address"}, {"name": "deadline", "type": "uint256"}], "name": "swapExactTokensForETH", "outputs": [{"name": "amounts", "type": "uint256[]"}], "type": "function"},
+    {
+        "inputs": [{"name": "amountIn", "type": "uint256"}, {"name": "path", "type": "address[]"}],
+        "name": "getAmountsOut",
+        "outputs": [{"name": "amounts", "type": "uint256[]"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {"name": "amountIn", "type": "uint256"},
+            {"name": "amountOutMin", "type": "uint256"},
+            {"name": "path", "type": "address[]"},
+            {"name": "to", "type": "address"},
+            {"name": "deadline", "type": "uint256"},
+        ],
+        "name": "swapExactTokensForTokens",
+        "outputs": [{"name": "amounts", "type": "uint256[]"}],
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {"name": "amountOutMin", "type": "uint256"},
+            {"name": "path", "type": "address[]"},
+            {"name": "to", "type": "address"},
+            {"name": "deadline", "type": "uint256"},
+        ],
+        "name": "swapExactETHForTokens",
+        "outputs": [{"name": "amounts", "type": "uint256[]"}],
+        "type": "function",
+        "stateMutability": "payable",
+    },
+    {
+        "inputs": [
+            {"name": "amountIn", "type": "uint256"},
+            {"name": "amountOutMin", "type": "uint256"},
+            {"name": "path", "type": "address[]"},
+            {"name": "to", "type": "address"},
+            {"name": "deadline", "type": "uint256"},
+        ],
+        "name": "swapExactTokensForETH",
+        "outputs": [{"name": "amounts", "type": "uint256[]"}],
+        "type": "function",
+    },
 ]
 
 UNISWAP_V3_ROUTER_ABI = [
-    {"inputs": [{"components": [{"name": "tokenIn", "type": "address"}, {"name": "tokenOut", "type": "address"}, {"name": "fee", "type": "uint24"}, {"name": "recipient", "type": "address"}, {"name": "deadline", "type": "uint256"}, {"name": "amountIn", "type": "uint256"}, {"name": "amountOutMinimum", "type": "uint256"}, {"name": "sqrtPriceLimitX96", "type": "uint160"}], "name": "params", "type": "tuple"}], "name": "exactInputSingle", "outputs": [{"name": "amountOut", "type": "uint256"}], "stateMutability": "payable", "type": "function"},
+    {
+        "inputs": [
+            {
+                "components": [
+                    {"name": "tokenIn", "type": "address"},
+                    {"name": "tokenOut", "type": "address"},
+                    {"name": "fee", "type": "uint24"},
+                    {"name": "recipient", "type": "address"},
+                    {"name": "deadline", "type": "uint256"},
+                    {"name": "amountIn", "type": "uint256"},
+                    {"name": "amountOutMinimum", "type": "uint256"},
+                    {"name": "sqrtPriceLimitX96", "type": "uint160"},
+                ],
+                "name": "params",
+                "type": "tuple",
+            }
+        ],
+        "name": "exactInputSingle",
+        "outputs": [{"name": "amountOut", "type": "uint256"}],
+        "stateMutability": "payable",
+        "type": "function",
+    },
 ]
 
 # ── Hot wallet management ────────────────────────────────────────────────
@@ -185,8 +281,11 @@ def _load_hot_wallets() -> None:
             acct = Account.from_key(key)
             _HOT_WALLETS[acct.address.lower()] = acct
         if _HOT_WALLETS:
-            logger.info("Loaded %d trading wallet(s): %s", len(_HOT_WALLETS),
-                        ", ".join(a[:10] + "…" for a in _HOT_WALLETS))
+            logger.info(
+                "Loaded %d trading wallet(s): %s",
+                len(_HOT_WALLETS),
+                ", ".join(a[:10] + "…" for a in _HOT_WALLETS),
+            )
     except (json.JSONDecodeError, Exception) as e:
         logger.error("Failed to load TRADING_PRIVATE_KEYS: %s", e)
 
@@ -237,6 +336,7 @@ def _wallet_lock(address: str) -> asyncio.Lock:
 
 # ── Web3 helpers ─────────────────────────────────────────────────────────
 
+
 def get_w3(chain: str) -> Web3:
     """Get a Web3 instance for the given chain."""
     config = CHAIN_CONFIG.get(chain)
@@ -276,10 +376,13 @@ async def get_token_balance(chain: str, address: str, token_address: str) -> dic
     raw_balance = contract.functions.balanceOf(Web3.to_checksum_address(address)).call()
     decimals = contract.functions.decimals().call()
     symbol = contract.functions.symbol().call()
-    balance = float(Decimal(raw_balance) / Decimal(10 ** decimals))
+    balance = float(Decimal(raw_balance) / Decimal(10**decimals))
     return {
-        "chain": chain, "token": token_address, "symbol": symbol,
-        "balance": round(balance, 8), "decimals": decimals,
+        "chain": chain,
+        "token": token_address,
+        "symbol": symbol,
+        "balance": round(balance, 8),
+        "decimals": decimals,
     }
 
 
@@ -297,13 +400,18 @@ async def get_token_allowance(chain: str, owner: str, spender: str, token_addres
     decimals = contract.functions.decimals().call()
     symbol = contract.functions.symbol().call()
     return {
-        "chain": chain, "token": token_address, "symbol": symbol, "owner": owner,
-        "spender": spender, "allowance_raw": str(allowance),
-        "allowance": float(Decimal(allowance) / Decimal(10 ** decimals)),
+        "chain": chain,
+        "token": token_address,
+        "symbol": symbol,
+        "owner": owner,
+        "spender": spender,
+        "allowance_raw": str(allowance),
+        "allowance": float(Decimal(allowance) / Decimal(10**decimals)),
     }
 
 
 # ── Transaction building & signing ──────────────────────────────────────
+
 
 async def estimate_and_send(
     chain: str,
@@ -385,8 +493,9 @@ async def estimate_and_send(
     }
 
 
-async def send_native(chain: str, wallet_address: str, to: str, amount_ether: float,
-                       gas_multiplier: float = 1.1) -> dict:
+async def send_native(
+    chain: str, wallet_address: str, to: str, amount_ether: float, gas_multiplier: float = 1.1
+) -> dict:
     """Send native ETH/BNB."""
     w3 = get_w3(chain)
     tx_dict = {
@@ -397,8 +506,14 @@ async def send_native(chain: str, wallet_address: str, to: str, amount_ether: fl
     return await estimate_and_send(chain, wallet_address, tx_dict, gas_multiplier, simulate=False)
 
 
-async def send_token(chain: str, wallet_address: str, token_address: str,
-                      to: str, amount: float, gas_multiplier: float = 1.1) -> dict:
+async def send_token(
+    chain: str,
+    wallet_address: str,
+    token_address: str,
+    to: str,
+    amount: float,
+    gas_multiplier: float = 1.1,
+) -> dict:
     """Send ERC-20 tokens."""
     w3 = get_w3(chain)
     contract = w3.eth.contract(
@@ -406,19 +521,27 @@ async def send_token(chain: str, wallet_address: str, token_address: str,
         abi=ERC20_ABI,
     )
     decimals = contract.functions.decimals().call()
-    raw_amount = int(Decimal(str(amount)) * Decimal(10 ** decimals))
+    raw_amount = int(Decimal(str(amount)) * Decimal(10**decimals))
 
     tx_dict = contract.functions.transfer(
-        Web3.to_checksum_address(to), raw_amount,
-    ).build_transaction({
-        "from": Web3.to_checksum_address(wallet_address),
-    })
+        Web3.to_checksum_address(to),
+        raw_amount,
+    ).build_transaction(
+        {
+            "from": Web3.to_checksum_address(wallet_address),
+        }
+    )
     return await estimate_and_send(chain, wallet_address, tx_dict, gas_multiplier)
 
 
-async def approve_token(chain: str, wallet_address: str, token_address: str,
-                         spender: str, amount: float | None = None,
-                         gas_multiplier: float = 1.1) -> dict:
+async def approve_token(
+    chain: str,
+    wallet_address: str,
+    token_address: str,
+    spender: str,
+    amount: float | None = None,
+    gas_multiplier: float = 1.1,
+) -> dict:
     """Approve ERC-20 spending. amount=None means unlimited."""
     w3 = get_w3(chain)
     contract = w3.eth.contract(
@@ -429,13 +552,16 @@ async def approve_token(chain: str, wallet_address: str, token_address: str,
         raw_amount = 2**256 - 1  # Max uint256
     else:
         decimals = contract.functions.decimals().call()
-        raw_amount = int(Decimal(str(amount)) * Decimal(10 ** decimals))
+        raw_amount = int(Decimal(str(amount)) * Decimal(10**decimals))
 
     tx_dict = contract.functions.approve(
-        Web3.to_checksum_address(spender), raw_amount,
-    ).build_transaction({
-        "from": Web3.to_checksum_address(wallet_address),
-    })
+        Web3.to_checksum_address(spender),
+        raw_amount,
+    ).build_transaction(
+        {
+            "from": Web3.to_checksum_address(wallet_address),
+        }
+    )
     return await estimate_and_send(chain, wallet_address, tx_dict, gas_multiplier)
 
 
@@ -512,6 +638,7 @@ async def build_swap_tx(
 
 # ── Direct DEX router calls ─────────────────────────────────────────────
 
+
 def _get_v2_router(chain: str) -> tuple[str | None, str]:
     """Get the V2 router address for a chain. Returns (router_addr, router_name)."""
     config = CHAIN_CONFIG.get(chain, {})
@@ -579,30 +706,48 @@ async def execute_v2_swap(
     if is_from_native:
         path = [Web3.to_checksum_address(weth), Web3.to_checksum_address(to_token)]
         tx_dict = router.functions.swapExactETHForTokens(
-            min_amount_out, path, checksum_wallet, deadline,
-        ).build_transaction({
-            "from": checksum_wallet,
-            "value": amount_raw,
-        })
+            min_amount_out,
+            path,
+            checksum_wallet,
+            deadline,
+        ).build_transaction(
+            {
+                "from": checksum_wallet,
+                "value": amount_raw,
+            }
+        )
     elif is_to_native:
         path = [Web3.to_checksum_address(from_token), Web3.to_checksum_address(weth)]
         tx_dict = router.functions.swapExactTokensForETH(
-            amount_raw, min_amount_out, path, checksum_wallet, deadline,
-        ).build_transaction({
-            "from": checksum_wallet,
-        })
+            amount_raw,
+            min_amount_out,
+            path,
+            checksum_wallet,
+            deadline,
+        ).build_transaction(
+            {
+                "from": checksum_wallet,
+            }
+        )
     else:
         path = [Web3.to_checksum_address(from_token), Web3.to_checksum_address(to_token)]
         tx_dict = router.functions.swapExactTokensForTokens(
-            amount_raw, min_amount_out, path, checksum_wallet, deadline,
-        ).build_transaction({
-            "from": checksum_wallet,
-        })
+            amount_raw,
+            min_amount_out,
+            path,
+            checksum_wallet,
+            deadline,
+        ).build_transaction(
+            {
+                "from": checksum_wallet,
+            }
+        )
 
     return await estimate_and_send(chain, wallet_address, tx_dict, gas_multiplier)
 
 
 # ── USD Value Estimation ─────────────────────────────────────────────────
+
 
 async def estimate_usd_value(chain: str, token_address: str, amount_raw: int) -> float | None:
     """Estimate USD value of a token amount using Blockscout exchange rate.
@@ -624,7 +769,7 @@ async def estimate_usd_value(chain: str, token_address: str, amount_raw: int) ->
                     data = resp.json()
                     price = float(data.get("coin_price", 0))
                     decimals = config["decimals"]
-                    amount = float(Decimal(amount_raw) / Decimal(10 ** decimals))
+                    amount = float(Decimal(amount_raw) / Decimal(10**decimals))
                     return round(amount * price, 2)
         except Exception:
             pass
@@ -639,7 +784,7 @@ async def estimate_usd_value(chain: str, token_address: str, amount_raw: int) ->
                 rate = data.get("exchange_rate")
                 if rate:
                     decimals = int(data.get("decimals", 18))
-                    amount = float(Decimal(amount_raw) / Decimal(10 ** decimals))
+                    amount = float(Decimal(amount_raw) / Decimal(10**decimals))
                     return round(amount * float(rate), 2)
     except Exception:
         pass

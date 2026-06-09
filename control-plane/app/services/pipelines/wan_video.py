@@ -87,20 +87,24 @@ class WanVideoPipeline(MediaPipeline):
 
         out["num_frames"] = _clamp(
             int(params.get("num_frames", DEFAULT_PARAMS["num_frames"])),
-            9, 257,
+            9,
+            257,
         )
         out["num_inference_steps"] = _clamp(
             int(params.get("num_inference_steps", DEFAULT_PARAMS["num_inference_steps"])),
-            1, 100,
+            1,
+            100,
         )
         out["guidance_scale"] = _clamp(
             float(params.get("guidance_scale", DEFAULT_PARAMS["guidance_scale"])),
-            1.0, 20.0,
+            1.0,
+            20.0,
         )
         out["seed"] = int(params.get("seed", DEFAULT_PARAMS["seed"]))
         out["fps"] = _clamp(
             int(params.get("fps", DEFAULT_PARAMS["fps"])),
-            1, 60,
+            1,
+            60,
         )
 
         return out
@@ -128,8 +132,14 @@ class WanVideoPipeline(MediaPipeline):
     def build_tool_params(self, prompt: str, extra: dict) -> dict:
         params: dict = {"prompt": prompt}
         for key in (
-            "width", "height", "num_frames", "num_inference_steps",
-            "guidance_scale", "seed", "fps", "negative_prompt",
+            "width",
+            "height",
+            "num_frames",
+            "num_inference_steps",
+            "guidance_scale",
+            "seed",
+            "fps",
+            "negative_prompt",
         ):
             if key in extra:
                 params[key] = extra[key]

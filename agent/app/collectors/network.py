@@ -23,11 +23,13 @@ def get_network_interfaces() -> dict:
     for iface, addr_list in addrs.items():
         result[iface] = []
         for addr in addr_list:
-            result[iface].append({
-                "family": str(addr.family),
-                "address": addr.address,
-                "netmask": addr.netmask,
-            })
+            result[iface].append(
+                {
+                    "family": str(addr.family),
+                    "address": addr.address,
+                    "netmask": addr.netmask,
+                }
+            )
     return result
 
 

@@ -86,14 +86,14 @@ TOOLS = {
 
 # ── Helpers ───────────────────────────────────────
 
+
 async def _load_accounts(executor: "ToolExecutor", platform: str) -> list[dict]:
     from sqlalchemy import select
+
     from app.models.orchestrator import ToolConfig
 
     tool_type = f"social_{platform}"
-    result = await executor.db.execute(
-        select(ToolConfig).where(ToolConfig.tool_type == tool_type)
-    )
+    result = await executor.db.execute(select(ToolConfig).where(ToolConfig.tool_type == tool_type))
     tc = result.scalar_one_or_none()
     if not tc or not tc.config:
         return []
@@ -105,8 +105,7 @@ def _summarize_accounts(accounts: list[dict]) -> str:
     if not accounts:
         return "(no accounts configured)"
     return ", ".join(
-        f"{a['account_id']}{' — ' + a['label'] if a.get('label') else ''}"
-        for a in accounts
+        f"{a['account_id']}{' — ' + a['label'] if a.get('label') else ''}" for a in accounts
     )
 
 
@@ -126,14 +125,13 @@ def _platform_allowed(executor: "ToolExecutor", platform: str) -> bool:
 
 # ── Handler ───────────────────────────────────────
 
+
 async def media_post(executor: "ToolExecutor", args: dict) -> dict:
     platform = (args.get("platform") or "").strip().lower()
     if platform not in _PLATFORMS:
         return {
             "success": False,
-            "output": (
-                f"Missing or invalid 'platform'. Must be one of: {', '.join(_PLATFORMS)}."
-            ),
+            "output": (f"Missing or invalid 'platform'. Must be one of: {', '.join(_PLATFORMS)}."),
         }
 
     if not _platform_allowed(executor, platform):
@@ -153,8 +151,7 @@ async def media_post(executor: "ToolExecutor", args: dict) -> dict:
             "success": True,
             "output": f"Configured {platform} accounts: {_summarize_accounts(accounts)}",
             "accounts": [
-                {"account_id": a["account_id"], "label": a.get("label", "")}
-                for a in accounts
+                {"account_id": a["account_id"], "label": a.get("label", "")} for a in accounts
             ],
         }
 

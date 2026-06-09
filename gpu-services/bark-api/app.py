@@ -114,6 +114,7 @@ def _verify_bark_manifest() -> None:
             )
         logger.info("A10: bark checkpoint %s verified", fname)
 
+
 # ── Global model state ───────────────────────────────
 
 _model_loaded = False
@@ -130,6 +131,7 @@ def _ensure_model():
             return
         logger.info("Loading Bark models...")
         from bark import preload_models
+
         # A10 — only relax torch.load's weights_only default for the
         # duration of Bark's checkpoint preload, not globally.
         with _allow_unsafe_torch_load():
@@ -153,15 +155,23 @@ def _unload_if_idle():
 
 # ── Request / Response schemas ───────────────────────
 
+
 class GenerateRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, max_length=MAX_TEXT_LENGTH,
-                        description="Text to speak/sing. Use ♪ around lyrics for singing.")
-    speaker: str | None = Field(default=None,
-                                description="Speaker preset (e.g. 'v2/en_speaker_6') or None for random")
-    temperature: float = Field(default=0.7, ge=0.1, le=2.0,
-                               description="Generation temperature (higher=more variation)")
-    silence_padding_ms: int = Field(default=0, ge=0, le=2000,
-                                    description="Silence padding at end (ms)")
+    prompt: str = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_TEXT_LENGTH,
+        description="Text to speak/sing. Use ♪ around lyrics for singing.",
+    )
+    speaker: str | None = Field(
+        default=None, description="Speaker preset (e.g. 'v2/en_speaker_6') or None for random"
+    )
+    temperature: float = Field(
+        default=0.7, ge=0.1, le=2.0, description="Generation temperature (higher=more variation)"
+    )
+    silence_padding_ms: int = Field(
+        default=0, ge=0, le=2000, description="Silence padding at end (ms)"
+    )
 
 
 class GenerateResponse(BaseModel):
@@ -171,6 +181,7 @@ class GenerateResponse(BaseModel):
 
 
 # ── App lifecycle ────────────────────────────────────
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -188,6 +199,7 @@ app = FastAPI(title="Bark API", version="1.0.0", lifespan=lifespan)
 
 
 # ── Endpoints ────────────────────────────────────────
+
 
 @app.get("/health")
 async def health():
@@ -213,7 +225,7 @@ async def generate(req: GenerateRequest):
         raise HTTPException(status_code=503, detail=f"Failed to load models: {e}")
 
     try:
-        from bark import generate_audio, SAMPLE_RATE
+        from bark import SAMPLE_RATE, generate_audio
 
         # For long text, split into sentences and generate each
         segments = _split_text(req.prompt)
@@ -247,8 +259,13 @@ async def generate(req: GenerateRequest):
         audio_b64 = _encode_wav(full_audio, SAMPLE_RATE)
 
         elapsed = time.time() - t0
-        logger.info("Generated %.1fs audio in %.1fs (speaker=%s, prompt=%.60s...)",
-                     duration_s, elapsed, req.speaker, req.prompt)
+        logger.info(
+            "Generated %.1fs audio in %.1fs (speaker=%s, prompt=%.60s...)",
+            duration_s,
+            elapsed,
+            req.speaker,
+            req.prompt,
+        )
 
         return GenerateResponse(
             audio=audio_b64,
@@ -263,9 +280,10 @@ async def generate(req: GenerateRequest):
 
 # ── Text helpers ─────────────────────────────────────
 
+
 def _split_text(text: str, max_chars: int = 250) -> list[str]:
     """Split long text into segments at sentence boundaries.
-    
+
     Bark works best with short segments (~13s each, <250 chars).
     """
     if len(text) <= max_chars:
@@ -275,7 +293,8 @@ def _split_text(text: str, max_chars: int = 250) -> list[str]:
     current = ""
     # Split on sentence-ending punctuation
     import re
-    sentences = re.split(r'(?<=[.!?;])\s+', text)
+
+    sentences = re.split(r"(?<=[.!?;])\s+", text)
 
     for sentence in sentences:
         if len(current) + len(sentence) + 1 <= max_chars:
@@ -294,6 +313,7 @@ def _split_text(text: str, max_chars: int = 250) -> list[str]:
 
 # ── Audio helpers ────────────────────────────────────
 
+
 def _encode_wav(audio: np.ndarray, sample_rate: int) -> str:
     """Encode numpy audio array to base64 WAV string."""
     buf = io.BytesIO()
@@ -307,4 +327,5 @@ def _encode_wav(audio: np.ndarray, sample_rate: int) -> str:
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host=HOST, port=PORT, log_level="info")

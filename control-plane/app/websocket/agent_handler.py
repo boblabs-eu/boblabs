@@ -3,7 +3,6 @@
 Handles the agent-side WebSocket protocol on the control plane.
 """
 
-import json
 import logging
 from datetime import datetime, timezone
 
@@ -29,7 +28,11 @@ async def handle_agent_connection(ws: WebSocket, db_session_factory) -> None:
     try:
         # Wait for registration message
         raw = await ws.receive_json()
-        logger.debug("Agent raw registration: type=%s name=%s", raw.get("type"), raw.get("payload", {}).get("name"))
+        logger.debug(
+            "Agent raw registration: type=%s name=%s",
+            raw.get("type"),
+            raw.get("payload", {}).get("name"),
+        )
         if raw.get("type") != "agent.register":
             await ws.close(code=4001, reason="Expected agent.register")
             return
@@ -39,7 +42,9 @@ async def handle_agent_connection(ws: WebSocket, db_session_factory) -> None:
 
         # Validate agent token
         if token != settings.agent_secret:
-            logger.warning("Agent registration rejected: invalid token from %s", payload.get("name", "unknown"))
+            logger.warning(
+                "Agent registration rejected: invalid token from %s", payload.get("name", "unknown")
+            )
             await ws.close(code=4003, reason="Invalid agent token")
             return
 
@@ -100,14 +105,17 @@ async def handle_agent_connection(ws: WebSocket, db_session_factory) -> None:
             )
             logger.info(
                 "Agent %s registered %d script(s) via script runner",
-                agent_name, len(script_runner["scripts"]),
+                agent_name,
+                len(script_runner["scripts"]),
             )
 
         # Broadcast status to UI clients
-        await manager.broadcast_to_clients({
-            "type": "server.status",
-            "payload": {"name": agent_name, "status": "online"},
-        })
+        await manager.broadcast_to_clients(
+            {
+                "type": "server.status",
+                "payload": {"name": agent_name, "status": "online"},
+            }
+        )
 
         # Main message loop
         while True:
@@ -126,8 +134,8 @@ async def handle_agent_connection(ws: WebSocket, db_session_factory) -> None:
             # Mark server offline
             try:
                 async with db_session_factory() as db:
-                    from app.repositories.server_repo import ServerRepository
                     from app.repositories.orchestrator_repo import AIModelRepository
+                    from app.repositories.server_repo import ServerRepository
 
                     repo = ServerRepository(db)
                     server = await repo.get_by_name(agent_name)
@@ -140,15 +148,15 @@ async def handle_agent_connection(ws: WebSocket, db_session_factory) -> None:
             except Exception:
                 pass
 
-            await manager.broadcast_to_clients({
-                "type": "server.status",
-                "payload": {"name": agent_name, "status": "offline"},
-            })
+            await manager.broadcast_to_clients(
+                {
+                    "type": "server.status",
+                    "payload": {"name": agent_name, "status": "offline"},
+                }
+            )
 
 
-async def _dispatch_agent_message(
-    agent_name: str, data: dict, db_session_factory
-) -> None:
+async def _dispatch_agent_message(agent_name: str, data: dict, db_session_factory) -> None:
     """Route incoming agent messages to appropriate handlers."""
     msg_type = data.get("type", "")
     payload = data.get("payload", {})
@@ -168,10 +176,12 @@ async def _dispatch_agent_message(
     elif msg_type == "agent.metrics":
         manager.update_metrics(agent_name, payload)
         # Forward to UI
-        await manager.broadcast_to_clients({
-            "type": "metrics.update",
-            "payload": {"server": agent_name, "metrics": payload},
-        })
+        await manager.broadcast_to_clients(
+            {
+                "type": "metrics.update",
+                "payload": {"server": agent_name, "metrics": payload},
+            }
+        )
         # Auto-sync Ollama models to DB if present
         ollama_models = payload.get("ollama_models", [])
         if ollama_models:
@@ -222,7 +232,8 @@ async def _dispatch_agent_message(
             if not existing:
                 logger.info(
                     "Agent %s registered %d script(s) via metrics update",
-                    agent_name, len(script_runner_scripts),
+                    agent_name,
+                    len(script_runner_scripts),
                 )
 
         # Auto-sync Riffusion models to DB if present
@@ -251,37 +262,45 @@ async def _dispatch_agent_message(
                         agent_name, provider_type, default_port, svc_models, db_session_factory
                     )
                 except Exception as e:
-                    logger.warning("Failed to sync %s models for %s: %s", provider_type, agent_name, e)
+                    logger.warning(
+                        "Failed to sync %s models for %s: %s", provider_type, agent_name, e
+                    )
 
     elif msg_type == "agent.command.output":
         # Stream to UI
-        await manager.broadcast_to_clients({
-            "type": "command.output",
-            "payload": {
-                "server": agent_name,
-                "command_id": data.get("id"),
-                **payload,
-            },
-        })
+        await manager.broadcast_to_clients(
+            {
+                "type": "command.output",
+                "payload": {
+                    "server": agent_name,
+                    "command_id": data.get("id"),
+                    **payload,
+                },
+            }
+        )
 
     elif msg_type == "agent.command.complete":
         # Resolve pending future
         command_id = data.get("id", "")
         manager.resolve_pending(command_id, payload)
-        await manager.broadcast_to_clients({
-            "type": "command.complete",
-            "payload": {
-                "server": agent_name,
-                "command_id": command_id,
-                **payload,
-            },
-        })
+        await manager.broadcast_to_clients(
+            {
+                "type": "command.complete",
+                "payload": {
+                    "server": agent_name,
+                    "command_id": command_id,
+                    **payload,
+                },
+            }
+        )
 
     elif msg_type == "agent.inspection.result":
-        await manager.broadcast_to_clients({
-            "type": "inspection.result",
-            "payload": {"server": agent_name, **payload},
-        })
+        await manager.broadcast_to_clients(
+            {
+                "type": "inspection.result",
+                "payload": {"server": agent_name, **payload},
+            }
+        )
         # Resolve if there's a pending request
         req_id = data.get("id", "")
         if req_id:
@@ -292,10 +311,12 @@ async def _dispatch_agent_message(
         req_id = data.get("id", "")
         if req_id:
             manager.resolve_pending(req_id, payload)
-        await manager.broadcast_to_clients({
-            "type": "ai.models.update",
-            "payload": {"server": agent_name, "models": payload.get("models", [])},
-        })
+        await manager.broadcast_to_clients(
+            {
+                "type": "ai.models.update",
+                "payload": {"server": agent_name, "models": payload.get("models", [])},
+            }
+        )
 
     elif msg_type == "agent.script.result":
         # Script execution result from agent
@@ -313,10 +334,13 @@ async def _dispatch_agent_message(
                 if q:
                     await q.put({"type": "opened"})
             else:
-                await manager.send_to_client(mapping["client_id"], {
-                    "type": "terminal.opened",
-                    "payload": {"session_id": session_id},
-                })
+                await manager.send_to_client(
+                    mapping["client_id"],
+                    {
+                        "type": "terminal.opened",
+                        "payload": {"session_id": session_id},
+                    },
+                )
 
     elif msg_type == "agent.terminal.output":
         session_id = data.get("id", "")
@@ -328,13 +352,16 @@ async def _dispatch_agent_message(
                 if q:
                     await q.put({"type": "output", "data": payload.get("data", "")})
             else:
-                await manager.send_to_client(mapping["client_id"], {
-                    "type": "terminal.output",
-                    "payload": {
-                        "session_id": session_id,
-                        "data": payload.get("data", ""),
+                await manager.send_to_client(
+                    mapping["client_id"],
+                    {
+                        "type": "terminal.output",
+                        "payload": {
+                            "session_id": session_id,
+                            "data": payload.get("data", ""),
+                        },
                     },
-                })
+                )
 
     else:
         logger.warning("Unknown message type from %s: %s", agent_name, msg_type)
@@ -345,9 +372,9 @@ async def _sync_ollama_models(
 ) -> None:
     """Auto-create an Ollama provider for this agent (if needed) and sync models."""
     async with db_session_factory() as db:
-        from app.repositories.server_repo import ServerRepository
-        from app.repositories.orchestrator_repo import AIProviderRepository, AIModelRepository
         from app.models.orchestrator import AIProvider
+        from app.repositories.orchestrator_repo import AIModelRepository, AIProviderRepository
+        from app.repositories.server_repo import ServerRepository
 
         server_repo = ServerRepository(db)
         server = await server_repo.get_by_name(agent_name)
@@ -381,7 +408,8 @@ async def _sync_ollama_models(
             provider = await provider_repo.create(provider)
             logger.info(
                 "Auto-discovered Ollama provider (pending admin approval): %s -> %s",
-                provider_name, server.host,
+                provider_name,
+                server.host,
             )
 
         # Upsert models
@@ -417,7 +445,8 @@ def _parse_host_port(ports_str: str, container_port: int = 8000) -> int | None:
     Example: '0.0.0.0:8050->8000/tcp, :::8050->8000/tcp' -> 8050
     """
     import re
-    for match in re.finditer(r'(\d+)->(\d+)', ports_str):
+
+    for match in re.finditer(r"(\d+)->(\d+)", ports_str):
         host_port, cont_port = int(match.group(1)), int(match.group(2))
         if cont_port == container_port:
             return host_port
@@ -429,9 +458,9 @@ async def _sync_riffusion_models(
 ) -> None:
     """Auto-create a Riffusion provider for this agent (if needed) and sync models."""
     async with db_session_factory() as db:
-        from app.repositories.server_repo import ServerRepository
-        from app.repositories.orchestrator_repo import AIProviderRepository, AIModelRepository
         from app.models.orchestrator import AIProvider
+        from app.repositories.orchestrator_repo import AIModelRepository, AIProviderRepository
+        from app.repositories.server_repo import ServerRepository
 
         server_repo = ServerRepository(db)
         server = await server_repo.get_by_name(agent_name)
@@ -455,7 +484,8 @@ async def _sync_riffusion_models(
             provider = await provider_repo.create(provider)
             logger.info(
                 "Auto-discovered Riffusion provider (pending admin approval): %s -> %s",
-                provider_name, server.host,
+                provider_name,
+                server.host,
             )
 
         # Upsert models
@@ -491,9 +521,9 @@ async def _sync_gpu_service_models(
 ) -> None:
     """Auto-create a GPU service provider (musicgen/bark/rvc) and sync its models."""
     async with db_session_factory() as db:
-        from app.repositories.server_repo import ServerRepository
-        from app.repositories.orchestrator_repo import AIProviderRepository, AIModelRepository
         from app.models.orchestrator import AIProvider
+        from app.repositories.orchestrator_repo import AIModelRepository, AIProviderRepository
+        from app.repositories.server_repo import ServerRepository
 
         server_repo = ServerRepository(db)
         server = await server_repo.get_by_name(agent_name)
@@ -517,7 +547,10 @@ async def _sync_gpu_service_models(
             provider = await provider_repo.create(provider)
             logger.info(
                 "Auto-discovered %s provider (pending admin approval): %s -> %s:%d",
-                provider_type, provider_name, server.host, default_port,
+                provider_type,
+                provider_name,
+                server.host,
+                default_port,
             )
 
         model_repo = AIModelRepository(db)
@@ -552,17 +585,17 @@ async def _sync_vllm_containers(
     import httpx
 
     vllm_containers = [
-        c for c in containers
-        if c.get("state") == "running"
-        and "vllm" in (c.get("image", "") or "").lower()
+        c
+        for c in containers
+        if c.get("state") == "running" and "vllm" in (c.get("image", "") or "").lower()
     ]
     if not vllm_containers:
         return
 
     async with db_session_factory() as db:
-        from app.repositories.server_repo import ServerRepository
-        from app.repositories.orchestrator_repo import AIProviderRepository, AIModelRepository
         from app.models.orchestrator import AIProvider
+        from app.repositories.orchestrator_repo import AIModelRepository, AIProviderRepository
+        from app.repositories.server_repo import ServerRepository
 
         server_repo = ServerRepository(db)
         server = await server_repo.get_by_name(agent_name)
@@ -587,7 +620,9 @@ async def _sync_vllm_containers(
                     resp.raise_for_status()
                     data = resp.json()
             except Exception as e:
-                logger.debug("vLLM container %s not reachable at %s: %s", container_name, base_url, e)
+                logger.debug(
+                    "vLLM container %s not reachable at %s: %s", container_name, base_url, e
+                )
                 continue
 
             served_models = data.get("data", [])
@@ -612,7 +647,8 @@ async def _sync_vllm_containers(
                 provider = await provider_repo.create(provider)
                 logger.info(
                     "Auto-discovered HuggingFace provider (pending admin approval): %s -> %s",
-                    provider_name, base_url,
+                    provider_name,
+                    base_url,
                 )
             elif provider.base_url != base_url:
                 # Update base_url if port changed
@@ -663,15 +699,17 @@ async def _sync_comfyui_from_probe(
     # Parse port off the probe URL; default 8188 if anything goes wrong.
     try:
         from urllib.parse import urlparse
+
         probe_port = urlparse(probe_base).port or 8188
     except Exception:
         probe_port = 8188
 
     async with db_session_factory() as db:
         from sqlalchemy import select
-        from app.repositories.server_repo import ServerRepository
-        from app.repositories.orchestrator_repo import AIProviderRepository
+
         from app.models.orchestrator import AIProvider
+        from app.repositories.orchestrator_repo import AIProviderRepository
+        from app.repositories.server_repo import ServerRepository
 
         server_repo = ServerRepository(db)
         server = await server_repo.get_by_name(agent_name)
@@ -707,7 +745,8 @@ async def _sync_comfyui_from_probe(
             await provider_repo.create(provider)
             logger.info(
                 "Auto-discovered ComfyUI provider via probe (pending admin approval): %s -> %s",
-                canonical_name, base_url,
+                canonical_name,
+                base_url,
             )
         else:
             # Cluster I — never flip is_active=True on an existing row from
@@ -737,18 +776,19 @@ async def _sync_comfyui_containers(
     active flag by hand — installing the agent is enough.
     """
     comfyui_containers = [
-        c for c in containers
-        if c.get("state") == "running"
-        and "comfy" in (c.get("image", "") or "").lower()
+        c
+        for c in containers
+        if c.get("state") == "running" and "comfy" in (c.get("image", "") or "").lower()
     ]
     if not comfyui_containers:
         return
 
     async with db_session_factory() as db:
         from sqlalchemy import select
-        from app.repositories.server_repo import ServerRepository
-        from app.repositories.orchestrator_repo import AIProviderRepository
+
         from app.models.orchestrator import AIProvider
+        from app.repositories.orchestrator_repo import AIProviderRepository
+        from app.repositories.server_repo import ServerRepository
 
         server_repo = ServerRepository(db)
         server = await server_repo.get_by_name(agent_name)
@@ -790,7 +830,8 @@ async def _sync_comfyui_containers(
                 await provider_repo.create(provider)
                 logger.info(
                     "Auto-discovered ComfyUI provider (pending admin approval): %s -> %s",
-                    canonical_name, base_url,
+                    canonical_name,
+                    base_url,
                 )
                 continue
 

@@ -30,9 +30,7 @@ class WorkflowRepository:
     async def get_by_id(self, workflow_id: UUID) -> Workflow | None:
         """Return a workflow by ID with steps."""
         result = await self.db.execute(
-            select(Workflow)
-            .options(selectinload(Workflow.steps))
-            .where(Workflow.id == workflow_id)
+            select(Workflow).options(selectinload(Workflow.steps)).where(Workflow.id == workflow_id)
         )
         return result.scalar_one_or_none()
 

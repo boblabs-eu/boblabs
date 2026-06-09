@@ -5,12 +5,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.dependencies import DbSession
-from app.schemas.server import ServerCreate, ServerUpdate, ServerResponse
-from app.services.server_service import ServerService
-from app.services.metrics_service import MetricsService
+from app.schemas.server import ServerCreate, ServerResponse, ServerUpdate
 from app.services.authorization import require_infra_access
+from app.services.metrics_service import MetricsService
+from app.services.server_service import ServerService
 
-router = APIRouter(prefix="/servers", tags=["servers"], dependencies=[Depends(require_infra_access)])
+router = APIRouter(
+    prefix="/servers", tags=["servers"], dependencies=[Depends(require_infra_access)]
+)
 
 
 @router.get("", response_model=list[ServerResponse])

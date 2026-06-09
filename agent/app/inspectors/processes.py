@@ -14,17 +14,21 @@ def get_top_processes(sort_by: str = "cpu", limit: int = 30) -> list[dict]:
         List of process dicts with PID, name, CPU%, memory%, command.
     """
     processes = []
-    for proc in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent", "cmdline", "username"]):
+    for proc in psutil.process_iter(
+        ["pid", "name", "cpu_percent", "memory_percent", "cmdline", "username"]
+    ):
         try:
             info = proc.info
-            processes.append({
-                "pid": info["pid"],
-                "name": info["name"],
-                "cpu_percent": info["cpu_percent"] or 0.0,
-                "memory_percent": round(info["memory_percent"] or 0.0, 2),
-                "command": " ".join(info["cmdline"]) if info["cmdline"] else info["name"],
-                "username": info["username"],
-            })
+            processes.append(
+                {
+                    "pid": info["pid"],
+                    "name": info["name"],
+                    "cpu_percent": info["cpu_percent"] or 0.0,
+                    "memory_percent": round(info["memory_percent"] or 0.0, 2),
+                    "command": " ".join(info["cmdline"]) if info["cmdline"] else info["name"],
+                    "username": info["username"],
+                }
+            )
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
 

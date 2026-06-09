@@ -1,8 +1,8 @@
 """Bob Manager — Metrics service layer."""
 
 import asyncio
-import uuid
 import logging
+import uuid
 
 from app.websocket.hub import manager
 
@@ -38,11 +38,14 @@ class MetricsService:
         # and drop it eagerly on timeout / send failure.
         future = manager.create_pending(request_id, agent_name=server_name)
 
-        sent = await manager.send_to_agent(server_name, {
-            "type": "inspection.request",
-            "id": request_id,
-            "payload": {"kind": inspection_type},
-        })
+        sent = await manager.send_to_agent(
+            server_name,
+            {
+                "type": "inspection.request",
+                "id": request_id,
+                "payload": {"kind": inspection_type},
+            },
+        )
 
         if not sent:
             manager.cancel_pending(request_id, reason="send_failed")

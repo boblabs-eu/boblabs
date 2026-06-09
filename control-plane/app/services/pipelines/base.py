@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -15,12 +14,12 @@ class PipelineResult:
     """Standardised result from a media pipeline execution."""
 
     success: bool
-    media_type: str = ""          # "audio", "image", "video"
-    media_url: str = ""           # data URL or remote URL
-    preview_url: str = ""         # spectrogram / thumbnail (data URL)
-    duration_s: float = 0.0       # media duration in seconds
+    media_type: str = ""  # "audio", "image", "video"
+    media_url: str = ""  # data URL or remote URL
+    preview_url: str = ""  # spectrogram / thumbnail (data URL)
+    duration_s: float = 0.0  # media duration in seconds
     params_used: dict = field(default_factory=dict)  # the actual params sent
-    error: str = ""               # error message if success=False
+    error: str = ""  # error message if success=False
     raw: dict = field(default_factory=dict)  # full API response
     extra_outputs: dict = field(default_factory=dict)  # named extra files (e.g. stems)
 

@@ -78,11 +78,13 @@ class CoquiTTSPipeline(MediaPipeline):
 
         out["speed"] = _clamp(
             float(params.get("speed", DEFAULT_PARAMS["speed"])),
-            0.5, 2.0,
+            0.5,
+            2.0,
         )
         out["temperature"] = _clamp(
             float(params.get("temperature", DEFAULT_PARAMS["temperature"])),
-            0.1, 1.0,
+            0.1,
+            1.0,
         )
 
         return out

@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,9 +15,7 @@ class WorkflowExecution(Base):
 
     __tablename__ = "workflow_executions"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     workflow_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workflows.id"), nullable=False
     )
@@ -25,15 +23,9 @@ class WorkflowExecution(Base):
         UUID(as_uuid=True), ForeignKey("servers.id"), nullable=False
     )
     status: Mapped[str] = mapped_column(String(50), default="pending")
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     logs: Mapped[list["ExecutionLog"]] = relationship(
         back_populates="execution", cascade="all, delete-orphan"
@@ -45,9 +37,7 @@ class ExecutionLog(Base):
 
     __tablename__ = "execution_logs"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     execution_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("workflow_executions.id", ondelete="CASCADE"),
@@ -60,12 +50,8 @@ class ExecutionLog(Base):
     exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     stdout: Mapped[str] = mapped_column(Text, default="")
     stderr: Mapped[str] = mapped_column(Text, default="")
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     execution: Mapped["WorkflowExecution"] = relationship(back_populates="logs")
 
@@ -75,9 +61,7 @@ class CommandHistory(Base):
 
     __tablename__ = "command_history"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     server_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("servers.id"), nullable=False
     )
@@ -88,6 +72,4 @@ class CommandHistory(Base):
     executed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

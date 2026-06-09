@@ -7,7 +7,9 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     # Database
-    database_url: str = "postgresql+asyncpg://bobmanager:changeme_in_production@bob-db:5432/bobmanager"
+    database_url: str = (
+        "postgresql+asyncpg://bobmanager:changeme_in_production@bob-db:5432/bobmanager"
+    )
 
     # Security
     agent_secret: str = "change-this-to-a-random-secret-token"

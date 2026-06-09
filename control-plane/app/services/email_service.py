@@ -41,7 +41,9 @@ async def _send(to: str, subject: str, html_body: str) -> bool:
         return False
 
 
-async def notify_admin_new_trial(name: str, email: str, enterprise: str, role: str, purpose: str) -> bool:
+async def notify_admin_new_trial(
+    name: str, email: str, enterprise: str, role: str, purpose: str
+) -> bool:
     """Notify the admin that a new trial request was submitted."""
     if not settings.admin_email:
         logger.warning("ADMIN_EMAIL not configured — skipping admin notification")
@@ -53,9 +55,9 @@ async def notify_admin_new_trial(name: str, email: str, enterprise: str, role: s
       <table style="width: 100%; border-collapse: collapse;">
         <tr><td style="padding: 8px; font-weight: bold;">Name</td><td style="padding: 8px;">{name}</td></tr>
         <tr style="background: #f5f3ff;"><td style="padding: 8px; font-weight: bold;">Email</td><td style="padding: 8px;">{email}</td></tr>
-        <tr><td style="padding: 8px; font-weight: bold;">Company</td><td style="padding: 8px;">{enterprise or '—'}</td></tr>
-        <tr style="background: #f5f3ff;"><td style="padding: 8px; font-weight: bold;">Role</td><td style="padding: 8px;">{role or '—'}</td></tr>
-        <tr><td style="padding: 8px; font-weight: bold;">Purpose</td><td style="padding: 8px;">{purpose or '—'}</td></tr>
+        <tr><td style="padding: 8px; font-weight: bold;">Company</td><td style="padding: 8px;">{enterprise or "—"}</td></tr>
+        <tr style="background: #f5f3ff;"><td style="padding: 8px; font-weight: bold;">Role</td><td style="padding: 8px;">{role or "—"}</td></tr>
+        <tr><td style="padding: 8px; font-weight: bold;">Purpose</td><td style="padding: 8px;">{purpose or "—"}</td></tr>
       </table>
       <p style="margin-top: 24px;">
         Log in to the <a href="{settings.app_base_url}/admin" style="color: #7c3aed;">admin panel</a> to review and generate a token.
@@ -74,7 +76,7 @@ async def send_token_to_user(email: str, token: str, label: str, expires_at: str
     html = f"""
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #7c3aed;">Your Bob Labs Access Token</h2>
-      <p>Hello! Your access to Bob Labs has been approved{f' ({label})' if label else ''}.</p>
+      <p>Hello! Your access to Bob Labs has been approved{f" ({label})" if label else ""}.</p>
       <div style="background: #f5f3ff; border: 1px solid #ede9fe; border-radius: 8px; padding: 16px; margin: 16px 0; font-family: monospace; font-size: 14px; word-break: break-all;">
         {token}
       </div>
@@ -92,7 +94,12 @@ async def send_token_to_user(email: str, token: str, label: str, expires_at: str
 
 
 async def notify_admin_new_quote(
-    name: str, email: str, company: str, phone: str, plan: str, description: str,
+    name: str,
+    email: str,
+    company: str,
+    phone: str,
+    plan: str,
+    description: str,
 ) -> bool:
     """Notify the admin that a new quote request was submitted."""
     if not settings.admin_email:
@@ -105,10 +112,10 @@ async def notify_admin_new_quote(
       <table style="width: 100%; border-collapse: collapse;">
         <tr><td style="padding: 8px; font-weight: bold;">Name</td><td style="padding: 8px;">{name}</td></tr>
         <tr style="background: #f5f3ff;"><td style="padding: 8px; font-weight: bold;">Email</td><td style="padding: 8px;">{email}</td></tr>
-        <tr><td style="padding: 8px; font-weight: bold;">Company</td><td style="padding: 8px;">{company or '—'}</td></tr>
-        <tr style="background: #f5f3ff;"><td style="padding: 8px; font-weight: bold;">Phone</td><td style="padding: 8px;">{phone or '—'}</td></tr>
-        <tr><td style="padding: 8px; font-weight: bold;">Plan</td><td style="padding: 8px;">{plan or '—'}</td></tr>
-        <tr style="background: #f5f3ff;"><td style="padding: 8px; font-weight: bold;">Description</td><td style="padding: 8px;">{description or '—'}</td></tr>
+        <tr><td style="padding: 8px; font-weight: bold;">Company</td><td style="padding: 8px;">{company or "—"}</td></tr>
+        <tr style="background: #f5f3ff;"><td style="padding: 8px; font-weight: bold;">Phone</td><td style="padding: 8px;">{phone or "—"}</td></tr>
+        <tr><td style="padding: 8px; font-weight: bold;">Plan</td><td style="padding: 8px;">{plan or "—"}</td></tr>
+        <tr style="background: #f5f3ff;"><td style="padding: 8px; font-weight: bold;">Description</td><td style="padding: 8px;">{description or "—"}</td></tr>
       </table>
       <p style="margin-top: 24px;">
         Log in to the <a href="{settings.app_base_url}/admin" style="color: #7c3aed;">admin panel</a> to review this request.

@@ -84,6 +84,7 @@ def _ensure_model():
         _device = _detect_device()
         logger.info("Loading XTTS v2 model on %s...", _device)
         from TTS.api import TTS
+
         _tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(_device)
         _last_used = time.time()
         logger.info("XTTS v2 model loaded on %s", _device)
@@ -110,19 +111,21 @@ def _unload_if_idle():
 
 # ── Request / Response schemas ─────────────────────────
 
+
 class GenerateRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, max_length=MAX_TEXT_LENGTH,
-                        description="Text to speak.")
-    language: str = Field(default="en",
-                          description="Language code (en, es, fr, de, it, pt, pl, tr, ru, nl, cs, ar, zh-cn, ja, ko, hu, hi)")
-    speaker_wav: str | None = Field(default=None,
-                                    description="Base64 WAV of reference speaker for voice cloning (~6s)")
-    speaker_name: str | None = Field(default=None,
-                                     description="Name of a pre-saved speaker in /speakers (without extension)")
-    speed: float = Field(default=1.0, ge=0.5, le=2.0,
-                         description="Speech speed multiplier")
-    temperature: float = Field(default=0.65, ge=0.1, le=1.0,
-                               description="Generation temperature")
+    prompt: str = Field(..., min_length=1, max_length=MAX_TEXT_LENGTH, description="Text to speak.")
+    language: str = Field(
+        default="en",
+        description="Language code (en, es, fr, de, it, pt, pl, tr, ru, nl, cs, ar, zh-cn, ja, ko, hu, hi)",
+    )
+    speaker_wav: str | None = Field(
+        default=None, description="Base64 WAV of reference speaker for voice cloning (~6s)"
+    )
+    speaker_name: str | None = Field(
+        default=None, description="Name of a pre-saved speaker in /speakers (without extension)"
+    )
+    speed: float = Field(default=1.0, ge=0.5, le=2.0, description="Speech speed multiplier")
+    temperature: float = Field(default=0.65, ge=0.1, le=1.0, description="Generation temperature")
 
 
 class GenerateResponse(BaseModel):
@@ -136,6 +139,7 @@ class SpeakerListResponse(BaseModel):
 
 
 # ── App lifecycle ────────────────────────────────────
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -151,6 +155,7 @@ app = FastAPI(title="CoquiTTS API", version="1.0.0", lifespan=lifespan)
 
 
 # ── Endpoints ────────────────────────────────────────
+
 
 @app.get("/health")
 async def health():
@@ -186,7 +191,7 @@ async def generate(req: GenerateRequest):
     if speaker_wav_path is None:
         raise HTTPException(
             status_code=400,
-            detail="Either 'speaker_wav' (base64) or 'speaker_name' (pre-saved) is required for XTTS v2"
+            detail="Either 'speaker_wav' (base64) or 'speaker_name' (pre-saved) is required for XTTS v2",
         )
 
     try:
@@ -206,8 +211,13 @@ async def generate(req: GenerateRequest):
         audio_b64 = _encode_wav(audio, sample_rate)
 
         elapsed = time.time() - t0
-        logger.info("Generated %.1fs audio in %.1fs (lang=%s, prompt=%.60s...)",
-                     duration_s, elapsed, req.language, req.prompt)
+        logger.info(
+            "Generated %.1fs audio in %.1fs (lang=%s, prompt=%.60s...)",
+            duration_s,
+            elapsed,
+            req.language,
+            req.prompt,
+        )
 
         return GenerateResponse(
             audio=audio_b64,
@@ -226,6 +236,7 @@ async def generate(req: GenerateRequest):
 
 # ── Helpers ──────────────────────────────────────────
 
+
 def _resolve_speaker(speaker_wav_b64: str | None, speaker_name: str | None) -> Path | None:
     """Resolve speaker reference audio to a file path."""
     if speaker_name:
@@ -236,7 +247,9 @@ def _resolve_speaker(speaker_wav_b64: str | None, speaker_name: str | None) -> P
         path_direct = SPEAKERS_DIR / speaker_name
         if path_direct.exists():
             return path_direct
-        raise HTTPException(status_code=404, detail=f"Speaker '{speaker_name}' not found in {SPEAKERS_DIR}")
+        raise HTTPException(
+            status_code=404, detail=f"Speaker '{speaker_name}' not found in {SPEAKERS_DIR}"
+        )
 
     if speaker_wav_b64:
         # Write to temp file — XTTS needs a file path
@@ -251,9 +264,7 @@ def _list_speakers() -> list[str]:
     """List available pre-saved speaker names."""
     if not SPEAKERS_DIR.exists():
         return []
-    return sorted(
-        p.stem for p in SPEAKERS_DIR.glob("*.wav")
-    )
+    return sorted(p.stem for p in SPEAKERS_DIR.glob("*.wav"))
 
 
 def _encode_wav(audio: np.ndarray, sample_rate: int) -> str:
@@ -272,4 +283,5 @@ def _encode_wav(audio: np.ndarray, sample_rate: int) -> str:
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host=HOST, port=PORT, log_level="info")

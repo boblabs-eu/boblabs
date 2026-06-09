@@ -16,9 +16,8 @@ goes through `ssrf_guard.safe_get`.
 from __future__ import annotations
 
 import pytest
-
-from app.api.routes import rag as rag_module
 from app.api.dependencies import get_current_user
+from app.api.routes import rag as rag_module
 
 pytestmark = pytest.mark.regression
 
@@ -54,16 +53,14 @@ def test_every_rag_route_has_get_current_user_dep():
         deps = _route_dependencies(route)
         if get_current_user not in deps:
             missing.append(path)
-    assert not missing, (
-        f"RAG routes missing Depends(get_current_user): {missing}"
-    )
+    assert not missing, f"RAG routes missing Depends(get_current_user): {missing}"
 
 
 def test_rag_url_ingest_uses_ssrf_safe_get():
     """The cluster-M fix re-routes the webpage fetcher through ssrf_guard."""
     import inspect
+
     src = inspect.getsource(rag_module._fetch_webpage_text_http)
     assert "_ssrf_safe_get" in src or "safe_get" in src, (
-        "_fetch_webpage_text_http no longer calls ssrf_guard.safe_get — "
-        "cluster M regression"
+        "_fetch_webpage_text_http no longer calls ssrf_guard.safe_get — cluster M regression"
     )

@@ -18,10 +18,7 @@ class ServerRepository:
     async def get_all(self, limit: int = MAX_LIMIT, offset: int = 0) -> list[Server]:
         """Return all registered servers. P04 — clamped at MAX_LIMIT."""
         result = await self.db.execute(
-            select(Server)
-            .order_by(Server.name)
-            .limit(clamp_limit(limit))
-            .offset(max(0, offset))
+            select(Server).order_by(Server.name).limit(clamp_limit(limit)).offset(max(0, offset))
         )
         return list(result.scalars().all())
 
@@ -44,9 +41,7 @@ class ServerRepository:
 
     async def update(self, server_id: UUID, **kwargs) -> Server | None:
         """Update a server's fields."""
-        await self.db.execute(
-            update(Server).where(Server.id == server_id).values(**kwargs)
-        )
+        await self.db.execute(update(Server).where(Server.id == server_id).values(**kwargs))
         await self.db.flush()
         return await self.get_by_id(server_id)
 

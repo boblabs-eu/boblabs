@@ -22,10 +22,11 @@ from app.schemas.orchestrator import (
     LibraryAgentResponse,
     LibraryAgentUpdate,
 )
-from app.services.authorization import get_default_acl
 from app.services.lab_runner import LabRunner, get_runner
 from app.services.library_agent_service import (
     create_agent_instance as _create_agent_instance,
+)
+from app.services.library_agent_service import (
     is_app_owned_agent_name,
 )
 
@@ -104,7 +105,8 @@ async def list_all_agent_instances(db: DbSession, library_agent_id: UUID | None 
     instances = [lab for lab in labs if _is_instance_lab(lab)]
     if library_agent_id is not None:
         instances = [
-            lab for lab in instances
+            lab
+            for lab in instances
             if str(lab.acl.get("library_agent_id")) == str(library_agent_id)
         ]
     return [_instance_to_response(lab) for lab in instances]
@@ -129,13 +131,15 @@ async def create_agent_instance(
     if not instance_name:
         existing = await lab_repo.get_all()
         sibling_count = sum(
-            1 for lab in existing
+            1
+            for lab in existing
             if _is_instance_lab(lab)
             and isinstance(lab.acl, dict)
             and str(lab.acl.get("library_agent_id")) == str(agent_id)
         )
         existing_names = {
-            lab.name for lab in existing
+            lab.name
+            for lab in existing
             if _is_instance_lab(lab)
             and isinstance(lab.acl, dict)
             and str(lab.acl.get("library_agent_id")) == str(agent_id)
@@ -207,6 +211,7 @@ async def run_agent_instance(
             AIModelRepository,
             OrchestratorSettingsRepository,
         )
+
         settings = await OrchestratorSettingsRepository(db).get()
         if not settings or not settings.orchestrator_model:
             raise HTTPException(422, "No model configured and no default model set")
@@ -222,9 +227,11 @@ async def run_agent_instance(
             LabMemoryRepository,
             LabMessageRepository,
         )
+
         await LabMessageRepository(db).delete_by_lab(lab_id)
         await LabMemoryRepository(db).delete_by_lab(lab_id)
         from app.services.container_manager import destroy_sandbox
+
         await destroy_sandbox(lab_id)
         await repo.update(
             lab_id,
@@ -240,6 +247,7 @@ async def run_agent_instance(
         await db.commit()
 
     from app.services.container_manager import ensure_sandbox
+
     await ensure_sandbox(lab_id, memory_mb=lab.tool_container_memory_mb)
 
     runner = LabRunner(lab_id, async_session)
@@ -345,6 +353,7 @@ async def inject_agent_instance(
             AIModelRepository,
             OrchestratorSettingsRepository,
         )
+
         settings = await OrchestratorSettingsRepository(db).get()
         if not settings or not settings.orchestrator_model:
             await db.commit()
@@ -405,19 +414,27 @@ async def update_library_agent(agent_id: UUID, data: LibraryAgentUpdate, db: DbS
     # keeps the snapshot taken at instance-creation time and the user thinks
     # "I saved the model but it still uses the old one".
     _AGENT_FIELDS = {
-        "name", "role", "system_prompt", "prompt_template_id",
-        "model_id", "temperature", "max_tokens",
-        "tools", "tool_set_ids",
-        "share_memory", "callable_agents",
-        "cron_expression", "cron_instruction",
+        "name",
+        "role",
+        "system_prompt",
+        "prompt_template_id",
+        "model_id",
+        "temperature",
+        "max_tokens",
+        "tools",
+        "tool_set_ids",
+        "share_memory",
+        "callable_agents",
+        "cron_expression",
+        "cron_instruction",
         "anti_loop_enabled",
     }
     _LAB_FIELD_MAP = {
-        "model_id":      "orchestrator_model_id",
-        "temperature":   "orchestrator_temperature",
-        "max_tokens":    "orchestrator_max_tokens",
-        "tools":         "orchestrator_tools",
-        "tool_set_ids":  "orchestrator_tool_set_ids",
+        "model_id": "orchestrator_model_id",
+        "temperature": "orchestrator_temperature",
+        "max_tokens": "orchestrator_max_tokens",
+        "tools": "orchestrator_tools",
+        "tool_set_ids": "orchestrator_tool_set_ids",
         "anti_loop_enabled": "anti_loop_enabled",
     }
 
@@ -440,13 +457,17 @@ async def update_library_agent(agent_id: UUID, data: LibraryAgentUpdate, db: DbS
             if agent_updates:
                 # Update every lab_agent row that points back to this template
                 rows = (
-                    await db.execute(
-                        select(LabAgent).where(
-                            LabAgent.lab_id == lab.id,
-                            LabAgent.library_agent_id == agent_id,
+                    (
+                        await db.execute(
+                            select(LabAgent).where(
+                                LabAgent.lab_id == lab.id,
+                                LabAgent.library_agent_id == agent_id,
+                            )
                         )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
                 for row in rows:
                     await agent_repo.update(row.id, **agent_updates)
             touched += 1
@@ -464,7 +485,11 @@ async def delete_library_agent(agent_id: UUID, db: DbSession):
     await LibraryAgentRepository(db).delete(agent_id)
 
 
-@router.post("/{agent_id}/duplicate", response_model=LibraryAgentResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{agent_id}/duplicate",
+    response_model=LibraryAgentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def duplicate_library_agent(agent_id: UUID, db: DbSession):
     repo = LibraryAgentRepository(db)
     agent = await repo.get_by_id(agent_id)
@@ -575,14 +600,17 @@ async def get_library_agent_stats(agent_id: UUID, db: DbSession):
     last_active = agg[3].isoformat() if agg[3] else None
 
     # Successes = non-error messages; failures = error message_type or tool_output.success false
-    failures = int((
-        await db.execute(
-            select(func.count(LabMessage.id)).where(
-                LabMessage.sender_agent_id.in_(lab_agent_ids),
-                LabMessage.message_type == "error",
+    failures = int(
+        (
+            await db.execute(
+                select(func.count(LabMessage.id)).where(
+                    LabMessage.sender_agent_id.in_(lab_agent_ids),
+                    LabMessage.message_type == "error",
+                )
             )
-        )
-    ).scalar() or 0)
+        ).scalar()
+        or 0
+    )
     successes = max(0, messages_total - failures)
 
     # Loop triggers — table is per-lab (no per-agent column today); count events for labs
@@ -591,9 +619,7 @@ async def get_library_agent_stats(agent_id: UUID, db: DbSession):
     if lab_ids:
         try:
             res = await db.execute(
-                text(
-                    "SELECT COUNT(*) FROM lab_loop_events WHERE lab_id = ANY(:ids)"
-                ),
+                text("SELECT COUNT(*) FROM lab_loop_events WHERE lab_id = ANY(:ids)"),
                 {"ids": lab_ids},
             )
             loop_triggers = int(res.scalar() or 0)

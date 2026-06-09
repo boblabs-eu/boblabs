@@ -29,8 +29,12 @@ async def list_lab_web3_access(lab_id: UUID, db: DbSession, user: dict = Depends
     return await Web3AccessService(db).list_lab_access(lab_id)
 
 
-@router.get("/labs/{lab_id}/web3-access/candidates", response_model=list[TrackedWalletCandidateResponse])
-async def list_lab_web3_candidates(lab_id: UUID, db: DbSession, user: dict = Depends(get_current_user)):
+@router.get(
+    "/labs/{lab_id}/web3-access/candidates", response_model=list[TrackedWalletCandidateResponse]
+)
+async def list_lab_web3_candidates(
+    lab_id: UUID, db: DbSession, user: dict = Depends(get_current_user)
+):
     lab = await LabRepository(db).get_by_id(lab_id)
     if not lab:
         raise HTTPException(404, "Lab not found")

@@ -8,17 +8,20 @@ from pydantic import BaseModel
 
 class CommandRequest(BaseModel):
     """Request to execute a command on a server."""
+
     command: str
 
 
 class BatchCommandRequest(BaseModel):
     """Request to execute a command on multiple servers."""
+
     server_ids: list[UUID]
     command: str
 
 
 class CommandResponse(BaseModel):
     """Command execution result."""
+
     id: UUID
     server_id: UUID
     command: str

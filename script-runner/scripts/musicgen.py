@@ -34,11 +34,14 @@ def run(args: dict, output_dir: str) -> dict:
         model_size = "medium"
 
     try:
-        import torch
-        import torchaudio
+        import torch  # noqa: F401 — availability probe
+        import torchaudio  # noqa: F401 — availability probe
         from audiocraft.models import MusicGen
     except ImportError as e:
-        return {"success": False, "message": f"Missing dependency: {e}. Install: pip install torch torchaudio audiocraft"}
+        return {
+            "success": False,
+            "message": f"Missing dependency: {e}. Install: pip install torch torchaudio audiocraft",
+        }
 
     model_id = os.environ.get("MUSICGEN_MODEL", f"facebook/musicgen-{model_size}")
 

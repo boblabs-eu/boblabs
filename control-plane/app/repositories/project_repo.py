@@ -6,7 +6,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
-from app.services.authorization import filter_query_by_access, get_default_acl
+from app.services.authorization import filter_query_by_access
 
 
 class ProjectRepository:
@@ -37,9 +37,7 @@ class ProjectRepository:
 
     async def update(self, project_id: UUID, **kwargs) -> Project | None:
         """Update a project's fields."""
-        await self.db.execute(
-            update(Project).where(Project.id == project_id).values(**kwargs)
-        )
+        await self.db.execute(update(Project).where(Project.id == project_id).values(**kwargs))
         await self.db.flush()
         return await self.get_by_id(project_id)
 

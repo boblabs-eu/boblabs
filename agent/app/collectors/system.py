@@ -1,8 +1,8 @@
 """Bob Manager Agent — System info collector."""
 
+import logging
 import platform
 import subprocess
-import logging
 
 logger = logging.getLogger(__name__)
 

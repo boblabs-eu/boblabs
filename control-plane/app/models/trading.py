@@ -24,48 +24,32 @@ class TradingPosition(Base):
 
     __tablename__ = "trading_positions"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     wallet_address: Mapped[str] = mapped_column(String(42), nullable=False, index=True)
     chain: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     token_address: Mapped[str] = mapped_column(String(42), nullable=False)
     token_symbol: Mapped[str] = mapped_column(String(20), nullable=False, default="???")
     # D03 — on-chain integer (wei / satoshi / 10^decimals units).
-    amount_raw: Mapped[Decimal] = mapped_column(
-        Numeric(78, 0), nullable=False, default=0
-    )
+    amount_raw: Mapped[Decimal] = mapped_column(Numeric(78, 0), nullable=False, default=0)
     # D03 — decimals metadata so from_raw() can render the human value.
     # Default 18 matches the ERC-20 spec; per-token overrides happen at
     # write time via trading_units.decimals_for(symbol).
     token_decimals: Mapped[int] = mapped_column(
         Integer, nullable=False, default=18, server_default="18"
     )
-    entry_price_usd: Mapped[Decimal | None] = mapped_column(
-        Numeric(38, 18), nullable=True
-    )
+    entry_price_usd: Mapped[Decimal | None] = mapped_column(Numeric(38, 18), nullable=True)
     entry_tx_hash: Mapped[str | None] = mapped_column(String(66), nullable=True)
-    entry_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    exit_price_usd: Mapped[Decimal | None] = mapped_column(
-        Numeric(38, 18), nullable=True
-    )
+    entry_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    exit_price_usd: Mapped[Decimal | None] = mapped_column(Numeric(38, 18), nullable=True)
     exit_tx_hash: Mapped[str | None] = mapped_column(String(66), nullable=True)
     exit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="open", index=True
     )  # open, closed, stopped
-    stop_loss_usd: Mapped[Decimal | None] = mapped_column(
-        Numeric(38, 18), nullable=True
-    )
-    take_profit_usd: Mapped[Decimal | None] = mapped_column(
-        Numeric(38, 18), nullable=True
-    )
+    stop_loss_usd: Mapped[Decimal | None] = mapped_column(Numeric(38, 18), nullable=True)
+    take_profit_usd: Mapped[Decimal | None] = mapped_column(Numeric(38, 18), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    lab_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, index=True
-    )
+    lab_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
 
 
 class TradeHistory(Base):
@@ -80,15 +64,11 @@ class TradeHistory(Base):
 
     __tablename__ = "trade_history"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     wallet_address: Mapped[str] = mapped_column(String(42), nullable=False, index=True)
     chain: Mapped[str] = mapped_column(String(20), nullable=False)
     tx_hash: Mapped[str] = mapped_column(String(66), nullable=False)
-    tx_type: Mapped[str] = mapped_column(
-        String(20), nullable=False
-    )  # swap, send, receive, approve
+    tx_type: Mapped[str] = mapped_column(String(20), nullable=False)  # swap, send, receive, approve
     from_token: Mapped[str | None] = mapped_column(String(42), nullable=True)
     from_token_symbol: Mapped[str | None] = mapped_column(String(20), nullable=True)
     from_amount: Mapped[str | None] = mapped_column(String(78), nullable=True)
@@ -98,18 +78,8 @@ class TradeHistory(Base):
     to_amount: Mapped[str | None] = mapped_column(String(78), nullable=True)
     to_token_decimals: Mapped[int | None] = mapped_column(Integer, nullable=True)
     gas_used: Mapped[int | None] = mapped_column(nullable=True)
-    gas_price_wei: Mapped[Decimal | None] = mapped_column(
-        Numeric(78, 0), nullable=True
-    )
-    value_usd: Mapped[Decimal | None] = mapped_column(
-        Numeric(38, 18), nullable=True
-    )
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    position_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True
-    )
-    lab_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, index=True
-    )
+    gas_price_wei: Mapped[Decimal | None] = mapped_column(Numeric(78, 0), nullable=True)
+    value_usd: Mapped[Decimal | None] = mapped_column(Numeric(38, 18), nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    position_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    lab_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)

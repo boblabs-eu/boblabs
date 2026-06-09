@@ -1,7 +1,7 @@
 """Bob Manager Agent — Crontab inspector."""
 
-import subprocess
 import logging
+import subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -88,17 +88,21 @@ def _parse_crontab(content: str, source: str) -> list[dict]:
             # Special schedule syntax
             parts = line.split(None, 1)
             if len(parts) == 2:
-                jobs.append({
-                    "source": source,
-                    "schedule": parts[0],
-                    "command": parts[1],
-                })
+                jobs.append(
+                    {
+                        "source": source,
+                        "schedule": parts[0],
+                        "command": parts[1],
+                    }
+                )
         else:
             parts = line.split(None, 5)
             if len(parts) >= 6:
-                jobs.append({
-                    "source": source,
-                    "schedule": " ".join(parts[:5]),
-                    "command": parts[5],
-                })
+                jobs.append(
+                    {
+                        "source": source,
+                        "schedule": " ".join(parts[:5]),
+                        "command": parts[5],
+                    }
+                )
     return jobs

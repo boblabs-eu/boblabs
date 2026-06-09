@@ -4,14 +4,13 @@ import mimetypes
 import os
 import re as _re
 import uuid as uuid_mod
-from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.api.dependencies import DbSession, get_current_user
-from app.services.authorization import check_permission, Permission
+from app.api.routes.labs import LAB_RESOURCES_ROOT
 from app.repositories.lab_repo import (
     LabMemoryRepository,
     LabMessageRepository,
@@ -23,7 +22,7 @@ from app.schemas.orchestrator import (
     LabMessageResponse,
     LabResourceResponse,
 )
-from app.api.routes.labs import LAB_RESOURCES_ROOT
+from app.services.authorization import Permission, check_permission
 
 router = APIRouter(tags=["labs"])
 
@@ -69,7 +68,9 @@ async def list_lab_memories(
     if not lab:
         raise HTTPException(404, "Lab not found")
     check_permission(user, lab.acl, Permission.VIEW)
-    return await LabMemoryRepository(db).get_by_lab(lab_id, scope=scope, limit=limit, agent_id=agent_id)
+    return await LabMemoryRepository(db).get_by_lab(
+        lab_id, scope=scope, limit=limit, agent_id=agent_id
+    )
 
 
 @router.patch("/{lab_id}/memories/{memory_id}", response_model=LabMemoryResponse)
@@ -80,7 +81,9 @@ async def toggle_memory_visibility(
     body: dict,
 ):
     """Toggle is_hidden on a lab memory."""
-    from sqlalchemy import update as sql_update, select
+    from sqlalchemy import select
+    from sqlalchemy import update as sql_update
+
     from app.models.orchestrator import LabMemory
 
     is_hidden = bool(body.get("is_hidden", False))
@@ -102,13 +105,54 @@ async def toggle_memory_visibility(
 # ══════════════════════════════════════════════════
 
 ALLOWED_EXTENSIONS = {
-    ".txt", ".md", ".py", ".js", ".ts", ".jsx", ".tsx", ".json", ".yaml", ".yml",
-    ".toml", ".cfg", ".ini", ".csv", ".xml", ".html", ".css", ".sql", ".sh", ".bash",
-    ".rs", ".go", ".java", ".c", ".cpp", ".h", ".hpp", ".rb", ".php", ".swift",
-    ".kt", ".scala", ".r", ".lua", ".dockerfile", ".makefile", ".gitignore",
-    ".env", ".log", ".conf",
+    ".txt",
+    ".md",
+    ".py",
+    ".js",
+    ".ts",
+    ".jsx",
+    ".tsx",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".cfg",
+    ".ini",
+    ".csv",
+    ".xml",
+    ".html",
+    ".css",
+    ".sql",
+    ".sh",
+    ".bash",
+    ".rs",
+    ".go",
+    ".java",
+    ".c",
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".rb",
+    ".php",
+    ".swift",
+    ".kt",
+    ".scala",
+    ".r",
+    ".lua",
+    ".dockerfile",
+    ".makefile",
+    ".gitignore",
+    ".env",
+    ".log",
+    ".conf",
     # Images
-    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".bmp",
+    ".svg",
     # Documents
     ".pdf",
 }
@@ -124,7 +168,30 @@ def _classify_resource(ext: str, content_type: str) -> str:
         return "image"
     if ext == ".pdf":
         return "pdf"
-    return "code" if ext in {".py", ".js", ".ts", ".jsx", ".tsx", ".rs", ".go", ".java", ".c", ".cpp", ".h", ".hpp", ".rb", ".php", ".swift", ".kt", ".scala"} else "file"
+    return (
+        "code"
+        if ext
+        in {
+            ".py",
+            ".js",
+            ".ts",
+            ".jsx",
+            ".tsx",
+            ".rs",
+            ".go",
+            ".java",
+            ".c",
+            ".cpp",
+            ".h",
+            ".hpp",
+            ".rb",
+            ".php",
+            ".swift",
+            ".kt",
+            ".scala",
+        }
+        else "file"
+    )
 
 
 @router.get("/{lab_id}/resources", response_model=list[LabResourceResponse])
@@ -156,7 +223,7 @@ async def upload_lab_resource(lab_id: UUID, file: UploadFile = File(...), db: Db
     # Read file (with size limit)
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(400, f"File too large. Max {MAX_FILE_SIZE // (1024*1024)} MB.")
+        raise HTTPException(400, f"File too large. Max {MAX_FILE_SIZE // (1024 * 1024)} MB.")
 
     # Store on disk
     lab_dir = LAB_RESOURCES_ROOT / str(lab_id)
@@ -236,12 +303,36 @@ async def read_resource_content(lab_id: UUID, resource_id: UUID, db: DbSession):
         raise HTTPException(404, "File not found on disk")
 
     mime = resource.content_type or "application/octet-stream"
-    is_text = mime.startswith("text/") or mime in (
-        "application/json", "application/javascript", "application/xml",
-        "application/x-yaml", "application/x-sh",
-    ) or file_path.suffix in (
-        ".md", ".py", ".js", ".ts", ".html", ".css", ".json", ".yml", ".yaml",
-        ".sh", ".txt", ".csv", ".xml", ".toml", ".cfg", ".ini", ".log",
+    is_text = (
+        mime.startswith("text/")
+        or mime
+        in (
+            "application/json",
+            "application/javascript",
+            "application/xml",
+            "application/x-yaml",
+            "application/x-sh",
+        )
+        or file_path.suffix
+        in (
+            ".md",
+            ".py",
+            ".js",
+            ".ts",
+            ".html",
+            ".css",
+            ".json",
+            ".yml",
+            ".yaml",
+            ".sh",
+            ".txt",
+            ".csv",
+            ".xml",
+            ".toml",
+            ".cfg",
+            ".ini",
+            ".log",
+        )
     )
     is_image = mime.startswith("image/")
     is_audio = mime.startswith("audio/")
@@ -297,13 +388,15 @@ async def list_output_files(lab_id: UUID, db: DbSession):
         rel = fp.relative_to(ws_dir)
         mime, _ = mimetypes.guess_type(fp.name)
         stat = fp.stat()
-        files.append({
-            "path": str(rel),
-            "name": fp.name,
-            "size_bytes": stat.st_size,
-            "modified_at": stat.st_mtime * 1000,
-            "content_type": mime or "application/octet-stream",
-        })
+        files.append(
+            {
+                "path": str(rel),
+                "name": fp.name,
+                "size_bytes": stat.st_size,
+                "modified_at": stat.st_mtime * 1000,
+                "content_type": mime or "application/octet-stream",
+            }
+        )
     return files
 
 
@@ -357,12 +450,36 @@ async def read_output_file_content(lab_id: UUID, path: str, db: DbSession):
     mime = mime or "application/octet-stream"
     stat = target.stat()
 
-    is_text = mime.startswith("text/") or mime in (
-        "application/json", "application/javascript", "application/xml",
-        "application/x-yaml", "application/x-sh",
-    ) or target.suffix in (
-        ".md", ".py", ".js", ".ts", ".html", ".css", ".json", ".yml", ".yaml",
-        ".sh", ".txt", ".csv", ".xml", ".toml", ".cfg", ".ini", ".log",
+    is_text = (
+        mime.startswith("text/")
+        or mime
+        in (
+            "application/json",
+            "application/javascript",
+            "application/xml",
+            "application/x-yaml",
+            "application/x-sh",
+        )
+        or target.suffix
+        in (
+            ".md",
+            ".py",
+            ".js",
+            ".ts",
+            ".html",
+            ".css",
+            ".json",
+            ".yml",
+            ".yaml",
+            ".sh",
+            ".txt",
+            ".csv",
+            ".xml",
+            ".toml",
+            ".cfg",
+            ".ini",
+            ".log",
+        )
     )
     is_image = mime.startswith("image/")
     is_audio = mime.startswith("audio/")
@@ -400,6 +517,7 @@ async def get_output_file_history(lab_id: UUID, path: str, db: DbSession):
         raise HTTPException(404, "Lab not found")
 
     from sqlalchemy import select
+
     from app.models.orchestrator import LabMessage
 
     # Query all file_event messages for this lab
@@ -423,7 +541,7 @@ async def get_output_file_history(lab_id: UUID, path: str, db: DbSession):
 
         if not file_path:
             # Parse from content: "File created: **output/report.md** (1234 bytes)"
-            m = _re.search(r'File (\w+): \*\*(.+?)\*\*', msg.content or "")
+            m = _re.search(r"File (\w+): \*\*(.+?)\*\*", msg.content or "")
             if m:
                 file_action = m.group(1)
                 file_path = m.group(2)
@@ -435,11 +553,13 @@ async def get_output_file_history(lab_id: UUID, path: str, db: DbSession):
         if norm_event_path != norm_path:
             continue
 
-        history.append({
-            "action": file_action,
-            "agent_name": msg.sender_name or msg.sender_type,
-            "timestamp": msg.created_at.isoformat() if msg.created_at else None,
-            "iteration": msg.iteration,
-        })
+        history.append(
+            {
+                "action": file_action,
+                "agent_name": msg.sender_name or msg.sender_type,
+                "timestamp": msg.created_at.isoformat() if msg.created_at else None,
+                "iteration": msg.iteration,
+            }
+        )
 
     return history

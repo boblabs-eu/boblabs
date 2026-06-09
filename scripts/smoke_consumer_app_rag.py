@@ -34,7 +34,6 @@ import uuid
 
 import httpx
 
-
 BOB_API_URL = os.environ.get("BOB_API_URL", "http://127.0.0.1:8888").rstrip("/")
 BOB_APP_ID = os.environ.get("BOB_APP_ID", "pouleapp")
 BOB_APP_SECRET = os.environ.get("BOB_APP_SECRET")
@@ -92,7 +91,9 @@ def main() -> None:
     # 2) create_rag (idempotency check — same args, same id)
     a2 = _call("/create_rag", {"name": name_a})
     if a2["collection_id"] != a["collection_id"]:
-        print(f"FAIL: create_rag not idempotent — got {a2['collection_id']} vs {a['collection_id']}")
+        print(
+            f"FAIL: create_rag not idempotent — got {a2['collection_id']} vs {a['collection_id']}"
+        )
         sys.exit(1)
     print("PASS: create_rag idempotent")
 
@@ -149,12 +150,15 @@ def main() -> None:
     print("PASS: import_lab rejects cross-app rag_access with 403")
 
     # 7) grant_rag_access — link rag B to the same lab via the imperative path
-    granted = _call("/grant_rag_access", {
-        "lab_id": lab_id,
-        "rag_name": name_b,
-        "can_read": True,
-        "can_write": True,
-    })
+    granted = _call(
+        "/grant_rag_access",
+        {
+            "lab_id": lab_id,
+            "rag_name": name_b,
+            "can_read": True,
+            "can_write": True,
+        },
+    )
     if granted["collection_name"] != b["collection_name"]:
         print(f"FAIL: grant_rag_access returned wrong collection: {granted}")
         sys.exit(1)

@@ -29,16 +29,43 @@ app = FastAPI(title="bob-sandbox", docs_url=None, redoc_url=None)
 LAB_RESOURCES_ROOT = Path(os.environ.get("LAB_RESOURCES_PATH", "/data/lab_resources"))
 
 SHELL_WHITELIST = {
-    "curl", "wget", "python3", "python", "pip", "pip3",
-    "cat", "head", "tail", "wc", "grep", "awk", "sed", "sort", "uniq",
-    "ls", "find", "echo", "date", "whoami", "uname", "pwd",
-    "jq", "bc", "tr", "cut", "tee", "xargs",
+    "curl",
+    "wget",
+    "python3",
+    "python",
+    "pip",
+    "pip3",
+    "cat",
+    "head",
+    "tail",
+    "wc",
+    "grep",
+    "awk",
+    "sed",
+    "sort",
+    "uniq",
+    "ls",
+    "find",
+    "echo",
+    "date",
+    "whoami",
+    "uname",
+    "pwd",
+    "jq",
+    "bc",
+    "tr",
+    "cut",
+    "tee",
+    "xargs",
     # Audio/video tools
-    "ffmpeg", "ffprobe",
+    "ffmpeg",
+    "ffprobe",
     # YouTube download
     "yt-dlp",
     # CAD tools
-    "freecadcmd", "freecad", "kicad-cli",
+    "freecadcmd",
+    "freecad",
+    "kicad-cli",
 }
 
 
@@ -107,13 +134,15 @@ async def python_exec(req: PythonExecRequest):
     # behaviour that `import` from sibling files (via PYTHONPATH=ws)
     # continues to resolve.
     import uuid as _uuid
+
     script_path = ws / f"_exec_tmp_{_uuid.uuid4().hex}.py"
     script_path.write_text(req.code)
 
     proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
-            "python3", str(script_path),
+            "python3",
+            str(script_path),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(ws),
@@ -125,9 +154,7 @@ async def python_exec(req: PythonExecRequest):
                 "OUTPUT_DIR": str(ws / "output"),
             },
         )
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=req.timeout_sec
-        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=req.timeout_sec)
         parts = []
         if stdout:
             parts.append(stdout.decode(errors="replace"))
@@ -191,9 +218,7 @@ async def shell_exec(req: ShellExecRequest):
                 "OUTPUT_DIR": str(ws / "output"),
             },
         )
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=req.timeout_sec
-        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=req.timeout_sec)
         parts = []
         if stdout:
             parts.append(stdout.decode(errors="replace"))
@@ -225,13 +250,13 @@ _YOUTUBE_ALLOWED_HOSTS = {"youtube.com", "www.youtube.com", "youtu.be"}
 
 # Path patterns (applied AFTER hostname is verified via urlparse)
 _YOUTUBE_VIDEO_PATH_RE = re.compile(
-    r'^/(?:watch\?v=|shorts/)[A-Za-z0-9_-]{11}',
+    r"^/(?:watch\?v=|shorts/)[A-Za-z0-9_-]{11}",
 )
 _YOUTU_BE_PATH_RE = re.compile(
-    r'^/[A-Za-z0-9_-]{11}$',
+    r"^/[A-Za-z0-9_-]{11}$",
 )
 _YOUTUBE_CHANNEL_PATH_RE = re.compile(
-    r'^/(?:@[\w.-]{1,100}|channel/[A-Za-z0-9_-]{20,30}|c/[\w.-]{1,100})(?:/videos)?/?$',
+    r"^/(?:@[\w.-]{1,100}|channel/[A-Za-z0-9_-]{20,30}|c/[\w.-]{1,100})(?:/videos)?/?$",
 )
 
 
@@ -246,7 +271,9 @@ def _is_youtube_video_url(url: str) -> bool:
             return False
         if host == "youtu.be":
             return bool(_YOUTU_BE_PATH_RE.match(parsed.path))
-        return bool(_YOUTUBE_VIDEO_PATH_RE.match(parsed.path + ("?" + parsed.query if parsed.query else "")))
+        return bool(
+            _YOUTUBE_VIDEO_PATH_RE.match(parsed.path + ("?" + parsed.query if parsed.query else ""))
+        )
     except Exception:
         return False
 
@@ -308,17 +335,22 @@ async def youtube_download(req: YouTubeDownloadRequest):
 
     cmd = [
         "yt-dlp",
-        "--format", "bestaudio",
+        "--format",
+        "bestaudio",
         "--extract-audio",
-        "--audio-format", fmt,
-        "--audio-quality", "0",
+        "--audio-format",
+        fmt,
+        "--audio-quality",
+        "0",
         "--no-playlist",
         "--restrict-filenames",
-        "--max-filesize", "500M",
+        "--max-filesize",
+        "500M",
         "--no-overwrites",
         "--print-json",
         "--no-simulate",
-        "-o", output_template,
+        "-o",
+        output_template,
         req.url,
     ]
 
@@ -334,9 +366,7 @@ async def youtube_download(req: YouTubeDownloadRequest):
                 "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
             },
         )
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=req.timeout_sec
-        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=req.timeout_sec)
     except asyncio.TimeoutError:
         if proc is not None:
             try:
@@ -380,13 +410,15 @@ async def youtube_download(req: YouTubeDownloadRequest):
 
     return {
         "success": True,
-        "output": json.dumps({
-            "output_path": rel_path,
-            "title": title,
-            "duration_seconds": duration,
-            "filesize_bytes": size_bytes,
-            "format": fmt,
-        }),
+        "output": json.dumps(
+            {
+                "output_path": rel_path,
+                "title": title,
+                "duration_seconds": duration,
+                "filesize_bytes": size_bytes,
+                "format": fmt,
+            }
+        ),
     }
 
 
@@ -459,9 +491,7 @@ async def youtube_channel_list(req: YouTubeChannelListRequest):
                 "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
             },
         )
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=req.timeout_sec
-        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=req.timeout_sec)
     except asyncio.TimeoutError:
         if proc is not None:
             try:
@@ -501,22 +531,26 @@ async def youtube_channel_list(req: YouTubeChannelListRequest):
             pub_date = f"{upload_date[:4]}-{upload_date[4:6]}-{upload_date[6:8]}"
 
         if video_id:
-            videos.append({
-                "url": f"https://www.youtube.com/watch?v={video_id}",
-                "title": title,
-                "publish_date": pub_date,
-            })
+            videos.append(
+                {
+                    "url": f"https://www.youtube.com/watch?v={video_id}",
+                    "title": title,
+                    "publish_date": pub_date,
+                }
+            )
 
     if not videos:
         return {"success": False, "output": "No videos found on this channel."}
 
     return {
         "success": True,
-        "output": json.dumps({
-            "channel": req.channel_url,
-            "count": len(videos),
-            "videos": videos,
-        }),
+        "output": json.dumps(
+            {
+                "channel": req.channel_url,
+                "count": len(videos),
+                "videos": videos,
+            }
+        ),
     }
 
 
@@ -524,13 +558,13 @@ async def youtube_channel_list(req: YouTubeChannelListRequest):
 
 # Statements that must never run — they can escape the workspace.
 _DB_BLOCKED_RE = re.compile(
-    r'\b(ATTACH|DETACH|LOAD_EXTENSION)\b',
+    r"\b(ATTACH|DETACH|LOAD_EXTENSION)\b",
     re.IGNORECASE,
 )
 
 # Statements considered read-only (SELECT, EXPLAIN, PRAGMA without '=').
 _DB_READ_ONLY_RE = re.compile(
-    r'^\s*(SELECT|EXPLAIN|PRAGMA\s+\w+(?!\s*=))\b',
+    r"^\s*(SELECT|EXPLAIN|PRAGMA\s+\w+(?!\s*=))\b",
     re.IGNORECASE,
 )
 
@@ -596,7 +630,10 @@ async def db_query(req: DbSqlRequest):
 
     db_file = _db_path(ws)
     if not db_file.exists():
-        return {"success": False, "output": "No database exists yet. Use db_execute to create tables first."}
+        return {
+            "success": False,
+            "output": "No database exists yet. Use db_execute to create tables first.",
+        }
 
     conn = None
     try:
@@ -611,12 +648,15 @@ async def db_query(req: DbSqlRequest):
         extra = cursor.fetchone()
         truncated = extra is not None
 
-        result = json.dumps({
-            "columns": columns,
-            "rows": [list(r) for r in rows],
-            "row_count": row_count,
-            "truncated": truncated,
-        }, default=str)
+        result = json.dumps(
+            {
+                "columns": columns,
+                "rows": [list(r) for r in rows],
+                "row_count": row_count,
+                "truncated": truncated,
+            },
+            default=str,
+        )
 
         return {"success": True, "output": _truncate(result, req.max_output_kb)}
     except sqlite3.Error as e:
@@ -653,10 +693,12 @@ async def db_execute(req: DbSqlRequest):
 
         return {
             "success": True,
-            "output": json.dumps({
-                "affected_rows": affected,
-                "message": f"OK — {affected} row(s) affected.",
-            }),
+            "output": json.dumps(
+                {
+                    "affected_rows": affected,
+                    "message": f"OK — {affected} row(s) affected.",
+                }
+            ),
         }
     except sqlite3.Error as e:
         return {"success": False, "output": f"SQL error: {e}"}
@@ -678,7 +720,10 @@ async def db_schema(req: DbRequest):
     db_file = _db_path(ws)
 
     if not db_file.exists():
-        return {"success": True, "output": json.dumps({"tables": [], "message": "No database exists yet."})}
+        return {
+            "success": True,
+            "output": json.dumps({"tables": [], "message": "No database exists yet."}),
+        }
 
     conn = None
     try:
@@ -694,20 +739,24 @@ async def db_schema(req: DbRequest):
             col_cursor = conn.execute(f"PRAGMA table_info([{table_name}])")  # noqa: S608
             columns = []
             for col in col_cursor.fetchall():
-                columns.append({
-                    "name": col[1],
-                    "type": col[2],
-                    "notnull": bool(col[3]),
-                    "default": col[4],
-                    "pk": bool(col[5]),
-                })
+                columns.append(
+                    {
+                        "name": col[1],
+                        "type": col[2],
+                        "notnull": bool(col[3]),
+                        "default": col[4],
+                        "pk": bool(col[5]),
+                    }
+                )
             row_count_cursor = conn.execute(f"SELECT COUNT(*) FROM [{table_name}]")  # noqa: S608
             row_count = row_count_cursor.fetchone()[0]
-            tables.append({
-                "name": table_name,
-                "columns": columns,
-                "row_count": row_count,
-            })
+            tables.append(
+                {
+                    "name": table_name,
+                    "columns": columns,
+                    "row_count": row_count,
+                }
+            )
 
         return {"success": True, "output": json.dumps({"tables": tables}, default=str)}
     except sqlite3.Error as e:
@@ -919,6 +968,7 @@ class BrowserSnapshotRequest(BaseModel):
 
 class BrowserFileRenderRequest(BaseModel):
     """Render a local HTML file (already written to the workspace) and extract output."""
+
     lab_id: str
     html_path: str  # absolute path inside the sandbox container's filesystem
     wait_selector: str | None = None
@@ -976,7 +1026,10 @@ async def browser_snapshot(req: BrowserSnapshotRequest):
     async with _browser_lock:
         page = _browser_state.get("page")
         if page is None or page.is_closed():
-            return {"success": False, "output": "No browser page open. Call browser_navigate first."}
+            return {
+                "success": False,
+                "output": "No browser page open. Call browser_navigate first.",
+            }
         try:
             title = await page.title()
             url = page.url
@@ -1110,7 +1163,10 @@ async def browser_eval_selector(req: BrowserEvalSelectorRequest):
             locator = page.locator(req.selector).first
             value = await locator.evaluate(req.js_expression)
             _browser_state["last_used"] = asyncio.get_event_loop().time()
-            return {"success": True, "output": value if isinstance(value, str) else json.dumps(value)}
+            return {
+                "success": True,
+                "output": value if isinstance(value, str) else json.dumps(value),
+            }
         except Exception as e:
             return {"success": False, "output": f"Eval failed: {e}"}
 

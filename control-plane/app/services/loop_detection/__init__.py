@@ -12,6 +12,7 @@ Public surface:
 The embedder always runs as a fire-and-forget background task so the lab
 iteration loop is never blocked.
 """
+
 from .base import LoopDetector, LoopReport, LoopSignal, MessageRecord, ToolCall
 from .manager import LoopManager, get_loop_manager
 

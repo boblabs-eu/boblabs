@@ -118,7 +118,9 @@ class ReActStrategy(LoopStrategy):
 
         messages = [{"role": "system", "content": system}]
         messages += build_messages_from_history(
-            context, self._last_results, self._injections,
+            context,
+            self._last_results,
+            self._injections,
             prompt_suffix="Observe the result. Think, then choose your next action.",
             first_iter_prompt="Begin reasoning. What is the first step to achieve the goal?",
         )
@@ -131,13 +133,17 @@ class ReActStrategy(LoopStrategy):
         # Record observation in trace
         for r in results:
             if self._trace:
-                self._trace[-1]["observation"] = r.response[:500] if not r.error else f"ERROR: {r.error}"
-            self._trace.append({
-                "step": len(self._trace) + 1,
-                "thought": "(pending)",
-                "agent": r.agent_name,
-                "instruction": r.instruction,
-            })
+                self._trace[-1]["observation"] = (
+                    r.response[:500] if not r.error else f"ERROR: {r.error}"
+                )
+            self._trace.append(
+                {
+                    "step": len(self._trace) + 1,
+                    "thought": "(pending)",
+                    "agent": r.agent_name,
+                    "instruction": r.instruction,
+                }
+            )
 
     async def on_inject(self, context: LoopContext, message: str) -> None:
         self._injections.append(message)

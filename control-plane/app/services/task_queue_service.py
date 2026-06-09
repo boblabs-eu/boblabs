@@ -79,9 +79,7 @@ class TaskQueueService:
         await self.gpu_repo.release_by_task(task_id)
         return task
 
-    async def fail_task(
-        self, task_id: UUID, error: str
-    ) -> OrchestratorTask | None:
+    async def fail_task(self, task_id: UUID, error: str) -> OrchestratorTask | None:
         """Mark a task as failed and release GPU lock."""
         now = datetime.now(timezone.utc)
         task = await self.task_repo.update(
@@ -93,9 +91,7 @@ class TaskQueueService:
         await self.gpu_repo.release_by_task(task_id)
         return task
 
-    async def acquire_gpu(
-        self, server_id: UUID, gpu_index: int, task_id: UUID
-    ) -> bool:
+    async def acquire_gpu(self, server_id: UUID, gpu_index: int, task_id: UUID) -> bool:
         """Try to lock a GPU for a task."""
         return await self.gpu_repo.acquire(server_id, gpu_index, task_id)
 
@@ -111,6 +107,4 @@ class TaskQueueService:
         self, conversation_id: UUID | None = None, limit: int = 50
     ) -> list[OrchestratorTask]:
         """Get recent tasks, optionally filtered by conversation."""
-        return await self.task_repo.get_recent(
-            limit=limit, conversation_id=conversation_id
-        )
+        return await self.task_repo.get_recent(limit=limit, conversation_id=conversation_id)

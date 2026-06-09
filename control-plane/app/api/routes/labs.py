@@ -7,7 +7,6 @@ Sub-modules: labs_blueprint (import/export), labs_execution (lifecycle),
 
 import os
 import shutil
-import uuid as uuid_mod
 from pathlib import Path
 from uuid import UUID
 
@@ -15,7 +14,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 
 from app.api.dependencies import DbSession, get_current_user
-from app.services.authorization import check_permission, Permission
 from app.models.orchestrator import LabAgent, LabMessage
 from app.repositories.lab_repo import (
     LabAgentRepository,
@@ -34,6 +32,7 @@ from app.schemas.orchestrator import (
     LabToolUpdate,
     LabUpdate,
 )
+from app.services.authorization import Permission, check_permission
 from app.services.lab_runner import get_runner
 
 router = APIRouter(prefix="/labs", tags=["labs"])
@@ -55,6 +54,7 @@ async def list_loop_strategies():
     UI without requiring a frontend change.
     """
     from app.services.loop_strategies import list_strategies
+
     return {"strategies": list_strategies()}
 
 
@@ -62,6 +62,7 @@ async def list_loop_strategies():
 async def get_strategy_prompt(loop_type: str):
     """Return the default system prompt template for a given strategy type."""
     from app.services.loop_strategies import get_strategy_prompt as _get_prompt
+
     prompt = _get_prompt(loop_type)
     if prompt is None:
         raise HTTPException(404, f"Unknown strategy type: {loop_type}")
@@ -108,7 +109,8 @@ async def list_labs(
     # Always hide single-agent instance labs from the normal Labs UI;
     # they live under the Agents page.
     labs = [
-        lab for lab in labs
+        lab
+        for lab in labs
         if not (isinstance(lab.acl, dict) and lab.acl.get("tag") == "agent_instance")
     ]
     lab_ids = [lab.id for lab in labs]
@@ -128,6 +130,7 @@ async def create_lab(data: LabCreate, db: DbSession, user: dict = Depends(get_cu
     # appear in WORKSPACE FILES before the first run.
     if lab.context_files:
         from app.services.lab_runner import _materialize_context_files
+
         _materialize_context_files(lab)
     return _lab_to_response(lab, 0, 0)
 
@@ -145,7 +148,9 @@ async def get_lab(lab_id: UUID, db: DbSession, user: dict = Depends(get_current_
 
 
 @router.patch("/{lab_id}", response_model=LabResponse)
-async def update_lab(lab_id: UUID, data: LabUpdate, db: DbSession, user: dict = Depends(get_current_user)):
+async def update_lab(
+    lab_id: UUID, data: LabUpdate, db: DbSession, user: dict = Depends(get_current_user)
+):
     repo = LabRepository(db)
     lab = await repo.get_by_id(lab_id)
     if not lab:
@@ -175,6 +180,7 @@ async def delete_lab(lab_id: UUID, db: DbSession, user: dict = Depends(get_curre
         await runner.stop()
     # Destroy per-lab sandbox container
     from app.services.container_manager import destroy_sandbox
+
     await destroy_sandbox(lab_id)
     await repo.delete(lab_id)
 
@@ -273,6 +279,7 @@ async def duplicate_lab(lab_id: UUID, db: DbSession, user: dict = Depends(get_cu
     # Same materialization as create/import — make sure context_files exist on disk.
     if new_lab.context_files:
         from app.services.lab_runner import _materialize_context_files
+
         _materialize_context_files(new_lab)
 
     new_agents = await agent_repo.get_by_lab(new_lab.id)
@@ -299,9 +306,7 @@ async def create_lab_agent(lab_id: UUID, data: LabAgentCreate, db: DbSession):
     lab = await LabRepository(db).get_by_id(lab_id)
     if not lab:
         raise HTTPException(404, "Lab not found")
-    return await LabAgentRepository(db).create(
-        lab_id=lab_id, **data.model_dump(exclude_unset=True)
-    )
+    return await LabAgentRepository(db).create(lab_id=lab_id, **data.model_dump(exclude_unset=True))
 
 
 @router.patch("/{lab_id}/agents/{agent_id}", response_model=LabAgentResponse)
@@ -339,9 +344,7 @@ async def create_lab_tool(lab_id: UUID, data: LabToolCreate, db: DbSession):
     lab = await LabRepository(db).get_by_id(lab_id)
     if not lab:
         raise HTTPException(404, "Lab not found")
-    return await LabToolRepository(db).create(
-        lab_id=lab_id, **data.model_dump(exclude_unset=True)
-    )
+    return await LabToolRepository(db).create(lab_id=lab_id, **data.model_dump(exclude_unset=True))
 
 
 @router.patch("/{lab_id}/tools/{tool_id}", response_model=LabToolResponse)
@@ -448,4 +451,3 @@ router.include_router(blueprint_router)
 router.include_router(execution_router)
 router.include_router(files_router)
 router.include_router(loop_router)
-

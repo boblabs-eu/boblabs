@@ -25,7 +25,9 @@ class ConversationService:
         self.conv_repo = ConversationRepository(db)
         self.msg_repo = MessageRepository(db)
 
-    async def list_conversations(self, status: str | None = None, user: dict | None = None) -> list[dict]:
+    async def list_conversations(
+        self, status: str | None = None, user: dict | None = None
+    ) -> list[dict]:
         """Return conversations visible to user, with last message preview and count."""
         q = select(Conversation).order_by(Conversation.updated_at.desc())
         if status:
@@ -38,9 +40,7 @@ class ConversationService:
         for c in convs:
             # Get message count + last message
             count_q = await self.db.execute(
-                select(func.count(Message.id)).where(
-                    Message.conversation_id == c.id
-                )
+                select(func.count(Message.id)).where(Message.conversation_id == c.id)
             )
             count = count_q.scalar() or 0
 
@@ -74,7 +74,9 @@ class ConversationService:
     async def get_conversation(self, conv_id: UUID) -> Conversation | None:
         return await self.conv_repo.get_by_id(conv_id)
 
-    async def create_conversation(self, data: ConversationCreate, user: dict | None = None) -> Conversation:
+    async def create_conversation(
+        self, data: ConversationCreate, user: dict | None = None
+    ) -> Conversation:
         conv = Conversation(title=data.title, agent_id=data.agent_id, tools=data.tools or [])
         if user:
             conv.acl = get_default_acl(user.get("sub", "admin"))

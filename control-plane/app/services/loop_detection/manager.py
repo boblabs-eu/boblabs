@@ -10,6 +10,7 @@ Design highlights:
 - Yellow / orange severities only emit ``lab.loop_warning``; no action.
 - Per-actor in-memory ring buffer keyed by lab_id + actor_key.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -32,10 +33,10 @@ logger = logging.getLogger(__name__)
 
 
 # ── Tunables (overridable via env in the future) ─────────────────
-WINDOW_SECONDS = 600          # 10 minutes
-HISTORY_PER_ACTOR = 12        # ring buffer size per (lab, actor)
-RECOVERY_KEEP_TAIL = 0        # how many recent looping msgs to KEEP
-MIN_CONTENT_LEN = 20          # don't embed trivially short messages
+WINDOW_SECONDS = 600  # 10 minutes
+HISTORY_PER_ACTOR = 12  # ring buffer size per (lab, actor)
+RECOVERY_KEEP_TAIL = 0  # how many recent looping msgs to KEEP
+MIN_CONTENT_LEN = 20  # don't embed trivially short messages
 RED_AUTOACT_SEVERITY = "red"  # severity that triggers auto-recovery
 # R14 — hard cap on how long `_recover` can hold the per-lab slot in
 # `_recovering`. If the inner async work wedges past this, the wait_for
@@ -108,15 +109,15 @@ class LoopManager:
         cutoff = _now() - timedelta(seconds=RECOVERY_TIMEOUT_SEC)
         async with self._lock:
             stale = [
-                lab_id for lab_id, started in self._recovery_started_at.items()
-                if started < cutoff
+                lab_id for lab_id, started in self._recovery_started_at.items() if started < cutoff
             ]
             for lab_id in stale:
                 self._recovering.discard(lab_id)
                 self._recovery_started_at.pop(lab_id, None)
                 logger.warning(
-                    "R14 sweeper — evicting wedged recovery for lab=%s "
-                    "(started %s)", lab_id, self._recovery_started_at.get(lab_id),
+                    "R14 sweeper — evicting wedged recovery for lab=%s (started %s)",
+                    lab_id,
+                    self._recovery_started_at.get(lab_id),
                 )
         return len(stale)
 
@@ -208,16 +209,20 @@ class LoopManager:
         payload = {
             "severity": report.severity,
             "score": report.score,
-            "signals": [{"name": s.name, "score": s.score, "detail": s.detail} for s in report.signals],
+            "signals": [
+                {"name": s.name, "score": s.score, "detail": s.detail} for s in report.signals
+            ],
             "loop_message_ids": [str(mid) for mid in report.loop_message_ids],
         }
 
         # Always emit a warning (so the UI can show banners even when auto-recover is off).
         try:
-            await ws_manager.broadcast_to_clients({
-                "type": "lab.loop_warning",
-                "payload": {"lab_id": str(lab_id), **payload},
-            })
+            await ws_manager.broadcast_to_clients(
+                {
+                    "type": "lab.loop_warning",
+                    "payload": {"lab_id": str(lab_id), **payload},
+                }
+            )
         except Exception:
             logger.exception("Failed to broadcast lab.loop_warning")
 
@@ -247,7 +252,8 @@ class LoopManager:
             logger.error(
                 "Loop recovery for lab=%s exceeded %ss; clearing _recovering "
                 "so future recoveries can fire (R14)",
-                lab_id, RECOVERY_TIMEOUT_SEC,
+                lab_id,
+                RECOVERY_TIMEOUT_SEC,
             )
         finally:
             self._recovering.discard(lab_id)
@@ -271,7 +277,9 @@ class LoopManager:
 
         logger.warning(
             "Anti-loop triggered for lab=%s (score=%d, %d messages)",
-            lab_id, report.score, len(report.loop_message_ids),
+            lab_id,
+            report.score,
+            len(report.loop_message_ids),
         )
 
         # 1) Pause the runner so no new iteration starts during cleanup.
@@ -298,19 +306,21 @@ class LoopManager:
 
         # 5) Notify UI.
         try:
-            await ws_manager.broadcast_to_clients({
-                "type": "lab.loop_recovered",
-                "payload": {
-                    "lab_id": str(lab_id),
-                    "severity": report.severity,
-                    "score": report.score,
-                    "removed_count": removed,
-                    "signals": [
-                        {"name": s.name, "score": s.score, "detail": s.detail}
-                        for s in report.signals
-                    ],
-                },
-            })
+            await ws_manager.broadcast_to_clients(
+                {
+                    "type": "lab.loop_recovered",
+                    "payload": {
+                        "lab_id": str(lab_id),
+                        "severity": report.severity,
+                        "score": report.score,
+                        "removed_count": removed,
+                        "signals": [
+                            {"name": s.name, "score": s.score, "detail": s.detail}
+                            for s in report.signals
+                        ],
+                    },
+                }
+            )
         except Exception:
             logger.exception("Failed to broadcast lab.loop_recovered")
 
@@ -325,16 +335,18 @@ class LoopManager:
             # orphan state.
             logger.exception("Loop recovery: resume failed for lab=%s", lab_id)
             try:
-                await ws_manager.broadcast_to_clients({
-                    "type": "lab.loop_recovery_failed",
-                    "payload": {
-                        "lab_id": str(lab_id),
-                        "severity": report.severity,
-                        "score": report.score,
-                        "removed_count": removed,
-                        "reason": "resume_failed",
-                    },
-                })
+                await ws_manager.broadcast_to_clients(
+                    {
+                        "type": "lab.loop_recovery_failed",
+                        "payload": {
+                            "lab_id": str(lab_id),
+                            "severity": report.severity,
+                            "score": report.score,
+                            "removed_count": removed,
+                            "reason": "resume_failed",
+                        },
+                    }
+                )
             except Exception:
                 logger.exception("Failed to broadcast lab.loop_recovery_failed")
 
@@ -367,10 +379,12 @@ class LoopManager:
                     "lab_id": str(lab_id),
                     "severity": report.severity,
                     "score": report.score,
-                    "signals": _json_dumps([
-                        {"name": s.name, "score": s.score, "detail": s.detail}
-                        for s in report.signals
-                    ]),
+                    "signals": _json_dumps(
+                        [
+                            {"name": s.name, "score": s.score, "detail": s.detail}
+                            for s in report.signals
+                        ]
+                    ),
                     "rmids": _json_dumps([str(i) for i in report.loop_message_ids]),
                     "removed": removed,
                 },
@@ -402,6 +416,7 @@ class LoopManager:
 # ──────────────────────────────────────────────
 def _json_dumps(obj) -> str:
     import json
+
     return json.dumps(obj, default=str)
 
 

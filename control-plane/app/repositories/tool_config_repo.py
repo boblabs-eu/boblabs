@@ -1,7 +1,5 @@
 """Repository for tool configuration (SMTP, Twitter API keys, etc.)."""
 
-from uuid import UUID
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,9 +11,7 @@ class ToolConfigRepository:
         self.db = db
 
     async def get_by_tool_type(self, tool_type: str) -> ToolConfig | None:
-        result = await self.db.execute(
-            select(ToolConfig).where(ToolConfig.tool_type == tool_type)
-        )
+        result = await self.db.execute(select(ToolConfig).where(ToolConfig.tool_type == tool_type))
         return result.scalar_one_or_none()
 
     async def list_all(self) -> list[ToolConfig]:

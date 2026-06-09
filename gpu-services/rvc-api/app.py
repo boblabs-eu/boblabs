@@ -20,7 +20,6 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import torch
@@ -84,6 +83,7 @@ def _verify_model_checksum(model_path: Path) -> None:
         )
     logger.info("A10: model %s checksum verified", model_path.name)
 
+
 # ── Global model state ───────────────────────────────
 
 _loaded_models: dict[str, dict] = {}
@@ -119,6 +119,7 @@ def _get_model(model_name: str):
         logger.info("Loading RVC model: %s", model_name)
 
         from rvc_infer import load_model
+
         model_data = load_model(str(model_path), str(index_path) if index_path.exists() else None)
 
         _loaded_models[model_name] = model_data
@@ -141,20 +142,39 @@ def _unload_if_idle():
 
 # ── Request / Response schemas ───────────────────────
 
+
 class InferRequest(BaseModel):
     audio: str = Field(..., description="Base64-encoded WAV input audio")
     model_name: str = Field(..., description="Name of the RVC model (without .pth extension)")
-    pitch_shift: int = Field(default=0, ge=-24, le=24, description="Semitones to shift pitch (+12 = one octave up)")
-    f0_method: str = Field(default="rmvpe", pattern=r"^(rmvpe|crepe|harvest|pm)$",
-                           description="Pitch extraction method")
-    index_ratio: float = Field(default=0.75, ge=0.0, le=1.0,
-                               description="Feature index ratio (0=disabled, 1=full retrieval)")
-    filter_radius: int = Field(default=3, ge=0, le=7,
-                               description="Median filter radius for pitch (reduces breathiness)")
-    rms_mix_rate: float = Field(default=0.25, ge=0.0, le=1.0,
-                                description="Volume envelope mix (0=output only, 1=input envelope)")
-    protect: float = Field(default=0.33, ge=0.0, le=0.5,
-                           description="Protect voiceless consonants (higher=more protection)")
+    pitch_shift: int = Field(
+        default=0, ge=-24, le=24, description="Semitones to shift pitch (+12 = one octave up)"
+    )
+    f0_method: str = Field(
+        default="rmvpe",
+        pattern=r"^(rmvpe|crepe|harvest|pm)$",
+        description="Pitch extraction method",
+    )
+    index_ratio: float = Field(
+        default=0.75,
+        ge=0.0,
+        le=1.0,
+        description="Feature index ratio (0=disabled, 1=full retrieval)",
+    )
+    filter_radius: int = Field(
+        default=3, ge=0, le=7, description="Median filter radius for pitch (reduces breathiness)"
+    )
+    rms_mix_rate: float = Field(
+        default=0.25,
+        ge=0.0,
+        le=1.0,
+        description="Volume envelope mix (0=output only, 1=input envelope)",
+    )
+    protect: float = Field(
+        default=0.33,
+        ge=0.0,
+        le=0.5,
+        description="Protect voiceless consonants (higher=more protection)",
+    )
 
 
 class InferResponse(BaseModel):
@@ -170,6 +190,7 @@ class ModelsResponse(BaseModel):
 
 # ── App lifecycle ────────────────────────────────────
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     t = threading.Thread(target=_unload_if_idle, daemon=True)
@@ -184,6 +205,7 @@ app = FastAPI(title="RVC API", version="1.0.0", lifespan=lifespan)
 
 
 # ── Endpoints ────────────────────────────────────────
+
 
 @app.get("/health")
 async def health():
@@ -213,8 +235,7 @@ async def infer(req: InferRequest):
     available = _list_available_models()
     if req.model_name not in available:
         raise HTTPException(
-            status_code=404,
-            detail=f"Model '{req.model_name}' not found. Available: {available}"
+            status_code=404, detail=f"Model '{req.model_name}' not found. Available: {available}"
         )
 
     try:
@@ -227,6 +248,7 @@ async def infer(req: InferRequest):
         # Decode input audio
         raw = base64.b64decode(req.audio)
         import soundfile as sf
+
         input_buf = io.BytesIO(raw)
         input_audio, input_sr = sf.read(input_buf)
 
@@ -257,8 +279,15 @@ async def infer(req: InferRequest):
         audio_b64 = _encode_wav(output_audio, tgt_sr)
 
         elapsed = time.time() - t0
-        logger.info("Converted %.1fs audio in %.1fs (model=%s, pitch=%+d, f0=%s, sr=%d)",
-                     duration_s, elapsed, req.model_name, req.pitch_shift, req.f0_method, tgt_sr)
+        logger.info(
+            "Converted %.1fs audio in %.1fs (model=%s, pitch=%+d, f0=%s, sr=%d)",
+            duration_s,
+            elapsed,
+            req.model_name,
+            req.pitch_shift,
+            req.f0_method,
+            tgt_sr,
+        )
 
         return InferResponse(
             audio=audio_b64,
@@ -273,6 +302,7 @@ async def infer(req: InferRequest):
 
 
 # ── Audio helpers ────────────────────────────────────
+
 
 def _encode_wav(audio: np.ndarray, sample_rate: int) -> str:
     """Encode numpy audio array to base64 WAV string."""
@@ -289,4 +319,5 @@ def _encode_wav(audio: np.ndarray, sample_rate: int) -> str:
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host=HOST, port=PORT, log_level="info")

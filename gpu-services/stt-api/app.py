@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 import torch
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 logging.basicConfig(
@@ -106,6 +106,7 @@ def _unload_if_idle():
 
 # ── Response schemas ─────────────────────────────────
 
+
 class Segment(BaseModel):
     start: float
     end: float
@@ -122,13 +123,16 @@ class TranscribeResponse(BaseModel):
 
 # ── App lifecycle ────────────────────────────────────
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     t = threading.Thread(target=_unload_if_idle, daemon=True)
     t.start()
     logger.info(
         "STT API starting (model: %s, compute: %s, max file: %sMB)",
-        MODEL_SIZE, COMPUTE_TYPE, MAX_FILE_SIZE_MB,
+        MODEL_SIZE,
+        COMPUTE_TYPE,
+        MAX_FILE_SIZE_MB,
     )
     yield
     logger.info("STT API shutting down")
@@ -138,6 +142,7 @@ app = FastAPI(title="STT API", version="1.0.0", lifespan=lifespan)
 
 
 # ── Endpoints ────────────────────────────────────────
+
 
 @app.get("/health")
 async def health():
@@ -250,11 +255,13 @@ async def transcribe(
                 segments = []
                 full_text_parts = []
                 for seg in segments_iter:
-                    segments.append(Segment(
-                        start=round(seg.start, 2),
-                        end=round(seg.end, 2),
-                        text=seg.text.strip(),
-                    ))
+                    segments.append(
+                        Segment(
+                            start=round(seg.start, 2),
+                            end=round(seg.end, 2),
+                            text=seg.text.strip(),
+                        )
+                    )
                     full_text_parts.append(seg.text.strip())
 
             except Exception as e:
@@ -273,7 +280,11 @@ async def transcribe(
 
     logger.info(
         "Transcribed %.1fs audio in %.1fs (%d segments, lang=%s, model=%s)",
-        duration, elapsed, len(segments), detected_lang, model_name,
+        duration,
+        elapsed,
+        len(segments),
+        detected_lang,
+        model_name,
     )
 
     return TranscribeResponse(
@@ -302,4 +313,5 @@ def _safe_suffix(filename: str | None) -> str:
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host=HOST, port=PORT, workers=1)

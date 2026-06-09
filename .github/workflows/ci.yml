@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel older runs on the same ref when a new push lands.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-lint:
+    name: Ruff (lint + format)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Ruff
+        run: pip install ruff==0.15.16
+      - name: ruff check
+        run: ruff check .
+      - name: ruff format --check
+        run: ruff format --check .
+
+  openapi-drift:
+    name: OpenAPI spec drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: control-plane/requirements.txt
+      - name: Install control-plane deps
+        run: pip install -r control-plane/requirements.txt
+      - name: Verify docs/openapi.json is in sync
+        env:
+          BOB_API_ALLOW_MULTI_WORKER: "1"
+          DATABASE_URL: "postgresql+asyncpg://stub:stub@localhost:5432/stub"
+          JWT_SECRET: "ci-stub"
+          ADMIN_SECRET: "ci-stub"
+          AGENT_SECRET: "ci-stub"
+        run: bash scripts/check_openapi_drift.sh
+
+  python-tests:
+    name: pytest (control-plane)
+    runs-on: ubuntu-latest
+    env:
+      # Pin the compose project so `bob-manager_default` (the network
+      # referenced by the Makefile) actually gets created.
+      COMPOSE_PROJECT_NAME: bob-manager
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build bob-api image (cached by docker buildx)
+        run: docker compose build bob-api
+      - name: Bring up test database
+        run: make test-up
+      - name: Run pytest
+        run: make test-only
+      - name: Tear down test database
+        if: always()
+        run: make test-down
+
+  frontend-tests:
+    name: Jest (frontend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Run frontend tests
+        working-directory: frontend
+        env:
+          CI: "true"
+        run: npm test -- --watchAll=false --passWithNoTests
+
+  compose-smoke:
+    name: docker compose config + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bootstrap .env from .env.example
+        # `docker compose config` interpolates ${VAR} placeholders against
+        # the host env; without a .env the parser would emit warnings or
+        # leave fields blank.
+        run: cp .env.example .env
+      - name: Validate compose file
+        run: docker compose config --quiet
+      - name: Build core service images
+        # bob-api + bob-ui are the user-facing services; building them
+        # catches Dockerfile rot. We don't bring them up — saves 5+ min.
+        run: docker compose build bob-api bob-ui

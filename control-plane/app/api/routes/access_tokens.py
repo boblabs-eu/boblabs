@@ -6,8 +6,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
-from sqlalchemy import select, update as sa_update
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy import update as sa_update
 
 from app.api.dependencies import DbSession, get_current_user
 from app.repositories.access_token_repo import (
@@ -16,7 +16,7 @@ from app.repositories.access_token_repo import (
     TrialRequestRepository,
 )
 from app.repositories.blog_post_repo import BlogPostRepository, BlogTokenRepository
-from app.services.authorization import check_permission, Permission
+from app.services.authorization import Permission, check_permission
 from app.services.email_service import send_token_to_user
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ router = APIRouter(prefix="/access-tokens", tags=["access-tokens"])
 
 
 # ── Schemas ──────────────────────────────────────
+
 
 class CreateTokenIn(BaseModel):
     label: str = ""
@@ -75,6 +76,7 @@ class UpdateQuoteStatusIn(BaseModel):
 
 
 # ── Token Endpoints ──────────────────────────────
+
 
 @router.get("", response_model=list[TokenOut])
 async def list_tokens(db: DbSession, _user: dict = Depends(get_current_user)):
@@ -146,6 +148,7 @@ async def revoke_token(
 
 # ── Trial Request Endpoints ──────────────────────
 
+
 @router.get("/trial-requests", response_model=list[TrialRequestOut])
 async def list_trial_requests(db: DbSession, _user: dict = Depends(get_current_user)):
     """List all trial requests."""
@@ -177,7 +180,9 @@ async def update_trial_request_status(
     repo = TrialRequestRepository(db)
     updated = await repo.update_status(request_id, payload.status.strip())
     if not updated:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trial request not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Trial request not found."
+        )
     return TrialRequestOut(
         id=str(updated.id),
         name=updated.name,
@@ -191,6 +196,7 @@ async def update_trial_request_status(
 
 
 # ── Quote Request Endpoints ──────────────────────
+
 
 @router.get("/quote-requests", response_model=list[QuoteRequestAdminOut])
 async def list_quote_requests(db: DbSession, _user: dict = Depends(get_current_user)):
@@ -224,7 +230,9 @@ async def update_quote_request_status(
     repo = QuoteRequestRepository(db)
     updated = await repo.update_status(request_id, payload.status.strip())
     if not updated:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote request not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Quote request not found."
+        )
     return QuoteRequestAdminOut(
         id=str(updated.id),
         name=updated.name,
@@ -257,6 +265,7 @@ def _get_model(resource_type: str):
         raise HTTPException(400, f"Unknown resource type: {resource_type}")
     module_path, class_name = ref.split(":")
     import importlib
+
     mod = importlib.import_module(module_path)
     return getattr(mod, class_name)
 
@@ -299,14 +308,13 @@ async def update_acl(
     if payload.is_public is not None and hasattr(model, "is_public"):
         values["is_public"] = bool(payload.is_public)
 
-    await db.execute(
-        sa_update(model).where(model.id == payload.resource_id).values(**values)
-    )
+    await db.execute(sa_update(model).where(model.id == payload.resource_id).values(**values))
     await db.flush()
     return {"status": "updated", "acl": acl, "is_public": values.get("is_public")}
 
 
 # ── Platform Settings (Infra Whitelist) ──────────
+
 
 class InfraWhitelistIn(BaseModel):
     emails: list[str]
@@ -319,6 +327,7 @@ async def get_infra_whitelist(
 ):
     """Get the infra access whitelist."""
     from app.models.platform_settings import PlatformSettings
+
     result = await db.execute(
         select(PlatformSettings).where(PlatformSettings.key == "infra_access")
     )
@@ -334,6 +343,7 @@ async def update_infra_whitelist(
 ):
     """Update the infra access whitelist. Admin only."""
     from app.models.platform_settings import PlatformSettings
+
     result = await db.execute(
         select(PlatformSettings).where(PlatformSettings.key == "infra_access")
     )

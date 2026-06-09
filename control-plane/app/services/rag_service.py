@@ -58,7 +58,7 @@ def app_id_from_tag(tag: str | None) -> str | None:
     if not is_app_owned_tag(tag):
         return None
     # tag = "app:<app_id>:rag:<name>"
-    remainder = tag[len(_APP_RAG_TAG_PREFIX):]
+    remainder = tag[len(_APP_RAG_TAG_PREFIX) :]
     idx = remainder.find(_APP_RAG_TAG_INFIX)
     if idx <= 0:
         return None
@@ -98,7 +98,11 @@ async def augment_tool_names_with_rag_access(
 ) -> list[str]:
     """Auto-add or strip RAG tools based on access."""
 
-    base = [name for name in (tool_names or []) if name not in {"rag_search", "rag_list_collections", "rag_ingest"}]
+    base = [
+        name
+        for name in (tool_names or [])
+        if name not in {"rag_search", "rag_list_collections", "rag_ingest"}
+    ]
     access_repo = LabRagAccessRepository(db)
     has_access = await access_repo.has_any_access(lab_id)
     if has_access:
@@ -127,7 +131,9 @@ class RagService:
 
     async def create_collection(self, data: RagCollectionCreate, user: dict | None = None):
         if not _COLLECTION_NAME_RE.match(data.name):
-            raise ValueError("Collection name may only contain letters, numbers, underscores, and hyphens.")
+            raise ValueError(
+                "Collection name may only contain letters, numbers, underscores, and hyphens."
+            )
 
         existing = await self.collections.get_by_name(data.name)
         if existing:
@@ -145,7 +151,9 @@ class RagService:
         # here without an extra catalog lookup.
         await asyncio.to_thread(
             self._ensure_qdrant_collection,
-            data.name, data.embedding_dim, data.distance_metric,
+            data.name,
+            data.embedding_dim,
+            data.distance_metric,
         )
         try:
             collection = await self.collections.create(user=user, **data.model_dump())
@@ -193,9 +201,7 @@ class RagService:
             existing_tag = (existing.acl or {}).get("tag", "")
             if existing_tag == tag:
                 return existing
-            raise ValueError(
-                f"Collection name '{full_name}' is taken by another owner."
-            )
+            raise ValueError(f"Collection name '{full_name}' is taken by another owner.")
 
         # Resolve embedding dimension via the public schema validator
         data = RagCollectionCreate(
@@ -244,9 +250,7 @@ class RagService:
         tag = (collection.acl or {}).get("tag", "")
         expected_prefix = f"{_APP_RAG_TAG_PREFIX}{app_id}{_APP_RAG_TAG_INFIX}"
         if not tag.startswith(expected_prefix):
-            raise ValueError(
-                f"Collection '{collection_name}' is not owned by app '{app_id}'."
-            )
+            raise ValueError(f"Collection '{collection_name}' is not owned by app '{app_id}'.")
         return collection
 
     async def update_collection(self, collection_id: UUID, data: RagCollectionUpdate):
@@ -267,13 +271,17 @@ class RagService:
         try:
             await asyncio.to_thread(self._qdrant.delete_collection, collection.name)
         except Exception:
-            logger.warning("Failed to delete Qdrant collection '%s'", collection.name, exc_info=True)
+            logger.warning(
+                "Failed to delete Qdrant collection '%s'", collection.name, exc_info=True
+            )
 
         if collection.rag_mode == "lightrag":
             try:
                 await LightRagService.delete_collection(str(collection_id))
             except Exception:
-                logger.warning("Failed to delete LightRAG storage for '%s'", collection.name, exc_info=True)
+                logger.warning(
+                    "Failed to delete LightRAG storage for '%s'", collection.name, exc_info=True
+                )
 
         await self.collections.delete(collection_id)
         staging_dir = RAG_STAGING_ROOT / str(collection_id)
@@ -373,15 +381,21 @@ class RagService:
 
     async def _resolve_lightrag_model(self, collection):
         """Return model_identifier for a LightRAG collection."""
-        from app.models.orchestrator import AIModel
         from sqlalchemy import select
+
+        from app.models.orchestrator import AIModel
 
         if not collection.lightrag_model_id:
             raise ValueError("LightRAG collection has no model configured.")
-        row = (await self.db.execute(
-            select(AIModel)
-            .where(AIModel.id == collection.lightrag_model_id)
-        )).scalars().first()
+        row = (
+            (
+                await self.db.execute(
+                    select(AIModel).where(AIModel.id == collection.lightrag_model_id)
+                )
+            )
+            .scalars()
+            .first()
+        )
         if not row:
             raise ValueError("Configured LightRAG model not found.")
         return row.model_identifier
@@ -468,7 +482,7 @@ class RagService:
             )
 
         for start in range(0, len(points), settings.embedding_batch_size):
-            batch = points[start:start + settings.embedding_batch_size]
+            batch = points[start : start + settings.embedding_batch_size]
             await asyncio.to_thread(
                 self._qdrant.upsert,
                 collection_name=collection.name,
@@ -506,7 +520,9 @@ class RagService:
             try:
                 await self._delete_document_points(collection.name, document_id)
             except Exception:
-                logger.warning("Failed to delete Qdrant points for document %s", document_id, exc_info=True)
+                logger.warning(
+                    "Failed to delete Qdrant points for document %s", document_id, exc_info=True
+                )
 
         await self.documents.delete(document_id)
         await self._refresh_collection_stats(collection_id)
@@ -532,10 +548,14 @@ class RagService:
             try:
                 await self._delete_document_points(collection.name, document_id)
             except Exception:
-                logger.warning("Failed to delete Qdrant points for document %s", document_id, exc_info=True)
+                logger.warning(
+                    "Failed to delete Qdrant points for document %s", document_id, exc_info=True
+                )
 
         next_chunk_size = chunk_size if chunk_size is not None else collection.default_chunk_size
-        next_chunk_overlap = chunk_overlap if chunk_overlap is not None else collection.default_chunk_overlap
+        next_chunk_overlap = (
+            chunk_overlap if chunk_overlap is not None else collection.default_chunk_overlap
+        )
         next_splitter = splitter or collection.default_splitter
 
         document = await self.documents.update(
@@ -552,9 +572,7 @@ class RagService:
         await self.db.commit()
         return document
 
-    async def check_access(
-        self, lab_id: UUID, collection_name: str, permission: str = "read"
-    ):
+    async def check_access(self, lab_id: UUID, collection_name: str, permission: str = "read"):
         collection = await self.collections.get_by_name(collection_name)
         if not collection:
             return None

@@ -9,7 +9,6 @@ load time.
 from __future__ import annotations
 
 import pytest
-
 from app.engine.parser import parse_workflow_string
 
 pytestmark = pytest.mark.service
@@ -33,7 +32,7 @@ def test_yaml_alias_bomb_rejected():
     Must raise instead of expanding to gigabytes.
     """
     payload = (
-        "a: &a [\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\"]\n"
+        'a: &a ["x","x","x","x","x","x","x","x","x"]\n'
         "b: &b [*a,*a,*a,*a,*a,*a,*a,*a,*a]\n"
         "c: &c [*b,*b,*b,*b,*b,*b,*b,*b,*b]\n"
         "steps: [*c]\n"
@@ -48,13 +47,6 @@ def test_yaml_alias_bomb_rejected():
 
 def test_yaml_simple_anchor_rejected():
     """A document with a top-level alias reference must be rejected."""
-    payload = (
-        "name: x\n"
-        "common: &common\n"
-        "  command: echo hi\n"
-        "steps:\n"
-        "  - <<: *common\n"
-        "    name: s\n"
-    )
+    payload = "name: x\ncommon: &common\n  command: echo hi\nsteps:\n  - <<: *common\n    name: s\n"
     with pytest.raises(Exception):
         parse_workflow_string(payload)

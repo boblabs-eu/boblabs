@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 class ServerBase(BaseModel):
     """Shared server fields."""
+
     name: str
     host: str
     port: int = 9100
@@ -15,11 +16,13 @@ class ServerBase(BaseModel):
 
 class ServerCreate(ServerBase):
     """Schema for creating a server."""
+
     pass
 
 
 class ServerUpdate(BaseModel):
     """Schema for updating a server."""
+
     name: str | None = None
     host: str | None = None
     port: int | None = None
@@ -27,6 +30,7 @@ class ServerUpdate(BaseModel):
 
 class ServerResponse(ServerBase):
     """Schema returned from API."""
+
     id: UUID
     status: str
     os_info: dict
@@ -41,6 +45,7 @@ class ServerResponse(ServerBase):
 
 class ServerMetrics(BaseModel):
     """Real-time metrics snapshot from an agent."""
+
     cpu_usage: float
     cpu_temperature: float | None = None
     gpu_usage: float | None = None

@@ -21,7 +21,7 @@ IS_HALF = DEVICE == "cuda"
 
 def load_model(model_path: str, index_path: Optional[str] = None) -> dict:
     """Load an RVC model (.pth) and optional FAISS index (.index).
-    
+
     Returns a dict with model components needed for inference.
     """
     from fairseq import checkpoint_utils
@@ -39,9 +39,11 @@ def load_model(model_path: str, index_path: Optional[str] = None) -> dict:
     # Build the synthesis model
     if version == "v1":
         from infer.lib.infer_pack.models import SynthesizerTrnMs256NSFsid as SynthModel
+
         net_g = SynthModel(*cpt["config"], is_half=IS_HALF)
     else:
         from infer.lib.infer_pack.models import SynthesizerTrnMs768NSFsid as SynthModel
+
         net_g = SynthModel(*cpt["config"], is_half=IS_HALF)
 
     # Load weights
@@ -54,6 +56,7 @@ def load_model(model_path: str, index_path: Optional[str] = None) -> dict:
     index = None
     if index_path and Path(index_path).exists():
         import faiss
+
         logger.info("Loading FAISS index from %s", index_path)
         index = faiss.read_index(index_path)
         if DEVICE == "cuda":
@@ -65,11 +68,12 @@ def load_model(model_path: str, index_path: Optional[str] = None) -> dict:
     if not hubert_path.exists():
         # Try downloading from HuggingFace
         from huggingface_hub import hf_hub_download
-        hubert_path = hf_hub_download(repo_id="lj1995/VoiceConversionWebUI", filename="hubert_base.pt")
 
-    models, _, _ = checkpoint_utils.load_model_ensemble_and_task(
-        [str(hubert_path)], suffix=""
-    )
+        hubert_path = hf_hub_download(
+            repo_id="lj1995/VoiceConversionWebUI", filename="hubert_base.pt"
+        )
+
+    models, _, _ = checkpoint_utils.load_model_ensemble_and_task([str(hubert_path)], suffix="")
     hubert_model = models[0].to(DEVICE)
     if IS_HALF:
         hubert_model = hubert_model.half()
@@ -98,7 +102,7 @@ def infer(
     protect: float = 0.33,
 ) -> np.ndarray:
     """Run voice conversion on input audio.
-    
+
     Args:
         model_data: Dict from load_model()
         audio: Input audio as numpy array (float32, mono)
@@ -109,7 +113,7 @@ def infer(
         filter_radius: Median filter for pitch smoothing
         rms_mix_rate: Volume envelope mixing
         protect: Voiceless consonant protection
-    
+
     Returns:
         Output audio as numpy float32 array at target sample rate
     """

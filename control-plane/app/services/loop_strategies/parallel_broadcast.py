@@ -102,7 +102,8 @@ class ParallelBroadcastStrategy(LoopStrategy):
         self._dispatched = True
         logger.info(
             "parallel_broadcast: dispatching prompt to %d agents in parallel: %s",
-            len(tasks), [t.agent_name for t in tasks],
+            len(tasks),
+            [t.agent_name for t in tasks],
         )
         return PlanAction(tasks=tasks)
 

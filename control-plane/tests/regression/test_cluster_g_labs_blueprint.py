@@ -35,6 +35,7 @@ async def test_export_lab_non_acl_user_403(user_client, lab_factory, admin_user)
 async def test_export_lab_admin_strips_system_prompt(admin_client, lab_factory, admin_user, db):
     """Admin can export; every system_prompt in the payload is empty."""
     from uuid import uuid4
+
     from app.models.orchestrator import Lab, LabAgent
 
     lab = await lab_factory(
@@ -42,10 +43,14 @@ async def test_export_lab_admin_strips_system_prompt(admin_client, lab_factory, 
         orchestrator_prompt="SUPER SECRET ORCHESTRATOR PROMPT — DO NOT LEAK",
     )
     # Insert an agent whose system_prompt is the canary.
-    db.add(LabAgent(
-        id=uuid4(), lab_id=lab.id, name="canary",
-        system_prompt="SUPER SECRET AGENT PROMPT — DO NOT LEAK",
-    ))
+    db.add(
+        LabAgent(
+            id=uuid4(),
+            lab_id=lab.id,
+            name="canary",
+            system_prompt="SUPER SECRET AGENT PROMPT — DO NOT LEAK",
+        )
+    )
     await db.commit()
 
     r = await admin_client.get(f"/api/v1/labs/{lab.id}/export")
@@ -56,8 +61,7 @@ async def test_export_lab_admin_strips_system_prompt(admin_client, lab_factory, 
     # Every agent prompt zeroed.
     for agent in body["lab"]["agents"]:
         assert agent["system_prompt"] == "", (
-            f"agent {agent['name']} still has a non-empty system_prompt — "
-            "cluster G regression"
+            f"agent {agent['name']} still has a non-empty system_prompt — cluster G regression"
         )
     # Sanity: the canary string must not appear anywhere in the response.
     raw = r.text
@@ -74,7 +78,9 @@ async def test_export_lab_editor_can_export(make_client, lab_factory, admin_user
 
 
 @pytest.mark.asyncio
-async def test_export_lab_viewer_denied_edit_perm(make_client, lab_factory, admin_user, viewer_user):
+async def test_export_lab_viewer_denied_edit_perm(
+    make_client, lab_factory, admin_user, viewer_user
+):
     """Viewer has VIEW rights but not EDIT — export demands EDIT."""
     lab = await lab_factory(owner=admin_user, viewers=[viewer_user])
     client = await make_client(viewer_user)

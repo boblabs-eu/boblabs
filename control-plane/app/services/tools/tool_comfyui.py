@@ -6,8 +6,6 @@ import asyncio
 import json
 import logging
 import mimetypes
-import os
-import re
 import time
 import uuid as uuid_mod
 from pathlib import Path
@@ -22,9 +20,11 @@ logger = logging.getLogger(__name__)
 
 # ── Provider resolution ──────────────────────────────────────────────────────
 
+
 async def _resolve_provider(executor: ToolExecutor, server_name: str | None):
     """Return (provider, error_str). One of them is always None."""
     from sqlalchemy import select
+
     from app.models.orchestrator import AIProvider
 
     stmt = select(AIProvider).where(
@@ -35,7 +35,10 @@ async def _resolve_provider(executor: ToolExecutor, server_name: str | None):
     providers = list(result.scalars().all())
 
     if not providers:
-        return None, "No active ComfyUI provider configured. Add one in Settings → AI Providers (type: comfyui)."
+        return (
+            None,
+            "No active ComfyUI provider configured. Add one in Settings → AI Providers (type: comfyui).",
+        )
 
     if server_name:
         # Exact name match first, then case-insensitive
@@ -110,6 +113,7 @@ TOOLS = {
 
 # ── Handlers ─────────────────────────────────────────────────────────────────
 
+
 async def comfyui(executor: ToolExecutor, args: dict) -> dict:
     action = (args.get("action") or "").strip()
     server_name = args.get("server_name") or None
@@ -141,6 +145,7 @@ async def comfyui(executor: ToolExecutor, args: dict) -> dict:
 
 # ── Action: upload_input ─────────────────────────────────────────────────────
 
+
 async def _upload_input(executor: ToolExecutor, base: str, args: dict) -> dict:
     resource_filename = (args.get("resource_filename") or "").strip()
     if not resource_filename:
@@ -171,7 +176,10 @@ async def _upload_input(executor: ToolExecutor, base: str, args: dict) -> dict:
                 break
 
     if not file_path:
-        return {"success": False, "output": f"File '{resource_filename}' not found in lab workspace."}
+        return {
+            "success": False,
+            "output": f"File '{resource_filename}' not found in lab workspace.",
+        }
 
     content_type, _ = mimetypes.guess_type(file_path.name)
     if not content_type:
@@ -187,7 +195,10 @@ async def _upload_input(executor: ToolExecutor, base: str, args: dict) -> dict:
                 data={"type": "input", "overwrite": "true"},
             )
             if resp.status_code >= 400:
-                return {"success": False, "output": f"ComfyUI upload failed ({resp.status_code}): {resp.text[:400]}"}
+                return {
+                    "success": False,
+                    "output": f"ComfyUI upload failed ({resp.status_code}): {resp.text[:400]}",
+                }
             data = resp.json()
     except Exception as e:
         return {"success": False, "output": f"ComfyUI upload request failed: {e}"}
@@ -208,10 +219,14 @@ async def _upload_input(executor: ToolExecutor, base: str, args: dict) -> dict:
 
 # ── Action: queue_workflow ───────────────────────────────────────────────────
 
+
 async def _queue_workflow(executor: ToolExecutor, base: str, args: dict) -> dict:
     workflow = args.get("workflow_json")
     if not workflow:
-        return {"success": False, "output": "queue_workflow requires 'workflow_json' (ComfyUI API-format dict)"}
+        return {
+            "success": False,
+            "output": "queue_workflow requires 'workflow_json' (ComfyUI API-format dict)",
+        }
 
     if isinstance(workflow, str):
         try:
@@ -230,7 +245,10 @@ async def _queue_workflow(executor: ToolExecutor, base: str, args: dict) -> dict
                 json={"prompt": workflow, "client_id": client_id},
             )
             if resp.status_code >= 400:
-                return {"success": False, "output": f"ComfyUI queue error ({resp.status_code}): {resp.text[:500]}"}
+                return {
+                    "success": False,
+                    "output": f"ComfyUI queue error ({resp.status_code}): {resp.text[:500]}",
+                }
             queued = resp.json()
     except Exception as e:
         return {"success": False, "output": f"Failed to queue workflow: {e}"}
@@ -264,7 +282,7 @@ async def _queue_workflow(executor: ToolExecutor, base: str, args: dict) -> dict
         return {
             "success": False,
             "output": f"Workflow timed out after {timeout}s (prompt_id={prompt_id}). "
-                      f"Use get_status to check the queue, or interrupt to cancel.",
+            f"Use get_status to check the queue, or interrupt to cancel.",
         }
 
     # Check execution status
@@ -285,7 +303,7 @@ async def _queue_workflow(executor: ToolExecutor, base: str, args: dict) -> dict
     from app.repositories.lab_repo import LabResourceRepository
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as dl_client:
-        for node_id, node_output in outputs.items():
+        for _node_id, node_output in outputs.items():
             for key in ("images", "videos", "audio", "gifs"):
                 for item in node_output.get(key, []):
                     fname = item.get("filename", "")
@@ -303,7 +321,9 @@ async def _queue_workflow(executor: ToolExecutor, base: str, args: dict) -> dict
                     try:
                         dl_resp = await dl_client.get(f"{base}/view", params=params)
                         if dl_resp.status_code >= 400:
-                            logger.warning("ComfyUI view failed for %s: %s", fname, dl_resp.status_code)
+                            logger.warning(
+                                "ComfyUI view failed for %s: %s", fname, dl_resp.status_code
+                            )
                             continue
                         file_bytes = dl_resp.content
                     except Exception as e:
@@ -345,12 +365,14 @@ async def _queue_workflow(executor: ToolExecutor, base: str, args: dict) -> dict
                     )
                     await executor.db.commit()
 
-                    saved_files.append({
-                        "local_path": rel_path,
-                        "comfyui_view_url": view_url,
-                        "filename": local_fname,
-                        "size_bytes": size_bytes,
-                    })
+                    saved_files.append(
+                        {
+                            "local_path": rel_path,
+                            "comfyui_view_url": view_url,
+                            "filename": local_fname,
+                            "size_bytes": size_bytes,
+                        }
+                    )
 
     if not saved_files:
         return {
@@ -372,11 +394,14 @@ async def _queue_workflow(executor: ToolExecutor, base: str, args: dict) -> dict
             "action": "created",
             "path": saved_files[0]["local_path"],
             "size_bytes": saved_files[0]["size_bytes"],
-        } if saved_files else None,
+        }
+        if saved_files
+        else None,
     }
 
 
 # ── Action: get_status ───────────────────────────────────────────────────────
+
 
 async def _get_status(base: str) -> dict:
     try:
@@ -415,7 +440,9 @@ async def _get_status(base: str) -> dict:
             f"  RAM: {result.get('ram_free_gb', '?')} GB free / {result.get('ram_total_gb', '?')} GB total",
         ]
         if "gpu" in result:
-            lines.append(f"  GPU: {result['gpu']} — VRAM {result.get('vram_free_gb', '?')} GB free / {result.get('vram_total_gb', '?')} GB total")
+            lines.append(
+                f"  GPU: {result['gpu']} — VRAM {result.get('vram_free_gb', '?')} GB free / {result.get('vram_total_gb', '?')} GB total"
+            )
 
         return {"success": True, "output": "\n".join(lines), **result}
     except Exception as e:
@@ -423,6 +450,7 @@ async def _get_status(base: str) -> dict:
 
 
 # ── Action: list_models ──────────────────────────────────────────────────────
+
 
 async def _list_models(base: str, args: dict) -> dict:
     """List actually-available model files on the ComfyUI server.
@@ -447,13 +475,24 @@ async def _list_models(base: str, args: dict) -> dict:
                         "output": f"Folder '{folder}' not found. Available folders: {', '.join(folders)}",
                     }
                 if resp.status_code >= 400:
-                    return {"success": False, "output": f"ComfyUI error {resp.status_code}: {resp.text[:400]}"}
+                    return {
+                        "success": False,
+                        "output": f"ComfyUI error {resp.status_code}: {resp.text[:400]}",
+                    }
                 raw = resp.json() or []
                 models = [m for m in raw if isinstance(m, str) and _is_real_model_file(m)]
                 if not models:
-                    return {"success": True, "output": f"No real models found in '{folder}' (server has only placeholder files).", "models": []}
+                    return {
+                        "success": True,
+                        "output": f"No real models found in '{folder}' (server has only placeholder files).",
+                        "models": [],
+                    }
                 model_list = "\n".join(f"  - {m}" for m in models)
-                return {"success": True, "output": f"Models in '{folder}' ({len(models)}):\n{model_list}", "models": models}
+                return {
+                    "success": True,
+                    "output": f"Models in '{folder}' ({len(models)}):\n{model_list}",
+                    "models": models,
+                }
 
             # No folder specified: enumerate every folder and return all real models,
             # so the agent can verify availability up front.
@@ -479,7 +518,10 @@ async def _list_models(base: str, args: dict) -> dict:
                     "models_by_folder": {},
                 }
 
-            lines = [f"Available models on ComfyUI ({total} total across {len(all_models)} folders):", ""]
+            lines = [
+                f"Available models on ComfyUI ({total} total across {len(all_models)} folders):",
+                "",
+            ]
             for f in sorted(all_models):
                 lines.append(f"[{f}] ({len(all_models[f])})")
                 for m in all_models[f]:
@@ -498,6 +540,7 @@ async def _list_models(base: str, args: dict) -> dict:
 
 # ── Action: interrupt ────────────────────────────────────────────────────────
 
+
 async def _interrupt(base: str) -> dict:
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
@@ -511,12 +554,16 @@ async def _interrupt(base: str) -> dict:
 
 # ── Action: get_node_types ───────────────────────────────────────────────────
 
+
 async def _get_node_types(base: str) -> dict:
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
             resp = await client.get(f"{base}/object_info")
             if resp.status_code >= 400:
-                return {"success": False, "output": f"ComfyUI error {resp.status_code}: {resp.text[:400]}"}
+                return {
+                    "success": False,
+                    "output": f"ComfyUI error {resp.status_code}: {resp.text[:400]}",
+                }
             data = resp.json()
 
         node_names = sorted(data.keys())

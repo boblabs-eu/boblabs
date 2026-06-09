@@ -19,7 +19,11 @@ TOOLS = {
             "and return rows with column names. Use db_schema first to discover tables."
         ),
         "parameters": {
-            "sql": {"type": "string", "description": "SQL SELECT query to execute", "required": True},
+            "sql": {
+                "type": "string",
+                "description": "SQL SELECT query to execute",
+                "required": True,
+            },
             "params": {
                 "type": "array",
                 "description": "Optional list of bind parameters for ? placeholders",
@@ -61,13 +65,16 @@ async def db_query(executor: ToolExecutor, args: dict) -> dict:
     try:
         sandbox_url = await executor.get_sandbox_url()
         async with httpx.AsyncClient(timeout=executor.timeout_sec + 5) as client:
-            resp = await client.post(f"{sandbox_url}/db_query", json={
-                "lab_id": str(executor.lab_id),
-                "sql": sql,
-                "params": params,
-                "timeout_sec": executor.timeout_sec,
-                "max_output_kb": executor.max_output_bytes // 1024,
-            })
+            resp = await client.post(
+                f"{sandbox_url}/db_query",
+                json={
+                    "lab_id": str(executor.lab_id),
+                    "sql": sql,
+                    "params": params,
+                    "timeout_sec": executor.timeout_sec,
+                    "max_output_kb": executor.max_output_bytes // 1024,
+                },
+            )
             return resp.json()
     except httpx.TimeoutException:
         return {"success": False, "output": f"DB query timed out after {executor.timeout_sec}s"}
@@ -86,13 +93,16 @@ async def db_execute(executor: ToolExecutor, args: dict) -> dict:
     try:
         sandbox_url = await executor.get_sandbox_url()
         async with httpx.AsyncClient(timeout=executor.timeout_sec + 5) as client:
-            resp = await client.post(f"{sandbox_url}/db_execute", json={
-                "lab_id": str(executor.lab_id),
-                "sql": sql,
-                "params": params,
-                "timeout_sec": executor.timeout_sec,
-                "max_output_kb": executor.max_output_bytes // 1024,
-            })
+            resp = await client.post(
+                f"{sandbox_url}/db_execute",
+                json={
+                    "lab_id": str(executor.lab_id),
+                    "sql": sql,
+                    "params": params,
+                    "timeout_sec": executor.timeout_sec,
+                    "max_output_kb": executor.max_output_bytes // 1024,
+                },
+            )
             return resp.json()
     except httpx.TimeoutException:
         return {"success": False, "output": f"DB execute timed out after {executor.timeout_sec}s"}
@@ -105,11 +115,14 @@ async def db_schema(executor: ToolExecutor, args: dict) -> dict:
     try:
         sandbox_url = await executor.get_sandbox_url()
         async with httpx.AsyncClient(timeout=executor.timeout_sec + 5) as client:
-            resp = await client.post(f"{sandbox_url}/db_schema", json={
-                "lab_id": str(executor.lab_id),
-                "timeout_sec": executor.timeout_sec,
-                "max_output_kb": executor.max_output_bytes // 1024,
-            })
+            resp = await client.post(
+                f"{sandbox_url}/db_schema",
+                json={
+                    "lab_id": str(executor.lab_id),
+                    "timeout_sec": executor.timeout_sec,
+                    "max_output_kb": executor.max_output_bytes // 1024,
+                },
+            )
             return resp.json()
     except httpx.TimeoutException:
         return {"success": False, "output": f"DB schema timed out after {executor.timeout_sec}s"}

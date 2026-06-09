@@ -1,4 +1,5 @@
 """Anti-loop detection — concrete detector implementations."""
+
 from __future__ import annotations
 
 import hashlib
@@ -31,7 +32,7 @@ class SemanticLoopDetector:
 
     def check(self, *, actor_key: str, history: list[MessageRecord]) -> LoopReport:
         # Need enough embedded messages
-        embedded = [m for m in history if m.embedding is not None][-self.history_size:]
+        embedded = [m for m in history if m.embedding is not None][-self.history_size :]
         if len(embedded) < self.trigger_count:
             return LoopReport(detected=False, severity="green", score=0)
 
@@ -62,12 +63,14 @@ class SemanticLoopDetector:
             detected=True,
             severity=severity,
             score=score,
-            signals=[LoopSignal(
-                name=self.name,
-                score=score,
-                detail=f"{len(looping_ids)} messages with cosine similarity ≥ {self.threshold:.2f} "
-                       f"(max {max_sim:.3f}) within last {n} embedded messages",
-            )],
+            signals=[
+                LoopSignal(
+                    name=self.name,
+                    score=score,
+                    detail=f"{len(looping_ids)} messages with cosine similarity ≥ {self.threshold:.2f} "
+                    f"(max {max_sim:.3f}) within last {n} embedded messages",
+                )
+            ],
             loop_message_ids=list(looping_ids),
         )
 
@@ -91,7 +94,7 @@ class ToolRepeatDetector:
         self.history_size = history_size
 
     def check(self, *, actor_key: str, history: list[MessageRecord]) -> LoopReport:
-        recent = [m for m in history if m.tool_call is not None][-self.history_size:]
+        recent = [m for m in history if m.tool_call is not None][-self.history_size :]
         if len(recent) < self.trigger_count:
             return LoopReport(detected=False, severity="green", score=0)
 
@@ -112,11 +115,13 @@ class ToolRepeatDetector:
             detected=True,
             severity=severity,
             score=score,
-            signals=[LoopSignal(
-                name=self.name,
-                score=score,
-                detail=f"Tool '{tool_name}' called {top_count} times with identical arguments",
-            )],
+            signals=[
+                LoopSignal(
+                    name=self.name,
+                    score=score,
+                    detail=f"Tool '{tool_name}' called {top_count} times with identical arguments",
+                )
+            ],
             loop_message_ids=loop_ids,
         )
 
@@ -163,7 +168,9 @@ def _severity_rank(s: str) -> int:
 
 
 def build_default_detector() -> CompositeDetector:
-    return CompositeDetector([
-        ToolRepeatDetector(),
-        SemanticLoopDetector(),
-    ])
+    return CompositeDetector(
+        [
+            ToolRepeatDetector(),
+            SemanticLoopDetector(),
+        ]
+    )

@@ -130,7 +130,9 @@ class TreeOfThoughtStrategy(LoopStrategy):
 
         messages = [{"role": "system", "content": system}]
         messages += build_messages_from_history(
-            context, self._last_results, self._injections,
+            context,
+            self._last_results,
+            self._injections,
             prompt_suffix="Evaluate branches. Which to prune, expand, or converge?",
             first_iter_prompt="Begin with the branching phase. Propose 2-4 distinct approaches.",
         )

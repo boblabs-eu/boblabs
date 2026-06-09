@@ -1,8 +1,8 @@
 """Bob Manager — Command execution service."""
 
 import asyncio
-import uuid
 import logging
+import uuid
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -23,9 +23,7 @@ class CommandService:
         self.exec_repo = ExecutionRepository(db)
         self.server_repo = ServerRepository(db)
 
-    async def execute_command(
-        self, server_id: UUID, command: str, timeout: int = 120
-    ) -> dict:
+    async def execute_command(self, server_id: UUID, command: str, timeout: int = 120) -> dict:
         """Execute a command on a single server.
 
         Returns the command result with exit code, stdout, stderr.
@@ -48,11 +46,14 @@ class CommandService:
         command_id = str(uuid.uuid4())
         future = manager.create_pending(command_id, agent_name=server.name)
 
-        sent = await manager.send_to_agent(server.name, {
-            "type": "command.execute",
-            "id": command_id,
-            "payload": {"command": command},
-        })
+        sent = await manager.send_to_agent(
+            server.name,
+            {
+                "type": "command.execute",
+                "id": command_id,
+                "payload": {"command": command},
+            },
+        )
 
         if not sent:
             manager.cancel_pending(command_id, reason="send_failed")

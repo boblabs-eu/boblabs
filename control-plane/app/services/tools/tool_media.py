@@ -35,6 +35,7 @@ def _slot_key_from_url(url: str) -> tuple[str, int]:
     parsing fails so we never blow up on a malformed provider base_url.
     """
     from urllib.parse import urlparse
+
     parsed = urlparse(url)
     host = parsed.hostname or url
     # Default to scheme-default port when not specified so two providers
@@ -70,46 +71,126 @@ TOOLS = {
     "image_generate": {
         "description": "Generate an image from a text prompt using a configured image generation API (Stable Diffusion, FLUX, etc). Returns the path to the generated image file.",
         "parameters": {
-            "prompt": {"type": "string", "description": "Text description of the image to generate", "required": True},
-            "width": {"type": "integer", "description": "Image width in pixels (default: 1024)", "required": False},
-            "height": {"type": "integer", "description": "Image height in pixels (default: 1024)", "required": False},
+            "prompt": {
+                "type": "string",
+                "description": "Text description of the image to generate",
+                "required": True,
+            },
+            "width": {
+                "type": "integer",
+                "description": "Image width in pixels (default: 1024)",
+                "required": False,
+            },
+            "height": {
+                "type": "integer",
+                "description": "Image height in pixels (default: 1024)",
+                "required": False,
+            },
         },
     },
     "audio_generate": {
         "description": "Generate audio using a script runner on a connected agent. Supports various audio generation backends (riffusion, stable_audio, musicgen, bark, etc.)",
         "parameters": {
-            "script": {"type": "string", "description": "Name of the audio generation script to use (e.g. riffusion, stable_audio, musicgen)", "required": True},
-            "prompt": {"type": "string", "description": "Text prompt describing the audio to generate", "required": True},
-            "duration_sec": {"type": "number", "description": "Duration in seconds (default depends on script)", "required": False},
-            "extra_args": {"type": "object", "description": "Additional script-specific arguments", "required": False},
+            "script": {
+                "type": "string",
+                "description": "Name of the audio generation script to use (e.g. riffusion, stable_audio, musicgen)",
+                "required": True,
+            },
+            "prompt": {
+                "type": "string",
+                "description": "Text prompt describing the audio to generate",
+                "required": True,
+            },
+            "duration_sec": {
+                "type": "number",
+                "description": "Duration in seconds (default depends on script)",
+                "required": False,
+            },
+            "extra_args": {
+                "type": "object",
+                "description": "Additional script-specific arguments",
+                "required": False,
+            },
         },
     },
     "media_pipeline": {
         "description": "Run a media generation/processing pipeline (image, audio, video, or speech-to-text). Dispatches to registered pipeline backends like riffusion, bark, musicgen, coqui-tts, rvc, stt, sdxl, sd3, flux1, ltx-video, wan-video. The system automatically selects the least-loaded GPU server. Use 'params' for pipeline-specific options.",
         "parameters": {
-            "pipeline": {"type": "string", "description": "Pipeline name (e.g. riffusion, bark, musicgen, coqui-tts, rvc, stt, sdxl, sd3, flux1, ltx-video, wan-video)", "required": True},
-            "prompt": {"type": "string", "description": "Text prompt for generation", "required": True},
-            "params": {"type": "object", "description": "Pipeline-specific parameters (see pipeline docs)", "required": False},
+            "pipeline": {
+                "type": "string",
+                "description": "Pipeline name (e.g. riffusion, bark, musicgen, coqui-tts, rvc, stt, sdxl, sd3, flux1, ltx-video, wan-video)",
+                "required": True,
+            },
+            "prompt": {
+                "type": "string",
+                "description": "Text prompt for generation",
+                "required": True,
+            },
+            "params": {
+                "type": "object",
+                "description": "Pipeline-specific parameters (see pipeline docs)",
+                "required": False,
+            },
         },
     },
     "audio_mix": {
         "description": "Mix, concatenate, or process audio files using FFmpeg. Supports operations: mix (overlay multiple tracks with optional volume weights), concat (join files sequentially), volume (adjust loudness), fade (in/out), normalize (loudness normalization via loudnorm), convert (format conversion), trim (cut segment), eq (parametric EQ). All file paths are relative to the lab workspace.",
         "parameters": {
-            "operation": {"type": "string", "description": "Operation: mix, concat, volume, fade, normalize, convert, trim, eq", "required": True},
-            "input_files": {"type": "array", "description": "List of input file paths (relative to workspace)", "required": True},
-            "output_file": {"type": "string", "description": "Output file path (relative to workspace)", "required": True},
-            "params": {"type": "object", "description": "Operation-specific parameters. mix: {volumes: [0.8, 1.0]}. fade: {fade_in: 2, fade_out: 3}. volume: {volume: 1.5}. normalize: {target_lufs: -14}. convert: {format: 'mp3'}. trim: {start: '00:00:10', end: '00:01:00'}. eq: {eq_freq: 1000, eq_gain: 3, eq_width: 1.0}", "required": False},
+            "operation": {
+                "type": "string",
+                "description": "Operation: mix, concat, volume, fade, normalize, convert, trim, eq",
+                "required": True,
+            },
+            "input_files": {
+                "type": "array",
+                "description": "List of input file paths (relative to workspace)",
+                "required": True,
+            },
+            "output_file": {
+                "type": "string",
+                "description": "Output file path (relative to workspace)",
+                "required": True,
+            },
+            "params": {
+                "type": "object",
+                "description": "Operation-specific parameters. mix: {volumes: [0.8, 1.0]}. fade: {fade_in: 2, fade_out: 3}. volume: {volume: 1.5}. normalize: {target_lufs: -14}. convert: {format: 'mp3'}. trim: {start: '00:00:10', end: '00:01:00'}. eq: {eq_freq: 1000, eq_gain: 3, eq_width: 1.0}",
+                "required": False,
+            },
         },
     },
     "video_generate": {
         "description": "Generate a video by writing a React/Remotion component. Send the TSX source code and it will be rendered to MP4 via the Remotion API.",
         "parameters": {
-            "code": {"type": "string", "description": "React/TSX component source code for the video. Must export a default component.", "required": True},
-            "width": {"type": "integer", "description": "Video width (default: 1920)", "required": False},
-            "height": {"type": "integer", "description": "Video height (default: 1080)", "required": False},
-            "fps": {"type": "integer", "description": "Frames per second (default: 30)", "required": False},
-            "duration_in_frames": {"type": "integer", "description": "Total frames (default: 120 = 4s at 30fps)", "required": False},
-            "props": {"type": "object", "description": "Props to pass to the React component", "required": False},
+            "code": {
+                "type": "string",
+                "description": "React/TSX component source code for the video. Must export a default component.",
+                "required": True,
+            },
+            "width": {
+                "type": "integer",
+                "description": "Video width (default: 1920)",
+                "required": False,
+            },
+            "height": {
+                "type": "integer",
+                "description": "Video height (default: 1080)",
+                "required": False,
+            },
+            "fps": {
+                "type": "integer",
+                "description": "Frames per second (default: 30)",
+                "required": False,
+            },
+            "duration_in_frames": {
+                "type": "integer",
+                "description": "Total frames (default: 120 = 4s at 30fps)",
+                "required": False,
+            },
+            "props": {
+                "type": "object",
+                "description": "Props to pass to the React component",
+                "required": False,
+            },
         },
     },
 }
@@ -122,7 +203,10 @@ async def image_generate(executor: ToolExecutor, args: dict) -> dict:
 
     api_url = os.environ.get("IMAGE_GEN_API_URL", "").rstrip("/")
     if not api_url:
-        return {"success": False, "output": "Image generation not configured. Set IMAGE_GEN_API_URL environment variable."}
+        return {
+            "success": False,
+            "output": "Image generation not configured. Set IMAGE_GEN_API_URL environment variable.",
+        }
 
     width = int(args.get("width", 1024))
     height = int(args.get("height", 1024))
@@ -147,7 +231,10 @@ async def image_generate(executor: ToolExecutor, args: dict) -> dict:
                 headers=headers,
             )
             if resp.status_code >= 400:
-                return {"success": False, "output": f"Image API error {resp.status_code}: {resp.text[:500]}"}
+                return {
+                    "success": False,
+                    "output": f"Image API error {resp.status_code}: {resp.text[:500]}",
+                }
             data = resp.json()
     except Exception as e:
         return {"success": False, "output": f"Image generation request failed: {e}"}
@@ -183,7 +270,10 @@ async def audio_generate(executor: ToolExecutor, args: dict) -> dict:
     script = args.get("script", "").strip()
     prompt = args.get("prompt", "").strip()
     if not script:
-        return {"success": False, "output": "audio_generate requires 'script' (e.g. riffusion, stable_audio, musicgen)"}
+        return {
+            "success": False,
+            "output": "audio_generate requires 'script' (e.g. riffusion, stable_audio, musicgen)",
+        }
     if not prompt:
         return {"success": False, "output": "audio_generate requires 'prompt'"}
 
@@ -194,8 +284,14 @@ async def audio_generate(executor: ToolExecutor, args: dict) -> dict:
         available = ws_manager.get_all_available_scripts()
         if available:
             names = ", ".join(s["name"] for s in available)
-            return {"success": False, "output": f"Script '{script}' not found. Available scripts: {names}"}
-        return {"success": False, "output": "No script runners connected. Ensure an agent with a script runner is online."}
+            return {
+                "success": False,
+                "output": f"Script '{script}' not found. Available scripts: {names}",
+            }
+        return {
+            "success": False,
+            "output": "No script runners connected. Ensure an agent with a script runner is online.",
+        }
 
     script_args = {"prompt": prompt}
     duration = args.get("duration_sec")
@@ -206,28 +302,38 @@ async def audio_generate(executor: ToolExecutor, args: dict) -> dict:
         script_args.update(extra)
 
     import uuid
+
     request_id = str(uuid.uuid4())
     future = ws_manager.create_pending(request_id)
 
-    sent = await ws_manager.send_to_agent(agent_name, {
-        "type": "script.execute",
-        "id": request_id,
-        "payload": {
-            "script": script,
-            "arguments": script_args,
-            "timeout_sec": executor.timeout_sec,
+    sent = await ws_manager.send_to_agent(
+        agent_name,
+        {
+            "type": "script.execute",
+            "id": request_id,
+            "payload": {
+                "script": script,
+                "arguments": script_args,
+                "timeout_sec": executor.timeout_sec,
+            },
         },
-    })
+    )
     if not sent:
         return {"success": False, "output": f"Agent '{agent_name}' is not connected."}
 
     try:
         data = await asyncio.wait_for(future, timeout=executor.timeout_sec + 30)
     except asyncio.TimeoutError:
-        return {"success": False, "output": f"Script '{script}' timed out waiting for agent response."}
+        return {
+            "success": False,
+            "output": f"Script '{script}' timed out waiting for agent response.",
+        }
 
     if not data.get("success"):
-        return {"success": False, "output": f"Script '{script}' failed: {data.get('message', 'unknown error')}"}
+        return {
+            "success": False,
+            "output": f"Script '{script}' failed: {data.get('message', 'unknown error')}",
+        }
 
     output_dir = executor.workspace / "output" / "generated_audio"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -250,7 +356,7 @@ async def audio_generate(executor: ToolExecutor, args: dict) -> dict:
 
     file_list = ", ".join(f"{f['path']} ({f['size_bytes'] // 1024}KB)" for f in saved_files)
     primary = saved_files[0]
-    duration_info = f" in {data.get('duration_sec', '?')}s" if data.get('duration_sec') else ""
+    duration_info = f" in {data.get('duration_sec', '?')}s" if data.get("duration_sec") else ""
     return {
         "success": True,
         "output": f"Audio generated{duration_info}: {file_list}\nMessage: {data.get('message', '')}",
@@ -271,7 +377,10 @@ async def media_pipeline(executor: ToolExecutor, args: dict) -> dict:
         try:
             extra = json.loads(_raw_params)
         except json.JSONDecodeError:
-            return {"success": False, "output": "media_pipeline 'params' must be a valid JSON object."}
+            return {
+                "success": False,
+                "output": "media_pipeline 'params' must be a valid JSON object.",
+            }
     else:
         extra = dict(_raw_params)
 
@@ -290,9 +399,13 @@ async def media_pipeline(executor: ToolExecutor, args: dict) -> dict:
 
     if pipeline_name not in PIPELINE_REGISTRY:
         available = ", ".join(PIPELINE_REGISTRY.keys())
-        return {"success": False, "output": f"Unknown pipeline '{pipeline_name}'. Registered: {available}"}
+        return {
+            "success": False,
+            "output": f"Unknown pipeline '{pipeline_name}'. Registered: {available}",
+        }
 
     from sqlalchemy import select
+
     from app.models.orchestrator import AIProvider
 
     stmt = select(AIProvider).where(
@@ -302,7 +415,10 @@ async def media_pipeline(executor: ToolExecutor, args: dict) -> dict:
     result = await executor.db.execute(stmt)
     providers = result.scalars().all()
     if not providers:
-        return {"success": False, "output": f"No active '{pipeline_name}' provider configured. Check Settings → AI Providers."}
+        return {
+            "success": False,
+            "output": f"No active '{pipeline_name}' provider configured. Check Settings → AI Providers.",
+        }
 
     def _queue_depth(prov):
         # P09 — key by (host, port) so two services on the same machine
@@ -312,6 +428,7 @@ async def media_pipeline(executor: ToolExecutor, args: dict) -> dict:
         if sem is None:
             return 0
         return 0 if sem._value > 0 else 1
+
     providers.sort(key=_queue_depth)
 
     input_file = extra.get("input_file")
@@ -342,7 +459,10 @@ async def media_pipeline(executor: ToolExecutor, args: dict) -> dict:
         # P09 — render the (host, port) tuple as 'host:port' in the log.
         logger.info(
             "media_pipeline/%s: queuing on %s (slot=%s:%d)",
-            pipeline_name, provider.name, slot_key[0], slot_key[1],
+            pipeline_name,
+            provider.name,
+            slot_key[0],
+            slot_key[1],
         )
         sem = await _acquire_gpu_slot(slot_key)
         try:
@@ -353,13 +473,17 @@ async def media_pipeline(executor: ToolExecutor, args: dict) -> dict:
             last_error = gen_result.error or "unknown error"
             logger.warning(
                 "media_pipeline/%s: provider %s failed: %s — trying next",
-                pipeline_name, provider.name, last_error,
+                pipeline_name,
+                provider.name,
+                last_error,
             )
         except Exception as e:
             last_error = str(e)
             logger.warning(
                 "media_pipeline/%s: provider %s exception: %s — trying next",
-                pipeline_name, provider.name, last_error,
+                pipeline_name,
+                provider.name,
+                last_error,
             )
         finally:
             sem.release()
@@ -414,7 +538,11 @@ async def media_pipeline(executor: ToolExecutor, args: dict) -> dict:
     ext_map = {"audio": "wav", "image": "png", "video": "mp4"}
 
     if gen_result.media_url:
-        media_b64 = gen_result.media_url.split(",", 1)[-1] if "," in gen_result.media_url else gen_result.media_url
+        media_b64 = (
+            gen_result.media_url.split(",", 1)[-1]
+            if "," in gen_result.media_url
+            else gen_result.media_url
+        )
         ext = ext_map.get(gen_result.media_type, "bin")
         if gen_result.media_url.startswith("data:audio/mpeg"):
             ext = "mp3"
@@ -423,14 +551,30 @@ async def media_pipeline(executor: ToolExecutor, args: dict) -> dict:
         fname = f"{pipeline_name}_{ts}.{ext}"
         fpath = output_dir / fname
         fpath.write_bytes(base64.b64decode(media_b64))
-        saved_files.append({"path": f"output/{media_dir}/{fname}", "size_bytes": fpath.stat().st_size, "type": gen_result.media_type})
+        saved_files.append(
+            {
+                "path": f"output/{media_dir}/{fname}",
+                "size_bytes": fpath.stat().st_size,
+                "type": gen_result.media_type,
+            }
+        )
 
     if gen_result.preview_url:
-        preview_b64 = gen_result.preview_url.split(",", 1)[-1] if "," in gen_result.preview_url else gen_result.preview_url
+        preview_b64 = (
+            gen_result.preview_url.split(",", 1)[-1]
+            if "," in gen_result.preview_url
+            else gen_result.preview_url
+        )
         pfname = f"{pipeline_name}_{ts}_preview.jpg"
         pfpath = output_dir / pfname
         pfpath.write_bytes(base64.b64decode(preview_b64))
-        saved_files.append({"path": f"output/{media_dir}/{pfname}", "size_bytes": pfpath.stat().st_size, "type": "preview"})
+        saved_files.append(
+            {
+                "path": f"output/{media_dir}/{pfname}",
+                "size_bytes": pfpath.stat().st_size,
+                "type": "preview",
+            }
+        )
 
     for output_name, output_b64 in gen_result.extra_outputs.items():
         raw_b64 = output_b64.split(",", 1)[-1] if "," in output_b64 else output_b64
@@ -438,7 +582,13 @@ async def media_pipeline(executor: ToolExecutor, args: dict) -> dict:
         efname = f"{pipeline_name}_{ts}_{output_name}.{ext}"
         efpath = output_dir / efname
         efpath.write_bytes(base64.b64decode(raw_b64))
-        saved_files.append({"path": f"output/{media_dir}/{efname}", "size_bytes": efpath.stat().st_size, "type": output_name})
+        saved_files.append(
+            {
+                "path": f"output/{media_dir}/{efname}",
+                "size_bytes": efpath.stat().st_size,
+                "type": output_name,
+            }
+        )
 
     if not saved_files:
         return {"success": True, "output": "Pipeline ran but produced no output files."}
@@ -468,7 +618,10 @@ async def audio_mix(executor: ToolExecutor, args: dict) -> dict:
 
     VALID_OPS = {"mix", "concat", "volume", "fade", "normalize", "convert", "trim", "eq"}
     if operation not in VALID_OPS:
-        return {"success": False, "output": f"Invalid operation '{operation}'. Must be one of: {', '.join(sorted(VALID_OPS))}"}
+        return {
+            "success": False,
+            "output": f"Invalid operation '{operation}'. Must be one of: {', '.join(sorted(VALID_OPS))}",
+        }
     if not output_file:
         return {"success": False, "output": "output_file is required"}
     if not input_files:
@@ -529,21 +682,31 @@ async def audio_mix(executor: ToolExecutor, args: dict) -> dict:
         if fade_out > 0:
             filters.append(f"afade=t=out:st=-1:d={fade_out}")
         if not filters:
-            return {"success": False, "output": "fade requires at least one of fade_in or fade_out > 0"}
+            return {
+                "success": False,
+                "output": "fade requires at least one of fade_in or fade_out > 0",
+            }
         af = ",".join(filters)
         cmd += ["-i", resolved_inputs[0], "-af", af, str(out_path)]
 
     elif operation == "normalize":
         target_lufs = float(params.get("target_lufs", -14))
-        cmd += ["-i", resolved_inputs[0], "-af",
-                f"loudnorm=I={target_lufs}:dual_mono=true:print_format=summary",
-                str(out_path)]
+        cmd += [
+            "-i",
+            resolved_inputs[0],
+            "-af",
+            f"loudnorm=I={target_lufs}:dual_mono=true:print_format=summary",
+            str(out_path),
+        ]
 
     elif operation == "convert":
         fmt = params.get("format", "wav")
         allowed_formats = {"wav", "mp3", "flac", "ogg", "aac", "m4a"}
         if fmt not in allowed_formats:
-            return {"success": False, "output": f"Unsupported format '{fmt}'. Allowed: {', '.join(sorted(allowed_formats))}"}
+            return {
+                "success": False,
+                "output": f"Unsupported format '{fmt}'. Allowed: {', '.join(sorted(allowed_formats))}",
+            }
         cmd += ["-i", resolved_inputs[0], str(out_path)]
 
     elif operation == "trim":
@@ -560,9 +723,13 @@ async def audio_mix(executor: ToolExecutor, args: dict) -> dict:
         freq = float(params.get("eq_freq", 1000))
         gain = float(params.get("eq_gain", 0))
         width = float(params.get("eq_width", 1.0))
-        cmd += ["-i", resolved_inputs[0], "-af",
-                f"equalizer=f={freq}:width_type=o:width={width}:g={gain}",
-                str(out_path)]
+        cmd += [
+            "-i",
+            resolved_inputs[0],
+            "-af",
+            f"equalizer=f={freq}:width_type=o:width={width}:g={gain}",
+            str(out_path),
+        ]
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -595,7 +762,10 @@ async def audio_mix(executor: ToolExecutor, args: dict) -> dict:
 async def video_generate(executor: ToolExecutor, args: dict) -> dict:
     code = args.get("code", "").strip()
     if not code:
-        return {"success": False, "output": "video_generate requires 'code' (React/TSX component source)"}
+        return {
+            "success": False,
+            "output": "video_generate requires 'code' (React/TSX component source)",
+        }
 
     remotion_url = os.environ.get("REMOTION_API_URL", "http://bob-remotion:3020").rstrip("/")
 
@@ -620,16 +790,29 @@ async def video_generate(executor: ToolExecutor, args: dict) -> dict:
         async with httpx.AsyncClient(timeout=httpx.Timeout(600.0)) as client:
             resp = await client.post(f"{remotion_url}/render", json=payload)
             if resp.status_code >= 400:
-                body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"error": resp.text[:1000]}
-                return {"success": False, "output": f"Remotion render error: {body.get('error', resp.text[:500])}"}
+                body = (
+                    resp.json()
+                    if resp.headers.get("content-type", "").startswith("application/json")
+                    else {"error": resp.text[:1000]}
+                )
+                return {
+                    "success": False,
+                    "output": f"Remotion render error: {body.get('error', resp.text[:500])}",
+                }
             data = resp.json()
     except httpx.TimeoutException:
-        return {"success": False, "output": "Remotion render timed out (600s limit). Try reducing duration_in_frames or resolution."}
+        return {
+            "success": False,
+            "output": "Remotion render timed out (600s limit). Try reducing duration_in_frames or resolution.",
+        }
     except Exception as e:
         return {"success": False, "output": f"Remotion API request failed: {e}"}
 
     if not data.get("success"):
-        return {"success": False, "output": f"Remotion render failed: {data.get('error', 'unknown error')}"}
+        return {
+            "success": False,
+            "output": f"Remotion render failed: {data.get('error', 'unknown error')}",
+        }
 
     b64_data = data.get("video_base64", "")
     if not b64_data:

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 class WorkflowStepBase(BaseModel):
     """Shared step fields."""
+
     name: str
     command: str
     timeout_seconds: int = 300
@@ -16,6 +17,7 @@ class WorkflowStepBase(BaseModel):
 
 class WorkflowStepResponse(WorkflowStepBase):
     """Step as returned from API."""
+
     id: UUID
     step_order: int
 
@@ -25,18 +27,21 @@ class WorkflowStepResponse(WorkflowStepBase):
 
 class WorkflowBase(BaseModel):
     """Shared workflow fields."""
+
     name: str
     description: str = ""
 
 
 class WorkflowCreate(WorkflowBase):
     """Schema for creating a workflow."""
+
     steps: list[WorkflowStepBase]
     project_id: UUID | None = None
 
 
 class WorkflowUpdate(BaseModel):
     """Schema for updating a workflow."""
+
     name: str | None = None
     description: str | None = None
     steps: list[WorkflowStepBase] | None = None
@@ -45,6 +50,7 @@ class WorkflowUpdate(BaseModel):
 
 class WorkflowResponse(WorkflowBase):
     """Workflow as returned from API."""
+
     id: UUID
     project_id: UUID | None
     steps: list[WorkflowStepResponse]
@@ -59,11 +65,13 @@ class WorkflowResponse(WorkflowBase):
 
 class WorkflowExecuteRequest(BaseModel):
     """Request to execute a workflow."""
+
     server_ids: list[UUID]
 
 
 class ExecutionLogResponse(BaseModel):
     """Execution log entry."""
+
     id: UUID
     step_id: UUID
     status: str
@@ -79,6 +87,7 @@ class ExecutionLogResponse(BaseModel):
 
 class WorkflowExecutionResponse(BaseModel):
     """Workflow execution status."""
+
     id: UUID
     workflow_id: UUID
     server_id: UUID

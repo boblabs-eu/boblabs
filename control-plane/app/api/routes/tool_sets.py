@@ -37,7 +37,9 @@ async def get_tool_set(ts_id: UUID, db: DbSession, _user: dict = Depends(require
 
 
 @router.patch("/{ts_id}", response_model=ToolSetResponse)
-async def update_tool_set(ts_id: UUID, data: ToolSetUpdate, db: DbSession, _user: dict = Depends(require_admin)):
+async def update_tool_set(
+    ts_id: UUID, data: ToolSetUpdate, db: DbSession, _user: dict = Depends(require_admin)
+):
     updates = data.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(400, "No fields to update")
@@ -55,7 +57,9 @@ async def delete_tool_set(ts_id: UUID, db: DbSession, _user: dict = Depends(requ
     await ToolSetRepository(db).delete(ts_id)
 
 
-@router.post("/{ts_id}/duplicate", response_model=ToolSetResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{ts_id}/duplicate", response_model=ToolSetResponse, status_code=status.HTTP_201_CREATED
+)
 async def duplicate_tool_set(ts_id: UUID, db: DbSession, _user: dict = Depends(require_admin)):
     repo = ToolSetRepository(db)
     ts = await repo.get_by_id(ts_id)

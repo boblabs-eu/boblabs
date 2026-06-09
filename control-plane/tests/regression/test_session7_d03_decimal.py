@@ -22,11 +22,10 @@ import uuid
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
-
 from app.models.trading import TradeHistory, TradingPosition
 from app.repositories.trading_repo import TradingRepo
 from app.services.trading_units import decimals_for, from_raw, to_raw
+from sqlalchemy import select
 
 pytestmark = pytest.mark.regression
 
@@ -190,12 +189,21 @@ async def test_d03_gas_price_wei_round_trip(db):
 def test_d03_float_removed_from_trading_models():
     """The migration shipped only matters if the ORM no longer reaches
     for Float anywhere in trading.py."""
+    import re
     from pathlib import Path
 
-    src = Path(__file__).resolve().parents[3] / "app" / "models" / "trading.py"
+    # In the test container control-plane/ is mounted to /app, so the
+    # source we want is at /app/app/models/trading.py (parents[2] + app/...).
+    src = Path(__file__).resolve().parents[2] / "app" / "models" / "trading.py"
     body = src.read_text(encoding="utf-8")
-    assert " Float" not in body, (
-        "D03: models/trading.py must not import or reference Float"
+    # Strip triple-quoted docstrings and # comments before scanning, so
+    # historical mentions like "(Float) was retired" in the module
+    # docstring don't trip the assertion.
+    code_only = re.sub(r'""".*?"""', "", body, flags=re.DOTALL)
+    code_only = re.sub(r"'''.*?'''", "", code_only, flags=re.DOTALL)
+    code_only = re.sub(r"#.*$", "", code_only, flags=re.MULTILINE)
+    assert "Float" not in code_only, (
+        "D03: models/trading.py must not import or reference Float as a SQLA type"
     )
     # Positive assertion: the new shape is present.
     assert "amount_raw" in body

@@ -21,8 +21,11 @@ def get_docker_containers() -> list[dict[str, Any]]:
     try:
         result = subprocess.run(
             [
-                "docker", "ps", "-a",
-                "--format", "{{json .}}",
+                "docker",
+                "ps",
+                "-a",
+                "--format",
+                "{{json .}}",
             ],
             capture_output=True,
             text=True,
@@ -38,15 +41,17 @@ def get_docker_containers() -> list[dict[str, Any]]:
                 continue
             try:
                 c = json.loads(line)
-                containers.append({
-                    "id": c.get("ID", "")[:12],
-                    "name": c.get("Names", ""),
-                    "image": c.get("Image", ""),
-                    "status": c.get("Status", ""),
-                    "state": c.get("State", ""),
-                    "created": c.get("CreatedAt", ""),
-                    "ports": c.get("Ports", ""),
-                })
+                containers.append(
+                    {
+                        "id": c.get("ID", "")[:12],
+                        "name": c.get("Names", ""),
+                        "image": c.get("Image", ""),
+                        "status": c.get("Status", ""),
+                        "state": c.get("State", ""),
+                        "created": c.get("CreatedAt", ""),
+                        "ports": c.get("Ports", ""),
+                    }
+                )
             except json.JSONDecodeError:
                 continue
         return containers
@@ -68,8 +73,11 @@ def get_docker_stats() -> list[dict[str, Any]]:
     try:
         result = subprocess.run(
             [
-                "docker", "stats", "--no-stream",
-                "--format", "{{json .}}",
+                "docker",
+                "stats",
+                "--no-stream",
+                "--format",
+                "{{json .}}",
             ],
             capture_output=True,
             text=True,
@@ -84,15 +92,17 @@ def get_docker_stats() -> list[dict[str, Any]]:
                 continue
             try:
                 s = json.loads(line)
-                stats.append({
-                    "name": s.get("Name", ""),
-                    "cpu_percent": s.get("CPUPerc", "0%").rstrip("%"),
-                    "mem_usage": s.get("MemUsage", ""),
-                    "mem_percent": s.get("MemPerc", "0%").rstrip("%"),
-                    "net_io": s.get("NetIO", ""),
-                    "block_io": s.get("BlockIO", ""),
-                    "pids": s.get("PIDs", "0"),
-                })
+                stats.append(
+                    {
+                        "name": s.get("Name", ""),
+                        "cpu_percent": s.get("CPUPerc", "0%").rstrip("%"),
+                        "mem_usage": s.get("MemUsage", ""),
+                        "mem_percent": s.get("MemPerc", "0%").rstrip("%"),
+                        "net_io": s.get("NetIO", ""),
+                        "block_io": s.get("BlockIO", ""),
+                        "pids": s.get("PIDs", "0"),
+                    }
+                )
             except json.JSONDecodeError:
                 continue
         return stats

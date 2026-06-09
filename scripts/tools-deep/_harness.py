@@ -110,9 +110,9 @@ async def make_executor(timeout_sec: int = 60):
     plumbed in here.
     """
     from app.database import async_session
+    from app.models.orchestrator import Lab
     from app.services.tool_executor import ToolExecutor
     from sqlalchemy import select
-    from app.models.orchestrator import Lab
 
     async with async_session() as db:
         lab = (await db.execute(select(Lab).limit(1))).scalars().first()

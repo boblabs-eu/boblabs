@@ -27,15 +27,11 @@ class ConsumerAppRepository:
         return list(result.scalars().all())
 
     async def get_by_id(self, app_uuid: UUID) -> ConsumerApp | None:
-        result = await self.db.execute(
-            select(ConsumerApp).where(ConsumerApp.id == app_uuid)
-        )
+        result = await self.db.execute(select(ConsumerApp).where(ConsumerApp.id == app_uuid))
         return result.scalar_one_or_none()
 
     async def get_by_app_id(self, app_id: str) -> ConsumerApp | None:
-        result = await self.db.execute(
-            select(ConsumerApp).where(ConsumerApp.app_id == app_id)
-        )
+        result = await self.db.execute(select(ConsumerApp).where(ConsumerApp.app_id == app_id))
         return result.scalar_one_or_none()
 
     async def create(self, app_id: str, name: str, secret: str, notes: str = "") -> ConsumerApp:
@@ -53,9 +49,7 @@ class ConsumerAppRepository:
     async def delete(self, app_uuid: UUID) -> bool:
         """Hard-delete a consumer app row. Returns True if a row was removed."""
         result = await self.db.execute(
-            delete(ConsumerApp)
-            .where(ConsumerApp.id == app_uuid)
-            .returning(ConsumerApp.id)
+            delete(ConsumerApp).where(ConsumerApp.id == app_uuid).returning(ConsumerApp.id)
         )
         await self.db.flush()
         return result.scalar_one_or_none() is not None

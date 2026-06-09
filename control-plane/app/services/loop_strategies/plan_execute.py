@@ -109,7 +109,9 @@ class PlanExecuteStrategy(LoopStrategy):
 
         messages = [{"role": "system", "content": system}]
         messages += build_messages_from_history(
-            context, self._last_results, self._injections,
+            context,
+            self._last_results,
+            self._injections,
         )
         self._injections.clear()
 
@@ -130,11 +132,14 @@ class _PendingLLMCall:
     2. Call the orchestrator LLM with these messages
     3. Parse the JSON response into a proper LoopAction
     """
+
     def __init__(self, messages: list[dict]):
         self.messages = messages
 
 
-def parse_orchestrator_response(raw: str, *, iteration: int = 0, has_results: bool = False, has_pending_inject: bool = False) -> LoopAction:
+def parse_orchestrator_response(
+    raw: str, *, iteration: int = 0, has_results: bool = False, has_pending_inject: bool = False
+) -> LoopAction:
     """Parse the orchestrator LLM's JSON response into a LoopAction.
 
     ``iteration`` and ``has_results`` are used as a safety check: the
@@ -168,8 +173,7 @@ def parse_orchestrator_response(raw: str, *, iteration: int = 0, has_results: bo
                 candidates.append(obj)
         # Prefer a candidate that looks like an orchestrator action.
         action_like = [
-            c for c in candidates
-            if any(k in c for k in ("done", "tasks", "reasoning", "summary"))
+            c for c in candidates if any(k in c for k in ("done", "tasks", "reasoning", "summary"))
         ]
         if action_like:
             data = action_like[-1]
@@ -184,19 +188,25 @@ def parse_orchestrator_response(raw: str, *, iteration: int = 0, has_results: bo
         if iteration == 0 or not has_results:
             logger.warning(
                 "Orchestrator tried to mark done at iteration %d (has_results=%s) — overriding",
-                iteration, has_results,
+                iteration,
+                has_results,
             )
             # Re-interpret as a plan if tasks are present, else pause
             tasks_raw = data.get("tasks", [])
             if tasks_raw:
-                return PlanAction(tasks=[
-                    TaskItem(
-                        agent_name=t.get("agent", ""),
-                        instruction=t.get("instruction", ""),
-                        depends_on=t.get("depends_on", []),
-                    ) for t in tasks_raw
-                ])
-            return PauseAction(reason="Orchestrator tried to finish before agents responded. Waiting for results.")
+                return PlanAction(
+                    tasks=[
+                        TaskItem(
+                            agent_name=t.get("agent", ""),
+                            instruction=t.get("instruction", ""),
+                            depends_on=t.get("depends_on", []),
+                        )
+                        for t in tasks_raw
+                    ]
+                )
+            return PauseAction(
+                reason="Orchestrator tried to finish before agents responded. Waiting for results."
+            )
         # Safety: don't allow done with no tasks right after a user inject
         if has_pending_inject and not data.get("tasks"):
             logger.warning(
@@ -205,18 +215,20 @@ def parse_orchestrator_response(raw: str, *, iteration: int = 0, has_results: bo
             )
             return PauseAction(
                 reason="You received a user instruction but did not dispatch any tasks. "
-                       "You CANNOT perform actions yourself — you must create tasks for agents. "
-                       "Please re-read the user instruction and dispatch appropriate tasks."
+                "You CANNOT perform actions yourself — you must create tasks for agents. "
+                "Please re-read the user instruction and dispatch appropriate tasks."
             )
         return SynthesizeAction(summary=data.get("summary", ""))
 
     tasks = []
     for t in data.get("tasks", []):
-        tasks.append(TaskItem(
-            agent_name=t.get("agent", ""),
-            instruction=t.get("instruction", ""),
-            depends_on=t.get("depends_on", []),
-        ))
+        tasks.append(
+            TaskItem(
+                agent_name=t.get("agent", ""),
+                instruction=t.get("instruction", ""),
+                depends_on=t.get("depends_on", []),
+            )
+        )
 
     if not tasks:
         return PauseAction(reason="Orchestrator produced empty task list without marking done.")
