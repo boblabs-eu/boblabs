@@ -1,21 +1,21 @@
 # Bob Labs — API Reference
 
-**Base URL:** `http://localhost:8888/api/v1`  
-**Authentication:** JWT Bearer token (see [Authentication](#authentication))  
-**Total endpoints:** 182 REST + 2 WebSocket
+**Base URL:** `http://localhost:8888/api/v1` (host port; container listens on `bob-api:8000`)
+**Authentication:** JWT Bearer for operator endpoints, HMAC for `/internal/*` consumer-app endpoints (see [Authentication](#authentication))
 
 ---
 
 ## Authentication
 
-Two authentication methods:
+Three authentication methods:
 
-| Method | Endpoint | Use Case |
-|--------|----------|----------|
+| Method | Endpoint / Mechanism | Use Case |
+|--------|----------------------|----------|
 | Admin login | `POST /public/admin-login` | Admin access via `ADMIN_SECRET` |
 | Access token | `POST /public/validate-token` | User access via time-limited token |
+| Consumer-app HMAC | `X-App-Id` + `X-App-Timestamp` + `X-App-Signature` headers on `/internal/apps/*` | Private consumer-app server-to-server channel. Per-app HMAC keys are managed in the `consumer_apps` table via bob-ui → Admin → Consumer Apps. Full contract in [CONSUMER_APPS.md](CONSUMER_APPS.md). |
 
-Both return a JWT for use in `Authorization: Bearer <token>` headers.
+Login methods return a JWT for use in `Authorization: Bearer <token>` headers.
 
 **Agent auth:** Agents connect via WebSocket with `AGENT_SECRET` in the handshake.
 
@@ -369,6 +369,48 @@ Both return a JWT for use in `Authorization: Bearer <token>` headers.
 | DELETE | `/library-agents/{id}` | Yes | Delete |
 | POST | `/library-agents/{id}/duplicate` | Yes | Duplicate |
 
+### Hermes backend lifecycle
+
+Container lifecycle for `backend: hermes` agents — see [HERMES.md](HERMES.md).
+`{id}` accepts a library-agent id or a standalone lab-agent id.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/library-agents/{id}/hermes/activate` | Admin | Pop/start the agent's Hermes container, wait for health |
+| POST | `/library-agents/{id}/hermes/deactivate` | Admin | Stop the container (memory volume kept) |
+| DELETE | `/library-agents/{id}/hermes/container` | Admin | Remove the container (memory volume kept) |
+| GET | `/library-agents/{id}/hermes/status` | Admin | `{image_configured, running, healthy, url, backend}` |
+
+---
+
+## LLM Gateway (`/llm-gateway`)
+
+Internal OpenAI-compatible surface used by Hermes containers — every call is
+routed through the LabDispatcher (load balancing, concurrency slots, LLM-event
+feed). Auth: `Authorization: Bearer <AGENT_SECRET>` (machine channel, not JWT).
+`{tag}` is the calling agent's id (used for feed attribution).
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/llm-gateway/{tag}/v1/models` | Agent secret | OpenAI-style model listing (available identifiers) |
+| POST | `/llm-gateway/{tag}/v1/chat/completions` | Agent secret | Chat completion (tools + SSE streaming supported), dispatched via the load balancer |
+
+---
+
+## MCP Servers (`/mcp`)
+
+External Model Context Protocol servers whose tools are exposed to agents as
+`mcp__<slug>__<tool>` (or whole-server via the `mcp:<slug>` token).
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/mcp/catalog` | Admin | Curated presets (Stripe, data.gouv.fr, GitHub, …) |
+| GET | `/mcp/servers` | Admin | List configured MCP servers |
+| POST | `/mcp/servers` | Admin | Enable a catalog entry or add a custom MCP |
+| PATCH | `/mcp/servers/{id}` | Admin | Toggle `enabled`, edit credentials |
+| DELETE | `/mcp/servers/{id}` | Admin | Remove (tools unregistered on re-sync) |
+| POST | `/mcp/servers/{id}/test` | Admin | Health check + preview of exposed tools |
+
 ---
 
 ## Cron Jobs (`/cron-jobs`)
@@ -464,6 +506,74 @@ No authentication required.
 | GET | `/public/live/labs` | List labs (public live page) |
 | GET | `/public/live/labs/{lab_id}` | Get lab (public live page) |
 | GET | `/public/live/labs/{lab_id}/messages` | Recent messages (sanitized) |
+
+---
+
+## Outreach (`/outreach`)
+
+Drafts produced by lab agents that are queued for human review before sending
+(email outreach, social drafts).
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/outreach/drafts` | Yes | List pending drafts across all labs |
+| GET | `/outreach/drafts/{lab_id}/{filename}` | Yes | Read one draft |
+| PATCH | `/outreach/drafts/{lab_id}/{filename}` | Yes | Edit a draft in place |
+| POST | `/outreach/drafts/{lab_id}/{filename}/reject` | Yes | Mark draft rejected |
+| POST | `/outreach/drafts/{lab_id}/{filename}/send` | Yes | Send via the configured channel |
+
+---
+
+## Admin Logs (`/admin/logs`)
+
+Observability over recent API and lab-loop activity. Admin-only.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/admin/logs/requests` | Admin | Paged HTTP request log with filters |
+| GET | `/admin/logs/facets` | Admin | Distinct values for filter dropdowns |
+| GET | `/admin/logs/metrics` | Admin | Aggregated request metrics over a time range |
+| GET | `/admin/logs/lab-loops` | Admin | Recent lab-loop iterations (start/end, status, agent) |
+| GET | `/admin/logs/tasks` | Admin | Background task history (scheduler, dispatcher) |
+
+---
+
+## Admin — Consumer Apps (`/admin/consumer-apps`)
+
+CRUD over the `consumer_apps` registry. Plain HMAC secret returned **once**
+at creation, never again — admins paste it into the consumer app's `.env`
+as `BOB_APP_SECRET`. Admin JWT required.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/admin/consumer-apps` | List registered consumer apps (no secrets in response) |
+| POST | `/admin/consumer-apps` | Register a new consumer app; returns the one-time HMAC secret |
+| DELETE | `/admin/consumer-apps/{id}` | Revoke a consumer app |
+
+---
+
+## Internal — Apps (`/internal/apps`)
+
+> **HMAC-only.** Each request must carry `X-App-Id`, `X-App-Timestamp`
+> (unix seconds) and `X-App-Signature` (`hmac_sha256(secret, "<ts>.<body>")`).
+> The matching HMAC key is looked up in the `consumer_apps` table by
+> `app_id`. Replay window: 300 s. Unknown / revoked / bad-sig collapse to
+> 401 to prevent app-id enumeration.
+>
+> Outgoing callbacks from bob-api back to the consumer app's webhook URL
+> are signed with the same key and carry the same headers. See
+> [CONSUMER_APPS.md](CONSUMER_APPS.md) for the full contract.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/internal/apps/import_lab` | Idempotent import of a lab blueprint. |
+| POST | `/internal/apps/run` | Direct ComfyUI texture-mixing dispatch. Result posted to `callback_url`. |
+| POST | `/internal/apps/run_lab` | Clone a template lab, seed context files, run agents, copy artifacts, post callback. |
+| POST | `/internal/apps/run_flux_text2img` | ComfyUI Flux.1-Dev text-to-image. |
+| POST | `/internal/apps/run_ltx_image2video` | ComfyUI LTX-2.3 image-to-video. |
+| POST | `/internal/apps/run_ffmpeg_op` | Local ffmpeg subprocess (extract last frame, concat). |
+| POST | `/internal/apps/transcribe` | STT dispatcher proxy (audio → text, queued). |
+| POST | `/internal/apps/llm_complete` | One-shot load-balanced LLM chat completion. |
 
 ---
 

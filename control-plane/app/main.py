@@ -89,9 +89,12 @@ from app.api.routes import (  # noqa: E402
     blog_seo,
     commands,
     cron_jobs,
+    hermes,
     internal_apps,
     labs,
     library_agents,
+    llm_gateway,
+    mcp,
     metrics,
     modules,
     news,
@@ -164,6 +167,9 @@ app.include_router(labs.router, prefix="/api/v1")
 app.include_router(tool_sets.router, prefix="/api/v1")
 app.include_router(prompt_templates.router, prefix="/api/v1")
 app.include_router(library_agents.router, prefix="/api/v1")
+app.include_router(hermes.router, prefix="/api/v1")
+app.include_router(llm_gateway.router, prefix="/api/v1")
+app.include_router(mcp.router, prefix="/api/v1")
 app.include_router(cron_jobs.router, prefix="/api/v1")
 app.include_router(rag.router, prefix="/api/v1")
 app.include_router(public.router, prefix="/api/v1")
@@ -476,6 +482,37 @@ async def seed_agent_template_presets():
         await seed_agent_templates(async_session)
     except Exception as e:
         logger.warning("Failed to seed agent templates: %s", e)
+
+
+@app.on_event("startup")
+async def sync_mcp_servers():
+    """Register tools from every enabled MCP server into the tool registry."""
+    try:
+        from app.services.tools.mcp_registry import sync_mcp_tools
+
+        result = await sync_mcp_tools(async_session)
+        if result["tools"]:
+            logger.info(
+                "MCP: registered %d tools from %d server(s)",
+                result["tools"],
+                result["servers"],
+            )
+    except Exception as e:
+        logger.warning("Failed to sync MCP servers: %s", e)
+
+
+@app.on_event("startup")
+async def cleanup_hermes_containers():
+    """Remove stale Hermes containers from a previous run (volumes kept —
+    re-activation restores each agent's memory)."""
+    try:
+        from app.services.hermes import cleanup_orphaned_hermes
+
+        removed = await cleanup_orphaned_hermes()
+        if removed:
+            logger.info("Cleaned up %d orphaned Hermes containers on startup", removed)
+    except Exception as e:
+        logger.warning("Hermes container cleanup failed: %s", e)
 
 
 @app.on_event("shutdown")

@@ -992,6 +992,39 @@
   white-space: pre-wrap;
   word-break: normal;
 }
+/* Inline text-file editor */
+.lab-file-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 360px;
+  background: #05080f;
+}
+.lab-file-editor-textarea {
+  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 16px;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--text-primary);
+  background: #05080f;
+  white-space: pre;
+  tab-size: 2;
+}
+.lab-file-editor-error {
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 0.78rem;
+  color: #fca5a5;
+  background: rgba(220, 38, 38, 0.12);
+  border-bottom: 1px solid rgba(220, 38, 38, 0.3);
+}
 .lab-json-key {
   color: #7dd3fc;
 }

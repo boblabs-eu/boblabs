@@ -30,7 +30,12 @@ from app.repositories.lab_repo import (
     LabScheduleLogRepository,
     ToolSetRepository,
 )
-from app.services.lab_runner import LabRunner, _broadcast_lab_event, get_runner
+from app.services.lab_runner import (
+    LabRunner,
+    _broadcast_lab_event,
+    _tool_output_preview,
+    get_runner,
+)
 from app.services.pipelines import extract_pipeline_names, extract_subtool_permissions
 from app.services.rag_service import augment_tool_names_with_rag_access
 from app.services.web3_access_service import augment_tool_names_with_web3_access
@@ -249,15 +254,25 @@ async def _execute_agent_cron(
             )
 
             # ── Resolve tools ──
-            agent_tools = await LabRunner._resolve_tools(
-                ts_repo,
-                agent.tools,
-                agent.tool_set_id,
-                getattr(agent, "tool_set_ids", None),
-            )
-            agent_tools = await augment_tool_names_with_rag_access(db, lab.id, agent_tools)
-            agent_tools = await augment_tool_names_with_web3_access(db, lab.id, agent_tools)
-            native_tools = build_native_tools_schema(agent_tools) if agent_tools else None
+            # Hermes-backed agents run their own loop + tools in their
+            # container; keep agent_tools empty so the Bob Lab tool loop is
+            # skipped and Hermes' reply text can never trigger Bob Lab tools.
+            from app.services.hermes import is_hermes_agent
+
+            hermes_backed = is_hermes_agent(agent)
+            if hermes_backed:
+                agent_tools = []
+                native_tools = None
+            else:
+                agent_tools = await LabRunner._resolve_tools(
+                    ts_repo,
+                    agent.tools,
+                    agent.tool_set_id,
+                    getattr(agent, "tool_set_ids", None),
+                )
+                agent_tools = await augment_tool_names_with_rag_access(db, lab.id, agent_tools)
+                agent_tools = await augment_tool_names_with_web3_access(db, lab.id, agent_tools)
+                native_tools = build_native_tools_schema(agent_tools) if agent_tools else None
 
             # ── Build messages ──
             agent_memories = await mem_repo.get_by_lab(lab.id, limit=30)
@@ -279,9 +294,14 @@ async def _execute_agent_cron(
                 except Exception as e:
                     logger.warning("CRON exec: sandbox setup failed for lab %s: %s", lab.id, e)
 
-            # ── Call agent LLM ──
+            # ── Call agent LLM (or delegate the turn to Hermes) ──
             dispatcher = LabDispatcher(db)
-            result = await dispatcher.call_agent(agent, msgs, lab_id=lab.id, tools=native_tools)
+            if hermes_backed:
+                from app.services.hermes import execute_hermes_turn
+
+                result = await execute_hermes_turn(db, agent, instruction)
+            else:
+                result = await dispatcher.call_agent(agent, msgs, lab_id=lab.id, tools=native_tools)
 
             # ── Tool loop ──
             if agent_tools:
@@ -382,7 +402,10 @@ async def _execute_agent_cron(
                             message_type="tool_call",
                             tool_name=tc["name"],
                             tool_input=tc["arguments"],
-                            tool_output={"success": success, "output": tool_output[:2000]},
+                            tool_output={
+                                "success": success,
+                                "output": _tool_output_preview(tool_output),
+                            },
                         )
                         await db.commit()
 

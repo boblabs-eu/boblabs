@@ -6,6 +6,7 @@
 | Document | Description |
 |----------|-------------|
 | [General Overview](GENERAL_OVERVIEW.md) | Product positioning, deployment model, trust boundaries |
+| [Quick Launch](QUICK_LAUNCH.md) | Fastest path to a working dev/eval setup |
 | [Architecture](ARCHITECTURE.md) | System design, component diagram, protocols, database schema |
 | [Installation (Production)](INSTALL_PROD.md) | Step-by-step production deployment with Nginx, SSL, firewall |
 | [Configuration](CONFIGURATION.md) | All environment variables across every service |
@@ -14,8 +15,11 @@
 | Document | Description |
 |----------|-------------|
 | [Labs](LABS.md) | Persistent multi-agent lab system — data model, loop strategies, execution engine |
+| [Agents Tab](AGENTS_TAB.md) | Agents tab UI — template library, solo agent instances, feed, inspector, file viewer |
 | [Agents & Orchestration](AGENTS_AND_ORCHESTRATION.md) | Orchestrator behavior, agent execution model, memory system |
-| [Tools & Sandbox](TOOLS_AND_SANDBOX.md) | All 34 built-in tools, sandbox isolation, safety controls |
+| [Hermes Agent Backend](HERMES.md) | Run the real Nous Hermes agent as an agent backend — container lifecycle, adapter, task-completion protocol |
+| [Anti-Loop](ANTI_LOOP.md) | Loop-detection guards for agents and orchestrators |
+| [Tools & Sandbox](TOOLS_AND_SANDBOX.md) | All 40 built-in tools, sandbox isolation, safety controls |
 | [Prompt Structure](PROMPT_STRUCTURE.md) | Prompt assembly layers for orchestrators and agents |
 | [Conversations](CONVERSATIONS.md) | Multi-turn chat with streaming, model routing |
 | [Dispatcher & Model Routing](DISPATCHER_AND_MODEL_ROUTING.md) | LLM provider selection, load balancing, concurrency |
@@ -57,10 +61,16 @@
 |----------|-------------|
 | [YouTube Speech Retrieval](YOUTUBE_SPEECH_RETRIEVAL.md) | YouTube audio extraction and speech-to-text pipeline |
 
+### Consumer Apps (private overlays on top of bob-api)
+| Document | Description |
+|----------|-------------|
+| [Consumer Apps Contract](CONSUMER_APPS.md) | HMAC, headers, endpoints, callbacks — what any private app integrates against |
+
 ### Business & Strategy
 | Document | Description |
 |----------|-------------|
 | [Commercialization](COMMERCIALIZATION.md) | Business model, target market, go-to-market strategy |
+| [Successful Launch Playbook](SUCCESSFUL_LAUNCH.md) | Week-by-week founder playbook for shipping Bob Labs |
 | [Recruitment Use Case](CABINET_RECRUTEMENT.md) | Example: AI-powered recruitment agency (French) |
 
 ## Recommended Reading Order

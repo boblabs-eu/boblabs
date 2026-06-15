@@ -16,6 +16,7 @@ from app.models.orchestrator import (
     LabScheduleLog,
     LabTool,
     LibraryAgent,
+    McpServer,
     PromptTemplate,
     ToolSet,
 )
@@ -173,6 +174,44 @@ class ToolSetRepository:
 
     async def delete(self, ts_id: uuid.UUID) -> None:
         await self.db.execute(delete(ToolSet).where(ToolSet.id == ts_id))
+        await self.db.flush()
+
+
+class McpServerRepository:
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def get_all(self) -> list[McpServer]:
+        result = await self.db.execute(select(McpServer).order_by(McpServer.name))
+        return list(result.scalars().all())
+
+    async def get_by_id(self, server_id: uuid.UUID) -> McpServer | None:
+        result = await self.db.execute(select(McpServer).where(McpServer.id == server_id))
+        return result.scalars().first()
+
+    async def get_by_slug(self, slug: str) -> McpServer | None:
+        result = await self.db.execute(select(McpServer).where(McpServer.slug == slug))
+        return result.scalars().first()
+
+    async def get_by_name(self, name: str) -> McpServer | None:
+        result = await self.db.execute(select(McpServer).where(McpServer.name == name))
+        return result.scalars().first()
+
+    async def create(self, **kwargs) -> McpServer:
+        server = McpServer(**kwargs)
+        self.db.add(server)
+        await self.db.flush()
+        await self.db.refresh(server)
+        return server
+
+    async def update(self, server_id: uuid.UUID, **kwargs) -> McpServer | None:
+        stmt = update(McpServer).where(McpServer.id == server_id).values(**kwargs)
+        await self.db.execute(stmt)
+        await self.db.flush()
+        return await self.get_by_id(server_id)
+
+    async def delete(self, server_id: uuid.UUID) -> None:
+        await self.db.execute(delete(McpServer).where(McpServer.id == server_id))
         await self.db.flush()
 
 

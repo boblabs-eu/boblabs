@@ -263,6 +263,20 @@ export const syncAllModels = () => api.post('/orchestrator/models/sync');
 export const getPipelines = () => api.get('/orchestrator/pipelines');
 export const getBuiltinTools = () => api.get('/orchestrator/builtin-tools');
 
+// ── Hermes agent backend (per-library-agent container lifecycle) ──
+export const hermesActivate = (agentId) => api.post(`/library-agents/${agentId}/hermes/activate`);
+export const hermesDeactivate = (agentId) =>
+  api.post(`/library-agents/${agentId}/hermes/deactivate`);
+export const hermesStatus = (agentId) => api.get(`/library-agents/${agentId}/hermes/status`);
+
+// ── MCP (Model Context Protocol) servers ──
+export const getMcpCatalog = () => api.get('/mcp/catalog');
+export const getMcpServers = () => api.get('/mcp/servers');
+export const createMcpServer = (data) => api.post('/mcp/servers', data);
+export const updateMcpServer = (id, data) => api.patch(`/mcp/servers/${id}`, data);
+export const deleteMcpServer = (id) => api.delete(`/mcp/servers/${id}`);
+export const testMcpServer = (id) => api.post(`/mcp/servers/${id}/test`);
+
 export const getLlmEvents = (params = {}) => api.get('/orchestrator/llm-events', { params });
 export const getLlmEventDetail = (eventId) => api.get(`/orchestrator/llm-events/${eventId}`);
 export const getLlmEventStats = (params = {}) => api.get('/orchestrator/llm-events/stats', { params });
@@ -398,6 +412,7 @@ export const getLabResourceUrl = (labId, resourceId) => `${API_BASE}/api/v1/labs
 export const getLabOutputFiles = (labId) => api.get(`/labs/${labId}/output-files`);
 export const getLabOutputFileUrl = (labId, path) => `${API_BASE}/api/v1/labs/${labId}/output-files/download?path=${encodeURIComponent(path)}`;
 export const getLabOutputFileContent = (labId, path) => api.get(`/labs/${labId}/output-files/content?path=${encodeURIComponent(path)}`);
+export const saveLabOutputFileContent = (labId, path, content) => api.put(`/labs/${labId}/output-files/content?path=${encodeURIComponent(path)}`, { content });
 export const getLabOutputFileHistory = (labId, path) => api.get(`/labs/${labId}/output-files/history?path=${encodeURIComponent(path)}`);
 export const getLabResourceContent = (labId, resourceId) => api.get(`/labs/${labId}/resources/${resourceId}/content`);
 

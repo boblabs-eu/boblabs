@@ -35,6 +35,7 @@ _ALLOWED_FIELDS = {
     "name",
     "role",
     "system_prompt",
+    "backend",
     "temperature",
     "max_tokens",
     "tools",

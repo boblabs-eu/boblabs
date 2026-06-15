@@ -98,6 +98,47 @@ class AIModel(Base):
     )
 
 
+# ── MCP Servers (Model Context Protocol) ──────────
+
+
+class McpServer(Base):
+    """An external Model Context Protocol server whose tools are exposed to agents.
+
+    Standalone external service — deliberately NOT tied to one of our infra
+    ``servers`` (no ``server_id``, unlike :class:`AIProvider`). The operator adds
+    and enables these explicitly, either from the curated catalog
+    (``source='catalog'``) or as a fully custom entry (``source='custom'``).
+
+    Only ``enabled`` servers have their tools registered into the global tool
+    registry (``BUILTIN_TOOLS`` / ``TOOL_HANDLERS``) on sync, under namespaced
+    names ``mcp__<slug>__<tool>``. There is intentionally no ``pending_approval``
+    auto-discovery gate here — nothing creates these rows except the operator.
+    """
+
+    __tablename__ = "mcp_servers"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    slug: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    # 'http' (streamable-http), 'sse', or 'stdio'.
+    transport: Mapped[str] = mapped_column(String(20), default="http", nullable=False)
+    # HTTP/SSE transports use url (+ headers/auth_token); stdio uses command/args/env.
+    url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    headers: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    auth_token: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    command: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    args: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+    env: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    source: Mapped[str] = mapped_column(String(20), default="custom", nullable=False)
+    catalog_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 # ── AI Agents ─────────────────────────────────────
 
 
@@ -320,6 +361,12 @@ class LibraryAgent(Base):
     model_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ai_models.id", ondelete="SET NULL"), nullable=True
     )
+    # Execution backend: 'native' = Bob Lab drives the LLM loop (default);
+    # 'hermes' = the turn is delegated whole to a per-agent Hermes container
+    # which runs its own agent loop (model_id stays the LLM Hermes uses).
+    backend: Mapped[str] = mapped_column(
+        String(20), default="native", server_default="native", nullable=False
+    )
     temperature: Mapped[Decimal] = mapped_column(Numeric(3, 2), default=Decimal("0.70"))
     max_tokens: Mapped[int] = mapped_column(Integer, default=4096)
     tools: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
@@ -450,6 +497,10 @@ class LabAgent(Base):
     )
     model_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ai_models.id", ondelete="SET NULL"), nullable=True
+    )
+    # See LibraryAgent.backend — copied template→instance on creation.
+    backend: Mapped[str] = mapped_column(
+        String(20), default="native", server_default="native", nullable=False
     )
     temperature: Mapped[Decimal] = mapped_column(Numeric(3, 2), default=Decimal("0.70"))
     max_tokens: Mapped[int] = mapped_column(Integer, default=4096)

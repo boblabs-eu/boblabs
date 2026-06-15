@@ -115,15 +115,41 @@ def _extract_and_save_images(
     return saved
 
 
+def _tool_output_preview(val, limit: int = 2000) -> str:
+    """Bound a tool result to a string for the stored/broadcast preview.
+
+    Tool outputs are strings for most tools but a structured dict/list for
+    JSON tools (e.g. ``gouv_data_fr`` returns ``{"results": [...]}``). The old
+    ``val[:2000]`` slice crashed on those — ``dict[:2000]`` raises
+    ``KeyError: slice(None, 2000, None)``, which aborted the whole run. Encode
+    non-strings as JSON first, then truncate. Preview only: the full, untrimmed
+    output is what gets fed back to the model.
+    """
+    if not isinstance(val, str):
+        try:
+            val = json.dumps(val, ensure_ascii=False, default=str)
+        except Exception:  # noqa: BLE001 — a preview must never raise
+            val = str(val)
+    return val[:limit]
+
+
 def _materialize_context_files(lab) -> None:
-    """Write each lab.context_files entry to disk at LAB_RESOURCES_ROOT/<lab_id>/<name>.
+    """Seed each lab.context_files entry to disk at LAB_RESOURCES_ROOT/<lab_id>/<name>.
 
     Each entry is expected to be ``{"name": str, "content": str}``. Names with
     path-traversal or empty content are skipped. The workspace dir is created
-    if missing. Existing files are overwritten only when content differs, so
-    repeated calls are cheap and don't clobber files agents wrote at the same
-    name. Failures are logged but don't abort the lab — the agent will get a
-    clean ``file_read`` error if a critical file is missing.
+    if missing.
+
+    Seed-if-missing: a context file is written ONLY when it is absent on disk.
+    Once materialized, the on-disk copy is the durable working copy — the user
+    may edit it (input files like ``icp_brief.md`` are meant to be edited before
+    a run) and agents may write alongside it, and those changes survive every
+    re-run. ``lab.context_files`` stays the canonical default in the DB (for
+    reset / duplicate / blueprint export); it is never overwritten by the disk
+    copy, nor does it overwrite an existing disk copy. Deleting a context file
+    re-seeds it next run, and a newly added entry is seeded too. Failures are
+    logged but don't abort the lab — the agent will get a clean ``file_read``
+    error if a critical file is missing.
     """
     cfs = getattr(lab, "context_files", None) or []
     if not cfs:
@@ -146,9 +172,9 @@ def _materialize_context_files(lab) -> None:
             logger.warning("Skipping context_file with unsafe name %r", name)
             continue
         target = lab_dir / name
+        if target.exists():
+            continue  # already materialized — preserve user/agent edits across runs
         try:
-            if target.exists() and target.read_text(encoding="utf-8", errors="replace") == content:
-                continue  # unchanged, skip rewrite
             target.write_text(str(content), encoding="utf-8")
         except OSError:
             logger.exception("Could not write context_file %s to %s", name, target)
@@ -355,9 +381,9 @@ class LabRunner:
 
             # Materialize context_files to the lab workspace on disk so agents
             # can `file_read` them inside the sandbox (mounts the same path).
-            # Idempotent: only writes if file is missing or its content drifted,
-            # so a re-run with edited context_files refreshes them without
-            # clobbering anything the agents themselves wrote alongside.
+            # Seed-if-missing: only writes files that are absent, so a re-run
+            # preserves the on-disk working copy (user edits to input files like
+            # icp_brief.md, and anything agents wrote). The DB keeps the default.
             _materialize_context_files(lab)
 
             # Initialize strategy
@@ -397,6 +423,24 @@ class LabRunner:
             has_received_results = False
             seen_injection_ids: set = set()
 
+            # Replay guard — a fresh runner spawned into a lab that already
+            # has history (inject into a completed/failed lab) must not
+            # re-deliver inject rows answered in a prior run through
+            # strategy.on_inject: get_injections has no cursor, so without
+            # this every historical injection re-enters the strategy and
+            # gets re-dispatched. Anything created at-or-before the last
+            # result/synthesis row is done; only newer rows are live work.
+            # (Stateful backends like Hermes already hold the conversation
+            # in their session and would redo the old task.)
+            last_done_at = None
+            for m in await msg_repo.get_recent(lab.id, limit=50):
+                if m.message_type in ("result", "synthesis"):
+                    last_done_at = m.created_at
+            if last_done_at is not None:
+                for inj in await msg_repo.get_injections(lab.id):
+                    if inj.created_at <= last_done_at:
+                        seen_injection_ids.add(inj.id)
+
             while True:
                 # ── Guardrails ──
                 if self._stop_requested:
@@ -407,6 +451,17 @@ class LabRunner:
 
                 # Wait if paused
                 await self._paused.wait()
+
+                # A stop() while paused sets _paused to unblock us here. Re-check
+                # the flag immediately (like the PauseAction/CRON gates below) and
+                # terminalize NOW — otherwise the loop runs one more full iteration
+                # before the top-of-loop check, which can outlast stop()'s timeout
+                # and leave the lab stuck on "paused" (no Reset button).
+                if self._stop_requested:
+                    await lab_repo.update(lab.id, status="completed", completed_at=_now())
+                    await db.commit()
+                    await _broadcast_lab_event(lab.id, "lab.completed", {"reason": "stopped"})
+                    return
 
                 # Refresh lab state
                 await db.refresh(lab)
@@ -595,7 +650,10 @@ class LabRunner:
                                     message_type="tool_call",
                                     tool_name=tc["name"],
                                     tool_input=tc["arguments"],
-                                    tool_output={"success": success, "output": tool_output[:2000]},
+                                    tool_output={
+                                        "success": success,
+                                        "output": _tool_output_preview(tool_output),
+                                    },
                                 )
                                 await db.commit()
 
@@ -1012,24 +1070,42 @@ class LabRunner:
                 res_repo = LabResourceRepository(db)
                 lab_resources = await res_repo.get_by_lab(lab.id)
 
-                # Build native tool schema for hybrid tool calling
-                agent_tools = await self._resolve_tools(
-                    ts_repo, agent.tools, agent.tool_set_id, getattr(agent, "tool_set_ids", None)
-                )
-                agent_tools = await augment_tool_names_with_rag_access(db, lab.id, agent_tools)
-                agent_tools = await augment_tool_names_with_web3_access(db, lab.id, agent_tools)
-                agent_tools = await augment_tool_names_with_server_access(db, lab.id, agent_tools)
-                native_tools = build_native_tools_schema(agent_tools) if agent_tools else None
+                # ── Hermes backend: delegate the whole turn to the agent's
+                # Hermes container (it runs its own loop + tools). agent_tools
+                # MUST stay empty here — it both skips the Bob Lab tool loop
+                # below and prevents tool_call blocks inside Hermes' reply
+                # text from triggering Bob Lab tools.
+                from app.services.hermes import execute_hermes_turn, is_hermes_agent
 
-                msgs = self._build_agent_messages(
-                    agent,
-                    task_item.instruction,
-                    lab,
-                    memories=agent_memories,
-                    resources=lab_resources,
-                    resolved_tools=agent_tools,
-                )
-                result = await dispatcher.call_agent(agent, msgs, lab_id=lab.id, tools=native_tools)
+                if is_hermes_agent(agent):
+                    agent_tools = []
+                    result = await execute_hermes_turn(db, agent, task_item.instruction)
+                else:
+                    # Build native tool schema for hybrid tool calling
+                    agent_tools = await self._resolve_tools(
+                        ts_repo,
+                        agent.tools,
+                        agent.tool_set_id,
+                        getattr(agent, "tool_set_ids", None),
+                    )
+                    agent_tools = await augment_tool_names_with_rag_access(db, lab.id, agent_tools)
+                    agent_tools = await augment_tool_names_with_web3_access(db, lab.id, agent_tools)
+                    agent_tools = await augment_tool_names_with_server_access(
+                        db, lab.id, agent_tools
+                    )
+                    native_tools = build_native_tools_schema(agent_tools) if agent_tools else None
+
+                    msgs = self._build_agent_messages(
+                        agent,
+                        task_item.instruction,
+                        lab,
+                        memories=agent_memories,
+                        resources=lab_resources,
+                        resolved_tools=agent_tools,
+                    )
+                    result = await dispatcher.call_agent(
+                        agent, msgs, lab_id=lab.id, tools=native_tools
+                    )
 
                 # ── Tool call loop (hybrid: native + text fallback) ──
                 if agent_tools:
@@ -1209,7 +1285,10 @@ class LabRunner:
                                 message_type="tool_call",
                                 tool_name=tc["name"],
                                 tool_input=tc["arguments"],
-                                tool_output={"success": success, "output": tool_output[:2000]},
+                                tool_output={
+                                    "success": success,
+                                    "output": _tool_output_preview(tool_output),
+                                },
                             )
                             await db.commit()
 
@@ -1314,6 +1393,9 @@ class LabRunner:
 
                 # Extract & save any generated images
                 extra = {}
+                # Hermes flow metadata (rounds, tools, reasoning) → UI display
+                if result.get("hermes_steps"):
+                    extra["hermes_steps"] = result["hermes_steps"]
                 generated_images = _extract_and_save_images(
                     result["content"], lab.id, lab.current_iteration
                 )
@@ -1627,6 +1709,16 @@ class LabRunner:
             if not target.is_active:
                 raise ValueError(f"Agent '{target_name}' is inactive.")
 
+            # v1: hermes-backed agents own their loop and can't be driven as a
+            # nested sub-call — fail loudly rather than silently running the
+            # target as a native LLM agent.
+            if (getattr(target, "backend", "native") or "native") == "hermes":
+                raise ValueError(
+                    f"Agent '{target_name}' runs on the Hermes backend and cannot "
+                    "be called via call_agent yet. Address it directly via the "
+                    "orchestrator/lab tasks instead."
+                )
+
             # Log the cross-agent call as a message
             await msg_repo.create(
                 lab_id=lab.id,
@@ -1760,7 +1852,10 @@ class LabRunner:
                             message_type="tool_call",
                             tool_name=tc["name"],
                             tool_input=tc["arguments"],
-                            tool_output={"success": success, "output": tool_output[:2000]},
+                            tool_output={
+                                "success": success,
+                                "output": _tool_output_preview(tool_output),
+                            },
                         )
                         await db.commit()
 

@@ -65,7 +65,8 @@ Each Lab agent can define:
 
 - name and role
 - system prompt
-- model selection
+- model selection (any synced provider model — Ollama, cloud APIs, or Claude CLI models, which appear namespaced as `claude-cli:<id>`; see [CLAUDE_CLI.md](CLAUDE_CLI.md))
+- execution backend (`native` or `hermes`)
 - temperature and token limits
 - tools or tool set assignment
 - memory-sharing behavior
@@ -73,6 +74,15 @@ Each Lab agent can define:
 - optional cron injection settings
 
 This makes each agent a reusable operational unit rather than a temporary prompt fragment.
+
+## Execution Backends
+
+Agents run on one of two backends, selected per agent in the edit form:
+
+- **`native`** (default) — Bob Labs drives the LLM loop described below: prompt assembly, hybrid tool calling, bounded tool loop.
+- **`hermes`** — the whole task is delegated to a dedicated per-agent container running the real NousResearch Hermes agent, which uses its own loop, tools, and persistent memory and returns one final result. The agent's model selection still applies (it is the LLM Hermes thinks with, switchable per task). Bob Labs tools and `call_agent` do not apply to hermes agents.
+
+The backend field follows the agent everywhere (template cascade, duplication, instances, lab blueprints, consumer-app APIs). See [HERMES.md](HERMES.md) for the container lifecycle, the task-completion protocol, and session memory.
 
 ## Agent Execution Behavior
 
@@ -94,6 +104,8 @@ The platform supports a hybrid tool loop:
 - text-based tool call parsing for models that do not
 
 The runner attempts native tool calls first, then falls back to parsing `<tool_call>` blocks. This broadens model compatibility without forcing a single provider capability model.
+
+Note: Claude CLI models (`claude-cli:*`) are text-only at the OpenAI layer — agents drive tools via the `<tool_call>` text protocol, and any native `tool_use` the model emits is recovered and converted to that text form. They work with tool-using agents, not just tool-less ones; see [CLAUDE_CLI.md](CLAUDE_CLI.md).
 
 ## Agent-To-Agent Calls
 

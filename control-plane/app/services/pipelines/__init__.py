@@ -101,10 +101,34 @@ def normalize_tool_names(tool_names: list[str]) -> list[str]:
 
     Returns a new list suitable for tool permission checks.
     e.g. ['think', 'media_pipeline:riffusion', 'mail:read'] -> ['think', 'media_pipeline', 'mail']
+
+    Also expands the MCP server token ``mcp:<slug>`` into that server's currently
+    registered ``mcp__<slug>__<tool>`` names, so an agent can be granted a whole
+    MCP server the same way it is granted a tool-set. Concrete ``mcp__…`` names
+    (double underscore, no colon) pass through unchanged.
     """
+    # Lazy import — avoids any import cycle with the tools package at module load.
+    from app.services.tools import BUILTIN_TOOLS
+    from app.services.tools.mcp_registry import mcp_server_tool_keys
+
     result = []
     seen_parents: set[str] = set()
     for name in tool_names:
+        if name.startswith("mcp:"):
+            rest = name[len("mcp:") :]
+            if ":" in rest:
+                # 'mcp:<slug>:<tool>' (written by the SubToolGroup picker) → the
+                # single namespaced tool key.
+                slug, tool = rest.split(":", 1)
+                key = f"mcp__{slug}__{tool}"
+                if key in BUILTIN_TOOLS and key not in result:
+                    result.append(key)
+            else:
+                # 'mcp:<slug>' → the whole server's currently-registered tools.
+                for key in mcp_server_tool_keys(rest):
+                    if key not in result:
+                        result.append(key)
+            continue
         if ":" in name:
             parent = name.split(":", 1)[0]
             if parent in EXPANDABLE_TOOLS and parent not in seen_parents:

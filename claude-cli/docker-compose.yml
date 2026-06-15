@@ -1,0 +1,50 @@
+# Claude CLI model provider — deploy on each GPU server that should offer
+# Claude CLI models to the fleet (same role as Ollama on 11434).
+#
+#   cp .env.example .env       # paste your `claude setup-token` token
+#   docker compose up -d --build
+#   curl localhost:3021/health
+#
+# The bob agent on the same host picks it up via CLAUDE_CLI_URL
+# (default http://localhost:3021) and reports the models to the
+# control plane, where the provider appears pending admin approval.
+
+name: bob-claude-cli
+
+services:
+  claude-cli:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bob-claude-cli:latest
+    restart: unless-stopped
+
+    ports:
+      - "${CLAUDE_CLI_PORT:-3021}:3021"
+
+    # --- Auth: uses your Max subscription, NOT API credits ---------------
+    # Generate the token ONCE on a machine with a browser:  claude setup-token
+    # then paste it into .env  (it starts with sk-ant-oat01-)
+    environment:
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:?run "claude setup-token" and put it in .env}
+      # Model list (single source of truth). Bare aliases track the latest
+      # model of each tier; pin e.g. claude-opus-4-8 for a fixed version.
+      CLAUDE_CLI_MODELS: ${CLAUDE_CLI_MODELS:-haiku,opus,sonnet}
+      CLAUDE_CLI_CONCURRENCY: ${CLAUDE_CLI_CONCURRENCY:-2}
+      CLAUDE_CLI_TIMEOUT_SEC: ${CLAUDE_CLI_TIMEOUT_SEC:-300}
+      # Native tools available to each one-shot. Empty = disable ALL tools, so
+      # the model stays a pure text brain and the lab drives tools itself.
+      CLAUDE_CLI_TOOLS: ${CLAUDE_CLI_TOOLS:-}
+      # Optional bearer auth on /v1/* (put the same key in the provider's
+      # api_key field in the control plane). Empty = unauthenticated (LAN).
+      CLAUDE_CLI_API_KEY: ${CLAUDE_CLI_API_KEY:-}
+
+    volumes:
+      # Persist Claude CLI config across restarts.
+      - claude-config:/home/claude/.claude
+
+    # Claude Code wants >= 4 GB available.
+    mem_limit: 6g
+
+volumes:
+  claude-config:

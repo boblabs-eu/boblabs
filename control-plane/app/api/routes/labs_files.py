@@ -4,10 +4,12 @@ import mimetypes
 import os
 import re as _re
 import uuid as uuid_mod
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from app.api.dependencies import DbSession, get_current_user
 from app.api.routes.labs import LAB_RESOURCES_ROOT
@@ -25,6 +27,54 @@ from app.schemas.orchestrator import (
 from app.services.authorization import Permission, check_permission
 
 router = APIRouter(tags=["labs"])
+
+# Largest text payload we preview/edit inline. Reads beyond this are
+# truncated (and editing is blocked) so the browser never round-trips a
+# partial file back over a save and silently drops the tail.
+_INLINE_TEXT_MAX_BYTES = 512_000
+
+_TEXT_MIME = {
+    "application/json",
+    "application/javascript",
+    "application/xml",
+    "application/x-yaml",
+    "application/x-sh",
+}
+_TEXT_SUFFIXES = {
+    ".md",
+    ".py",
+    ".js",
+    ".ts",
+    ".html",
+    ".css",
+    ".json",
+    ".yml",
+    ".yaml",
+    ".sh",
+    ".txt",
+    ".csv",
+    ".xml",
+    ".toml",
+    ".cfg",
+    ".ini",
+    ".log",
+}
+
+
+def _detect_text(target: Path) -> tuple[bool, str]:
+    """Return (is_text, mime) using the same allowlist the viewer trusts.
+
+    Editable set == viewable set: anything the inline previewer treats as
+    text can be edited, nothing else.
+    """
+    mime, _ = mimetypes.guess_type(target.name)
+    mime = mime or "application/octet-stream"
+    is_text = mime.startswith("text/") or mime in _TEXT_MIME or target.suffix in _TEXT_SUFFIXES
+    return is_text, mime
+
+
+class SaveFileContentBody(BaseModel):
+    content: str
 
 
 # ══════════════════════════════════════════════════
@@ -446,51 +496,20 @@ async def read_output_file_content(lab_id: UUID, path: str, db: DbSession):
     if not target.is_file():
         raise HTTPException(404, "File not found")
 
-    mime, _ = mimetypes.guess_type(target.name)
-    mime = mime or "application/octet-stream"
+    is_text, mime = _detect_text(target)
     stat = target.stat()
-
-    is_text = (
-        mime.startswith("text/")
-        or mime
-        in (
-            "application/json",
-            "application/javascript",
-            "application/xml",
-            "application/x-yaml",
-            "application/x-sh",
-        )
-        or target.suffix
-        in (
-            ".md",
-            ".py",
-            ".js",
-            ".ts",
-            ".html",
-            ".css",
-            ".json",
-            ".yml",
-            ".yaml",
-            ".sh",
-            ".txt",
-            ".csv",
-            ".xml",
-            ".toml",
-            ".cfg",
-            ".ini",
-            ".log",
-        )
-    )
     is_image = mime.startswith("image/")
     is_audio = mime.startswith("audio/")
     is_video = mime.startswith("video/")
 
     content = None
+    truncated = False
     if is_text:
         try:
             raw = target.read_text(errors="replace")
-            if len(raw) > 512_000:
-                raw = raw[:512_000] + "\n... [truncated at 512 KB]"
+            if len(raw) > _INLINE_TEXT_MAX_BYTES:
+                raw = raw[:_INLINE_TEXT_MAX_BYTES] + "\n... [truncated at 512 KB]"
+                truncated = True
             content = raw
         except Exception:
             content = None
@@ -505,7 +524,82 @@ async def read_output_file_content(lab_id: UUID, path: str, db: DbSession):
         "is_image": is_image,
         "is_audio": is_audio,
         "is_video": is_video,
+        # truncated=True means `content` is incomplete; the editor blocks
+        # saving so the dropped tail can't be clobbered.
+        "truncated": truncated,
         "content": content,
+    }
+
+
+@router.put("/{lab_id}/output-files/content")
+async def save_output_file_content(
+    lab_id: UUID,
+    path: str,
+    body: SaveFileContentBody,
+    db: DbSession,
+    user: dict = Depends(get_current_user),
+):
+    """Overwrite the text content of an existing workspace file.
+
+    Editing only — the file must already exist; this never creates files
+    or directories. Scoped to text files (same allowlist as the inline
+    viewer) and gated by EDIT permission on the lab.
+    """
+    lab = await LabRepository(db).get_by_id(lab_id)
+    if not lab:
+        raise HTTPException(404, "Lab not found")
+    check_permission(user, lab.acl, Permission.EDIT)
+
+    ws_dir = LAB_RESOURCES_ROOT / str(lab_id)
+    try:
+        target = (ws_dir / path).resolve()
+        if not target.is_relative_to(ws_dir.resolve()):
+            raise HTTPException(400, "Path traversal denied.")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(400, "Invalid path.")
+
+    if not target.is_file():
+        raise HTTPException(404, "File not found")
+    if target.name.startswith("_exec_tmp"):
+        raise HTTPException(400, "Cannot edit internal temp files.")
+
+    is_text, _ = _detect_text(target)
+    if not is_text:
+        raise HTTPException(415, "Only text files can be edited.")
+
+    if len(body.content.encode("utf-8")) > _INLINE_TEXT_MAX_BYTES:
+        raise HTTPException(413, "File too large to save from the editor (max 512 KB).")
+
+    try:
+        target.write_text(body.content)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to write file: {e}")
+
+    stat = target.stat()
+
+    # Record the edit in the file-history feed, mirroring agent file_events
+    # so the viewer's History panel shows manual edits too. Best-effort.
+    norm_path = path if path.startswith("output/") else f"output/{path}"
+    try:
+        await LabMessageRepository(db).create(
+            lab_id=lab_id,
+            iteration=lab.current_iteration,
+            sender_type="user",
+            sender_name=(user.get("email") or user.get("sub") or "user"),
+            content=f"File edited: **{norm_path}** ({stat.st_size} bytes)",
+            message_type="file_event",
+            extra={"file_path": norm_path, "file_action": "edited"},
+        )
+    except Exception:
+        pass
+
+    return {
+        "path": path,
+        "name": target.name,
+        "size_bytes": stat.st_size,
+        "modified_at": stat.st_mtime * 1000,
     }
 
 

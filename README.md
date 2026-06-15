@@ -143,7 +143,10 @@ Nine GPU microservices, each in its own compose file, mix and match per host:
 JWT tokens (1-day default). Role-based access (admin / user). Per-resource ACL on labs, projects, RAG collections, wallets — `{owner, editors, viewers}` keyed by email, enforced in SQL. Time-limited access tokens managed from an admin panel — invite users by email, revoke with one click. Full audit log of every request. [ACCESS_CONTROL.md](docs/ACCESS_CONTROL.md)
 
 ### 🔌 Any model, any provider
-First-class adapters for Ollama, vLLM, HuggingFace, OpenAI, Anthropic, xAI, Groq, DeepSeek. Mix local + API in the same lab; the dispatcher fails over automatically. [DISPATCHER_AND_MODEL_ROUTING.md](docs/DISPATCHER_AND_MODEL_ROUTING.md)
+First-class adapters for Ollama, vLLM, HuggingFace, OpenAI, Anthropic, xAI, Groq, DeepSeek, plus a **Claude CLI** sidecar that lets a Claude Max subscription drive a lab through Claude Code's `-p` mode (OpenAI-compatible `/v1` endpoints, models namespaced `claude-cli:*`). Mix local + API in the same lab; the dispatcher fails over automatically. [DISPATCHER_AND_MODEL_ROUTING.md](docs/DISPATCHER_AND_MODEL_ROUTING.md) · [CLAUDE_CLI.md](docs/CLAUDE_CLI.md)
+
+### 🤖 Real agents, not just models
+Two agent backends: **native** (Bob orchestrates a chosen model directly) or **Hermes** (Nous Research's [hermes-agent](https://github.com/NousResearch/hermes-function-calling), running in a per-agent container with its own persistent memory volume + tool layer). Switch live from the agent edit dialog. [AGENTS_AND_ORCHESTRATION.md](docs/AGENTS_AND_ORCHESTRATION.md)
 
 ### 📡 Real-time event bus
 Every agent decision, tool call, and inter-agent message is broadcast over a WebSocket. Plug it into a dashboard, a CLI, a Discord bot — it's just JSON.

@@ -56,6 +56,8 @@ const docTree = [
     children: [
       { id: 'LABS', title: 'Labs Architecture', file: 'LABS.md' },
       { id: 'AGENTS_AND_ORCHESTRATION', title: 'Agents & Orchestration', file: 'AGENTS_AND_ORCHESTRATION.md' },
+      { id: 'HERMES', title: 'Hermes Agent Backend', file: 'HERMES.md' },
+      { id: 'CLAUDE_CLI', title: 'Claude CLI Provider', file: 'CLAUDE_CLI.md' },
       { id: 'PROMPT_STRUCTURE', title: 'Prompt Structure', file: 'PROMPT_STRUCTURE.md' },
       { id: 'CONVERSATIONS', title: 'Conversations', file: 'CONVERSATIONS.md' },
       { id: 'PROJECTS_AND_RESOURCES', title: 'Projects & Resources', file: 'PROJECTS_AND_RESOURCES.md' },

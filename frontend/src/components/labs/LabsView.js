@@ -18,7 +18,7 @@ import {
   getLabMessages, getLabMemories, toggleLabMemoryVisibility,
   getLabResources, uploadLabResource, deleteLabResource, getLabResourceUrl,
   getLabOutputFiles, getLabOutputFileUrl, downloadFile, getAuthBlobUrl,
-  getLabOutputFileContent, getLabOutputFileHistory, getLabResourceContent,
+  getLabOutputFileContent, saveLabOutputFileContent, getLabOutputFileHistory, getLabResourceContent,
   getToolSets, createToolSet, updateToolSet, deleteToolSet, duplicateToolSet,
   getPromptTemplates, createPromptTemplate, updatePromptTemplate, deletePromptTemplate, duplicatePromptTemplate,
   getLibraryAgents, createLibraryAgent, updateLibraryAgent, deleteLibraryAgent, duplicateLibraryAgent,
@@ -31,6 +31,7 @@ import {
   getLabWeb3Access, getLabWeb3Candidates, grantLabWeb3Access, revokeLabWeb3Access,
   getLabServerAccess, getLabServerCandidates, grantLabServerAccess, revokeLabServerAccess,
   getToolConfigs, upsertToolConfig,
+  hermesActivate, hermesDeactivate, hermesStatus,
 } from '../../services/api';
 import wsService from '../../services/websocket';
 import ShareModal from '../common/ShareModal';
@@ -182,7 +183,9 @@ function SubToolGroup({ toolDef, tools, onChange, disabled }) {
   const [expanded, setExpanded] = useState(false);
   const prefix = toolDef.name + ':';
   const subEntries = tools.filter(t => t.startsWith(prefix));
-  const selectedSubs = subEntries.map(t => t.split(':')[1]);
+  // slice(prefix.length) — not split(':')[1] — so group names that themselves
+  // contain a colon (e.g. MCP groups named "mcp:<slug>") parse correctly.
+  const selectedSubs = subEntries.map(t => t.slice(prefix.length));
   const allSelected = toolDef.subTools.length > 0 && toolDef.subTools.every(s => selectedSubs.includes(s.name));
   const someSelected = selectedSubs.length > 0;
 
@@ -326,7 +329,7 @@ export default function LabsView() {
   const inspectorStartW = useRef(300);
   const [editingAgent, setEditingAgent] = useState(null); // agent obj being edited
   const [showAddAgent, setShowAddAgent] = useState(false);
-  const [newAgent, setNewAgent] = useState({ name: '', role: '', system_prompt: '', model_id: '', share_memory: false, tools: [], tool_set_id: '', callable_agents: [], cron_expression: '', cron_instruction: '', prompt_template_id: '' });
+  const [newAgent, setNewAgent] = useState({ name: '', role: '', system_prompt: '', model_id: '', backend: 'native', share_memory: false, tools: [], tool_set_id: '', callable_agents: [], cron_expression: '', cron_instruction: '', prompt_template_id: '' });
   const [editingLabConfig, setEditingLabConfig] = useState(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [deleteLabConfirm, setDeleteLabConfirm] = useState(null);
@@ -393,6 +396,11 @@ export default function LabsView() {
   const [fileViewerHistory, setFileViewerHistory] = useState([]); // [{ action, agent_name, timestamp }]
   const [fileViewerLoading, setFileViewerLoading] = useState(false);
   const [fileViewerBlobUrl, setFileViewerBlobUrl] = useState(null); // auth'd blob URL for media
+  // Inline editing of text workspace files
+  const [fileEditing, setFileEditing] = useState(false);
+  const [fileEditContent, setFileEditContent] = useState('');
+  const [fileSaving, setFileSaving] = useState(false);
+  const [fileSaveError, setFileSaveError] = useState(null);
 
   // Memory viewer (central view)
   const [memoryView, setMemoryView] = useState(null); // 'lab' | agent_id string | null
@@ -1093,7 +1101,7 @@ export default function LabsView() {
       if (!payload.cron_expression) payload.cron_expression = null;
       await createLabAgent(activeLab.id, payload);
       setShowAddAgent(false);
-      setNewAgent({ name: '', role: '', system_prompt: '', model_id: '', share_memory: false, tools: [], tool_set_id: '', callable_agents: [], cron_expression: '', cron_instruction: '', prompt_template_id: '' });
+      setNewAgent({ name: '', role: '', system_prompt: '', model_id: '', backend: 'native', share_memory: false, tools: [], tool_set_id: '', callable_agents: [], cron_expression: '', cron_instruction: '', prompt_template_id: '' });
       loadLabAgents(activeLab.id);
       refreshActiveLab();
     } catch (e) { console.error('Failed to add agent', e); }
@@ -1108,6 +1116,7 @@ export default function LabsView() {
         role: libraryAgent.role,
         system_prompt: libraryAgent.system_prompt,
         model_id: libraryAgent.model_id || undefined,
+        backend: libraryAgent.backend || 'native',
         temperature: libraryAgent.temperature,
         max_tokens: libraryAgent.max_tokens,
         tools: libraryAgent.tools || [],
@@ -1224,6 +1233,7 @@ export default function LabsView() {
         system_prompt: libraryAgent.system_prompt,
         prompt_template_id: libraryAgent.prompt_template_id || undefined,
         model_id: libraryAgent.model_id || undefined,
+        backend: libraryAgent.backend || 'native',
         temperature: libraryAgent.temperature,
         max_tokens: libraryAgent.max_tokens,
         tools: libraryAgent.tools || [],
@@ -1262,6 +1272,7 @@ export default function LabsView() {
         name: labAgent.name,
         role: labAgent.role || '',
         system_prompt: labAgent.system_prompt || '',
+        backend: labAgent.backend || 'native',
         temperature: labAgent.temperature ?? 0.7,
         max_tokens: labAgent.max_tokens ?? 4096,
         tools: labAgent.tools || [],
@@ -1559,6 +1570,8 @@ export default function LabsView() {
     setFileViewerLoading(true);
     setFileViewerData(null);
     setFileViewerHistory([]);
+    setFileEditing(false);
+    setFileSaveError(null);
     if (fileViewerBlobUrl) { URL.revokeObjectURL(fileViewerBlobUrl); setFileViewerBlobUrl(null); }
     try {
       const [contentRes, historyRes] = await Promise.all([
@@ -1583,6 +1596,8 @@ export default function LabsView() {
     setFileViewerLoading(true);
     setFileViewerData(null);
     setFileViewerHistory([]);
+    setFileEditing(false);
+    setFileSaveError(null);
     if (fileViewerBlobUrl) { URL.revokeObjectURL(fileViewerBlobUrl); setFileViewerBlobUrl(null); }
     try {
       const res = await getLabResourceContent(activeLab.id, resource.id);
@@ -1604,6 +1619,46 @@ export default function LabsView() {
     setFileViewer(null);
     setFileViewerData(null);
     setFileViewerHistory([]);
+    setFileEditing(false);
+    setFileSaveError(null);
+  };
+
+  // ── Workspace text-file editing ──
+  // Editable only for text output files that came back complete (an
+  // over-512KB read is truncated, so saving would clobber the dropped tail).
+  const canEditFile = (
+    fileViewer?.type === 'output' &&
+    fileViewerData?.is_text &&
+    fileViewerData?.content != null &&
+    !fileViewerData?.truncated
+  );
+
+  const startFileEdit = () => {
+    setFileEditContent(fileViewerData?.content ?? '');
+    setFileSaveError(null);
+    setFileEditing(true);
+  };
+
+  const cancelFileEdit = () => {
+    setFileEditing(false);
+    setFileEditContent('');
+    setFileSaveError(null);
+  };
+
+  const saveFileEdit = async () => {
+    if (!activeLab || !fileViewer) return;
+    setFileSaving(true);
+    setFileSaveError(null);
+    try {
+      await saveLabOutputFileContent(activeLab.id, fileViewer.path, fileEditContent);
+      setFileEditing(false);
+      // Re-fetch so size/mtime/history reflect the save, then refresh the list.
+      await openOutputFile(fileViewer.path);
+      loadOutputFiles(activeLab.id);
+    } catch (e) {
+      setFileSaveError(e?.response?.data?.detail || 'Failed to save file.');
+    }
+    setFileSaving(false);
   };
 
   // ── Render ──────────────────────────────────────
@@ -2622,12 +2677,28 @@ export default function LabsView() {
                 <div className="lab-file-viewer-header">
                   <button className="lab-btn-ghost" onClick={closeFileViewer} title="Back to timeline">← Back</button>
                   <span className="lab-file-viewer-name">📄 {fileViewer.name}</span>
-                  <button className="lab-btn-sm" style={{ marginLeft: 'auto' }} onClick={() => {
-                    const url = fileViewer.type === 'resource'
-                      ? getLabResourceUrl(activeLab?.id, fileViewer.resourceId)
-                      : getLabOutputFileUrl(activeLab?.id, fileViewer.path);
-                    downloadFile(url, fileViewer.name);
-                  }}>⬇ Download</button>
+                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                    {fileEditing ? (
+                      <>
+                        <button className="lab-btn-sm" disabled={fileSaving} onClick={saveFileEdit}>
+                          {fileSaving ? 'Saving…' : '💾 Save'}
+                        </button>
+                        <button className="lab-btn-ghost" disabled={fileSaving} onClick={cancelFileEdit}>Cancel</button>
+                      </>
+                    ) : (
+                      <>
+                        {canEditFile && (
+                          <button className="lab-btn-sm" onClick={startFileEdit} title="Edit this file">✏️ Edit</button>
+                        )}
+                        <button className="lab-btn-sm" onClick={() => {
+                          const url = fileViewer.type === 'resource'
+                            ? getLabResourceUrl(activeLab?.id, fileViewer.resourceId)
+                            : getLabOutputFileUrl(activeLab?.id, fileViewer.path);
+                          downloadFile(url, fileViewer.name);
+                        }}>⬇ Download</button>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <div className="lab-file-viewer-body">
                   <div className="lab-file-viewer-content">
@@ -2649,6 +2720,17 @@ export default function LabsView() {
                     ) : fileViewerData?.is_video && fileViewerBlobUrl ? (
                       <div style={{ textAlign: 'center', padding: 20 }}>
                         <video controls src={fileViewerBlobUrl} style={{ maxWidth: '100%', maxHeight: '80vh', borderRadius: 8 }} />
+                      </div>
+                    ) : fileEditing ? (
+                      <div className="lab-file-editor">
+                        {fileSaveError && <div className="lab-file-editor-error">{fileSaveError}</div>}
+                        <textarea
+                          className="lab-file-editor-textarea"
+                          value={fileEditContent}
+                          onChange={e => setFileEditContent(e.target.value)}
+                          spellCheck={false}
+                          autoFocus
+                        />
                       </div>
                     ) : fileViewerData?.is_text && fileViewerData?.content != null ? (
                       <pre className={`lab-file-viewer-pre ${isJsonPreview(fileViewer, fileViewerData) ? 'lab-file-viewer-pre-json' : ''}`}>
@@ -2918,6 +3000,32 @@ export default function LabsView() {
                         <>
                           {!(msg.message_type === 'tool_call' && msg.tool_name) && (
                             <div className="lab-msg-content">{renderMessageContent(msg.content)}</div>
+                          )}
+                          {Array.isArray(msg.extra?.hermes_steps) && msg.extra.hermes_steps.length > 0 && (
+                            <div className="lab-msg-tool" style={{ marginTop: 6 }}>
+                              <div className="lab-msg-tool-header">
+                                <span>⚙ Hermes flow · {msg.extra.hermes_steps.filter(s => s.type === 'turn').length} round{msg.extra.hermes_steps.filter(s => s.type === 'turn').length > 1 ? 's' : ''}</span>
+                              </div>
+                              {msg.extra.hermes_steps.map((s, i) => (
+                                <div key={i} style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.55)', padding: '3px 8px', borderTop: i > 0 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                                  {s.type === 'note' ? (
+                                    <em>{s.detail}</em>
+                                  ) : (
+                                    <>
+                                      <strong>round {s.round}</strong>
+                                      {' · '}{s.api_calls} model call{s.api_calls > 1 ? 's' : ''}
+                                      {s.tools?.length > 0 && <> · 🔧 {s.tools.join(', ')}</>}
+                                      {s.task_done && <span style={{ color: '#22c55e' }}> · ✓ TASK_DONE</span>}
+                                      {s.needs_input && <span style={{ color: '#f59e0b' }}> · ⚠ needs input</span>}
+                                      {s.exit_reason && <span style={{ opacity: 0.6 }}> · {s.exit_reason}</span>}
+                                      {s.reasoning && (
+                                        <div style={{ opacity: 0.7, marginTop: 2, fontStyle: 'italic' }}>💭 {s.reasoning}</div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
                           )}
                           {msg.tool_name && (
                             <div className={`lab-msg-tool ${(['python_exec','shell_exec','db_query','db_execute','db_schema'].includes(msg.tool_name)) ? 'lab-msg-tool-terminal' : ''}`}>
@@ -3644,6 +3752,73 @@ export default function LabsView() {
 }
 
 /* ── Agent Edit Form ──────────────────────────── */
+/* ── Hermes container panel ──────────────────────
+   Shown in the agent edit forms when backend === 'hermes'. Drives the
+   per-agent Hermes container (activate pops it, deactivate stops it; the
+   ~/.hermes memory volume always survives). Keyed by the library agent id —
+   lab agents instantiated from a template share that template's container. */
+export function HermesPanel({ agentKey }) {
+  const [status, setStatus] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const refresh = useCallback(async () => {
+    if (!agentKey) return;
+    try {
+      const r = await hermesStatus(agentKey);
+      setStatus(r.data);
+      setError('');
+    } catch (e) {
+      setStatus(null);
+      setError(e?.response?.data?.detail || 'Status unavailable');
+    }
+  }, [agentKey]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const act = async (fn) => {
+    setBusy(true);
+    setError('');
+    try {
+      await fn(agentKey);
+    } catch (e) {
+      setError(e?.response?.data?.detail || e.message || 'Request failed');
+    }
+    setBusy(false);
+    refresh();
+  };
+
+  const dot = status?.running
+    ? (status?.healthy ? '#34d399' : '#fbbf24')
+    : 'rgba(255,255,255,0.25)';
+  const label = !status
+    ? '…'
+    : !status.image_configured
+      ? 'Hermes image not configured (set HERMES_IMAGE)'
+      : status.running
+        ? (status.healthy ? 'Running · healthy' : 'Running · not responding')
+        : 'Stopped (starts automatically on first task)';
+
+  return (
+    <div className="lab-config-group" style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, padding: 8 }}>
+      <label className="lab-form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, display: 'inline-block' }} />
+        Hermes container
+      </label>
+      <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>{label}</div>
+      {error && <div style={{ fontSize: '0.68rem', color: '#f87171', marginBottom: 6 }}>{error}</div>}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button className="lab-btn-ghost" style={{ fontSize: '0.68rem' }} disabled={busy || !status?.image_configured}
+          onClick={() => act(hermesActivate)}>{busy ? '…' : '▶ Activate'}</button>
+        <button className="lab-btn-ghost" style={{ fontSize: '0.68rem' }} disabled={busy || !status?.running}
+          onClick={() => act(hermesDeactivate)}>■ Deactivate</button>
+        <button className="lab-btn-ghost" style={{ fontSize: '0.68rem' }} disabled={busy}
+          onClick={refresh}>↻</button>
+      </div>
+    </div>
+  );
+}
+
 export function AgentEditForm({
   agent,
   allModels,
@@ -3664,6 +3839,7 @@ export function AgentEditForm({
     system_prompt: agent.system_prompt,
     prompt_template_id: agent.prompt_template_id || '',
     model_id: agent.model_id || '',
+    backend: agent.backend || 'native',
     temperature: agent.temperature,
     max_tokens: agent.max_tokens,
     is_active: agent.is_active,
@@ -3714,6 +3890,18 @@ export function AgentEditForm({
           ))}
         </select>
       )}
+      <label className="lab-form-label">Backend</label>
+      <select className="lab-select" value={form.backend || 'native'}
+        onChange={e => setForm({...form, backend: e.target.value})}>
+        <option value="native">Native (Bob Lab loop)</option>
+        <option value="hermes">Hermes (external agent)</option>
+      </select>
+      {(form.backend || 'native') === 'hermes' && (
+        <HermesPanel agentKey={agent.library_agent_id || agent.id} />
+      )}
+      <label className="lab-form-label">
+        {(form.backend || 'native') === 'hermes' ? 'Model Hermes uses' : 'Model'}
+      </label>
       <select className="lab-select" value={form.model_id}
         onChange={e => setForm({...form, model_id: e.target.value})}>
         <option value="">Default model</option>
@@ -3749,6 +3937,12 @@ export function AgentEditForm({
             onChange={e => setForm({ ...form, anti_loop_enabled: e.target.checked })} /> Anti Loop
         </label>
       )}
+      {(form.backend || 'native') === 'hermes' && (
+        <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.45)' }}>
+          Hermes runs its own tools inside its container — Bob Lab tools and callable agents don't apply.
+        </div>
+      )}
+      {(form.backend || 'native') !== 'hermes' && (<>
       <div className="lab-config-group">
         <label className="lab-form-label">Tools</label>
         {toolSets.length > 0 && (
@@ -3853,6 +4047,7 @@ export function AgentEditForm({
           )}
         </div>
       </div>
+      </>)}
       <div className="lab-config-group">
         <label className="lab-form-label">CRON Schedule</label>
         <input className="lab-input-sm" placeholder="Cron expression (e.g. 0 */6 * * *)" value={form.cron_expression}
@@ -3979,6 +4174,7 @@ function LibraryAgentEditForm({ agent, allModels, toolSets, promptTemplates = []
     system_prompt: agent.system_prompt || '',
     prompt_template_id: agent.prompt_template_id || '',
     model_id: agent.model_id || '',
+    backend: agent.backend || 'native',
     temperature: agent.temperature ?? 0.7,
     max_tokens: agent.max_tokens ?? 4096,
     tools: agent.tools || [],
@@ -4014,6 +4210,18 @@ function LibraryAgentEditForm({ agent, allModels, toolSets, promptTemplates = []
           ))}
         </select>
       )}
+      <label className="lab-form-label">Backend</label>
+      <select className="lab-select" value={form.backend || 'native'}
+        onChange={e => setForm({...form, backend: e.target.value})}>
+        <option value="native">Native (Bob Lab loop)</option>
+        <option value="hermes">Hermes (external agent)</option>
+      </select>
+      {(form.backend || 'native') === 'hermes' && (
+        <HermesPanel agentKey={agent.id} />
+      )}
+      <label className="lab-form-label">
+        {(form.backend || 'native') === 'hermes' ? 'Model Hermes uses' : 'Model'}
+      </label>
       <select className="lab-select" value={form.model_id}
         onChange={e => setForm({...form, model_id: e.target.value})}>
         <option value="">Default model</option>
@@ -4037,6 +4245,12 @@ function LibraryAgentEditForm({ agent, allModels, toolSets, promptTemplates = []
         <input type="checkbox" checked={form.share_memory}
           onChange={e => setForm({...form, share_memory: e.target.checked})} /> Share memory across all labs
       </label>
+      {(form.backend || 'native') === 'hermes' && (
+        <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.45)' }}>
+          Hermes runs its own tools inside its container — Bob Lab tools don't apply.
+        </div>
+      )}
+      {(form.backend || 'native') !== 'hermes' && (<>
       <div className="lab-config-group">
         <label className="lab-form-label">Tools</label>
         {toolSets.length > 0 && (
@@ -4109,6 +4323,7 @@ function LibraryAgentEditForm({ agent, allModels, toolSets, promptTemplates = []
           })}
         </div>
       </div>
+      </>)}
       <div className="lab-config-group">
         <label className="lab-form-label">CRON Schedule</label>
         <input className="lab-input-sm" placeholder="Cron expression (e.g. 0 */6 * * *)" value={form.cron_expression}

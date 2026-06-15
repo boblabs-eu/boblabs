@@ -61,6 +61,27 @@ All environment variables across all services.
 | `RAG_STAGING_PATH` | `/data/rag_staging` | Temporary staging directory for file uploads |
 | `LIGHTRAG_STORAGE_PATH` | `/data/lightrag` | Storage directory for LightRAG graph data |
 
+### MCP (Model Context Protocol)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MCP_DEFAULT_TIMEOUT_SEC` | `60` | Timeout for MCP server connections and tool calls |
+| `MCP_ENABLE_STDIO` | `false` | Allow `stdio` MCP transports (spawns subprocesses on the control-plane host — high trust). HTTP/SSE is the recommended default. |
+
+### Hermes Agent Backend
+
+See [HERMES.md](HERMES.md) for the full feature documentation.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HERMES_IMAGE` | `""` (feature off) | Docker image for per-agent Hermes containers, built from `hermes-adapter/` (e.g. `bob-hermes-adapter:latest`) |
+| `HERMES_DEFAULT_TIMEOUT_SEC` | `1800` | Max wait per Hermes task (all continuation rounds included) |
+| `HERMES_INTERNAL_PORT` | `8770` | Adapter port inside the Docker network |
+| `HERMES_USE_GATEWAY` | `true` | Route Hermes inference through the internal LLM gateway (LabDispatcher load balancing + LLM-event feed). `false` = legacy direct provider calls. |
+| `HERMES_GATEWAY_URL` | `http://bob-api:8000` | How Hermes containers reach bob-api on the Docker network |
+| `HERMES_MEM_MB` | `2048` | Per-container memory limit (read from env by the runtime) |
+| `HERMES_CPUS` | `2.0` | Per-container CPU limit (read from env by the runtime) |
+
 ---
 
 ## Agent (`agent/app/config.py`)
@@ -94,6 +115,21 @@ All environment variables across all services.
 | `STT_URL` | `http://localhost:7865` | Speech-to-text (Whisper) |
 | `LTX_VIDEO_URL` | `http://localhost:3018` | LTX-Video generation |
 | `WAN_VIDEO_URL` | `http://localhost:3019` | Wan-Video generation |
+| `CLAUDE_CLI_URL` | `http://localhost:3021` | Claude CLI wrapper (see [CLAUDE_CLI.md](CLAUDE_CLI.md)) |
+
+### Claude CLI Wrapper (`claude-cli/.env` — per GPU server)
+
+See [CLAUDE_CLI.md](CLAUDE_CLI.md) for the full feature documentation.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLAUDE_CODE_OAUTH_TOKEN` | — (required) | From `claude setup-token`; bills the Max subscription, not API credits |
+| `CLAUDE_CLI_MODELS` | `haiku,opus,sonnet` | Model list offered to the fleet (single source of truth; aliases track latest, pin e.g. `claude-opus-4-8` for a fixed version) |
+| `CLAUDE_CLI_PORT` | `3021` | Host port (keep in sync with the agent's `CLAUDE_CLI_URL`) |
+| `CLAUDE_CLI_CONCURRENCY` | `2` | Max concurrent `claude -p` subprocesses |
+| `CLAUDE_CLI_TIMEOUT_SEC` | `300` | Per-request timeout (keep under the dispatcher's 600 s read timeout) |
+| `CLAUDE_CLI_TOOLS` | *(empty)* | Native tools per call (`claude --tools`). Empty = disable all (text-only; the lab drives tools). See [CLAUDE_CLI.md](CLAUDE_CLI.md). |
+| `CLAUDE_CLI_API_KEY` | *(empty)* | If set, `/v1/*` requires this Bearer token; mirror it in the provider's `api_key` field |
 
 ---
 

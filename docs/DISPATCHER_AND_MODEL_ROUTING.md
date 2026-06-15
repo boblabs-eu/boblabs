@@ -16,6 +16,7 @@ The dispatcher separates workflow logic from LLM provider mechanics. Instead of 
 | `huggingface` | `HuggingFaceProvider` | 4 | `/v1/chat/completions` | vLLM/TGI compatible |
 | `openai` | `OpenAICompatibleProvider` | 4 | `/v1/chat/completions` | vLLM, LM Studio, any OpenAI-compatible |
 | `anthropic` | `AnthropicProvider` | 4 | `/v1/messages` | System as top-level param, `tool_use` blocks |
+| `claude_cli` | `OpenAICompatibleProvider` | 2 | `/v1/chat/completions` (wrapper) | Claude Code CLI one-shots via Max subscription; text-only — see [CLAUDE_CLI.md](CLAUDE_CLI.md) |
 | `openai_cloud` | Cloud preset | 4 | OpenAI API | Pre-configured `base_url` |
 | `xai` | Cloud preset | 4 | OpenAI-compatible | Grok models |
 | `groq` | Cloud preset | 4 | OpenAI-compatible | Ultra-low latency |

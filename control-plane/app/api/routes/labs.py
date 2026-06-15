@@ -231,6 +231,7 @@ async def duplicate_lab(lab_id: UUID, db: DbSession, user: dict = Depends(get_cu
             role=agent.role,
             system_prompt=agent.system_prompt,
             model_id=agent.model_id,
+            backend=getattr(agent, "backend", "native") or "native",
             temperature=agent.temperature,
             max_tokens=agent.max_tokens,
             tools=agent.tools,

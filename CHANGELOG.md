@@ -5,6 +5,141 @@ All notable changes to Bob Labs are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] — 2026-06-15 — Real Hermes agents + Claude CLI provider
+
+The biggest release since `0.10.0`. Two new top-level capabilities —
+real Nous Hermes agents as a per-agent backend, and a Claude CLI
+provider that turns a Claude Max subscription into a first-class
+model source for any lab — plus a Contact Finder for the prospecting
+blueprint and in-browser file editing. Two additive Alembic
+migrations (`0012`, `0013`); deploy with `alembic upgrade head`.
+
+### Added
+
+- **Hermes agent backend** ([hermes-adapter/](hermes-adapter/),
+  [docs/AGENTS_AND_ORCHESTRATION.md](docs/AGENTS_AND_ORCHESTRATION.md)).
+  Each library agent can now run as **native** (Bob orchestrates a
+  chosen model directly, the existing behavior) or **hermes** — a
+  real instance of [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-function-calling)
+  inside a dedicated container with its own persistent memory volume
+  and tool layer. The new `0013_agent_backend` migration adds a
+  `backend` column to `ai_agents` (default `native`); selector
+  surfaces in the agent edit dialog. Control-plane spins the
+  container on demand via docker-socket-proxy, serializes per-key
+  calls, and reuses the lab's chosen model (`anthropic` / `ollama` /
+  `openai` / `xai` / `groq` / `deepseek` resolved through Hermes'
+  own provider matrix). Containers persist `~/.hermes` so memory,
+  skills, and sessions survive restarts. Env knobs:
+  `HERMES_IMAGE`, `HERMES_DEFAULT_TIMEOUT_SEC`, `HERMES_MEM_MB`,
+  `HERMES_CPUS`.
+- **Claude CLI model provider** (`claude-cli/`, [docs/CLAUDE_CLI.md](docs/CLAUDE_CLI.md)).
+  Claude Code CLI runs on GPU servers in a Docker sidecar behind an
+  OpenAI-compatible wrapper, authenticated with a `claude setup-token`
+  OAuth token (Max subscription, no API credits). Integrated exactly
+  like Ollama: the bob agent probes the wrapper and reports its models
+  over the websocket (`claude_cli_models`), the control plane
+  auto-creates a `claude_cli-<agent>` provider (pending admin
+  approval) and syncs the models, and `LabDispatcher` routes inference
+  through the existing `OpenAICompatibleProvider`. Model identifiers
+  are namespaced `claude-cli:<id>` (e.g. `claude-cli:opus`) so they
+  are visibly distinct from Anthropic API models everywhere in the
+  UI. The model list is `.env`-driven (`CLAUDE_CLI_MODELS`, default
+  `haiku,opus,sonnet`). v1 is text-only at the OpenAI layer — the lab drives
+  tools via the `<tool_call>` text protocol, and any native `tool_use` the model
+  emits is recovered into that text form.
+- **In-browser editing of workspace text files.** The lab file viewer
+  now has an Edit/Save flow for text/md/json/csv files
+  (`PUT /labs/{id}/output-files/content`, EDIT-permission gated,
+  512 KB cap, path-traversal safe). Truncated (large) files are
+  read-only to avoid clobbering the dropped tail.
+- **Contact Finder agent (Datagouv Prospecting blueprint).** A 4th agent runs
+  between the Researcher and Copywriter and enriches each prospect with a
+  PUBLISHED public contact email scraped from the company's official website
+  (`web_search` + `web_extract`, never invented), adding `email`/`website`
+  columns to `output/prospects.csv`; the Copywriter then pre-fills the draft
+  `to:` when an email was found (empty + operator note otherwise). Company
+  discovery stays strictly on `gouv_data_fr` — web access is scoped to the
+  Contact Finder reading official sites only.
+
+### Fixed
+
+- **Stop on a paused lab left it stuck on "paused" (no Reset button).** The
+  runner's top-of-loop pause gate didn't re-check the stop flag after waking, so
+  `Pause` → `Stop` ran one more full iteration before exiting; when that outlasted
+  `stop()`'s 30s timeout the `/stop` route returned while the DB still said
+  `paused`, and the UI offers Reset only for `completed`/`failed`. The gate now
+  terminalizes immediately on stop (matching the PauseAction/CRON gates), so Stop
+  reliably moves a paused lab to `completed` and Reset becomes available.
+- **Lab tool calls returning structured JSON crashed the run.** Tool
+  outputs that are dicts (e.g. the `gouv_data_fr` tool) were stored with
+  `output[:2000]`, and slicing a dict raises `KeyError: slice(None, 2000,
+  None)`, aborting the lab. Outputs are now JSON-encoded before
+  truncation (`_tool_output_preview`) across the runner, scheduler, and
+  orchestrator streaming paths.
+- **Edited workspace input files reverted on every run.** Lab
+  `context_files` (e.g. `icp_brief.md`) were re-materialized from the DB
+  over the on-disk copy each run, discarding user edits. They are now
+  seeded only when missing — the workspace copy is the durable working
+  copy; the DB keeps the blueprint default for reset/duplicate/export.
+- **Claude CLI wrapper broke lab tool use.** The wrapper appended `"Respond
+  with plain text only. Do not attempt to use tools."` to every system prompt.
+  But a lab's prompt teaches the model the platform's `<tool_call>` TEXT
+  protocol and asks it to call tools like `gouv_data_fr` — so that directive
+  directly contradicted the task. The model, unable to tell native Claude tools
+  from the lab's text protocol, either **refused to act** ("tool access is not
+  available in this turn", "RUN STAYS STOPPED") or **flailed into a native
+  `tool_use`** that blew the `--max-turns 1` one-shot (`error_max_turns` →
+  502). The wrapper now passes the caller's system prompt through **verbatim**
+  and disables native tools purely at the CLI level: `--tools ""` (built-ins,
+  overridable via `CLAUDE_CLI_TOOLS`) and `--strict-mcp-config` (ambient MCP),
+  leaving the lab's text protocol intact. Finally — because opus is trained
+  toward native function-calling and on large, tool-heavy prompts will still
+  *occasionally* emit a native `tool_use` despite `--tools ""` (server-flag
+  dependent, so it reproduces on the deployed account but not on every machine)
+  — the wrapper now reads the **streamed** output and **converts any native
+  `tool_use` block into the lab's `<tool_call>` text**. With no native tools
+  defined the model names the tool from the prompt (the lab's own `file_read` /
+  `gouv_data_fr` / …), so the recovered call is faithful, both response shapes
+  work, and `error_max_turns` is no longer fatal. (Also removed a stale
+  `--disallowedTools MultiEdit` denylist
+  that errored with `Permission deny rule ... matches no known tool`.) Upstream
+  provider error **bodies** now surface in a lab's failure reason instead of a
+  bare `502`.
+
+### Changed
+
+- **Docs:** `CLAUDE_CLI.md` + `AGENTS_AND_ORCHESTRATION.md` now describe the
+  native-`tool_use` recovery (the wrapper converts it to `<tool_call>` text)
+  instead of the old "tools accepted and ignored / never returns tool_calls".
+- **Datagouv prospecting blueprint is now target-driven and
+  offer-branded.** The Target Definer derives the ICP from an explicit
+  `target_customer` (validated against the Annuaire des Entreprises)
+  instead of copying the seller's own NAF, and the Copywriter pitches the
+  brief's `offer` for `sender_company` instead of a hardcoded product.
+
+### Schema migrations
+
+| Revision | What it does |
+|---|---|
+| `0012_mcp_servers` | MCP server definitions table (admin-managed registry of external MCP endpoints labs can attach to) |
+| `0013_agent_backend` | Adds `ai_agents.backend` column (default `native`); allows opting an agent into the Hermes runtime |
+
+### Notes
+
+- All four components aligned at **0.12.0**.
+- Run `alembic upgrade head` before starting the new control-plane.
+  Both migrations are additive (new tables / new column with default) —
+  no data conversion, expected downtime ~30 s.
+- `claude-cli/` and `hermes-adapter/` ship as new top-level directories.
+  Neither needs the bob-manager docker-compose stack to be brought up
+  at the root: claude-cli has its own per-server `claude-cli/docker-compose.yml`,
+  and hermes-adapter is built locally and launched per-agent by the
+  control plane.
+- OpenAPI artifact at [docs/openapi.json](docs/openapi.json) reflects
+  the new `claude_cli` provider type + Hermes routes (`/library-agents/{id}/hermes/{activate,deactivate,status}`).
+
+[0.12.0]: https://github.com/boblabs-eu/boblabs/releases/tag/v0.12.0
+
 ## [0.11.1] — 2026-06-09 — Security hardening: metrics auth + container user
 
 Patch release closing two CSO findings against 0.11.0. No schema

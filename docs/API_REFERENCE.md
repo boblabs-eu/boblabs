@@ -369,6 +369,48 @@ Login methods return a JWT for use in `Authorization: Bearer <token>` headers.
 | DELETE | `/library-agents/{id}` | Yes | Delete |
 | POST | `/library-agents/{id}/duplicate` | Yes | Duplicate |
 
+### Hermes backend lifecycle
+
+Container lifecycle for `backend: hermes` agents — see [HERMES.md](HERMES.md).
+`{id}` accepts a library-agent id or a standalone lab-agent id.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/library-agents/{id}/hermes/activate` | Admin | Pop/start the agent's Hermes container, wait for health |
+| POST | `/library-agents/{id}/hermes/deactivate` | Admin | Stop the container (memory volume kept) |
+| DELETE | `/library-agents/{id}/hermes/container` | Admin | Remove the container (memory volume kept) |
+| GET | `/library-agents/{id}/hermes/status` | Admin | `{image_configured, running, healthy, url, backend}` |
+
+---
+
+## LLM Gateway (`/llm-gateway`)
+
+Internal OpenAI-compatible surface used by Hermes containers — every call is
+routed through the LabDispatcher (load balancing, concurrency slots, LLM-event
+feed). Auth: `Authorization: Bearer <AGENT_SECRET>` (machine channel, not JWT).
+`{tag}` is the calling agent's id (used for feed attribution).
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/llm-gateway/{tag}/v1/models` | Agent secret | OpenAI-style model listing (available identifiers) |
+| POST | `/llm-gateway/{tag}/v1/chat/completions` | Agent secret | Chat completion (tools + SSE streaming supported), dispatched via the load balancer |
+
+---
+
+## MCP Servers (`/mcp`)
+
+External Model Context Protocol servers whose tools are exposed to agents as
+`mcp__<slug>__<tool>` (or whole-server via the `mcp:<slug>` token).
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/mcp/catalog` | Admin | Curated presets (Stripe, data.gouv.fr, GitHub, …) |
+| GET | `/mcp/servers` | Admin | List configured MCP servers |
+| POST | `/mcp/servers` | Admin | Enable a catalog entry or add a custom MCP |
+| PATCH | `/mcp/servers/{id}` | Admin | Toggle `enabled`, edit credentials |
+| DELETE | `/mcp/servers/{id}` | Admin | Remove (tools unregistered on re-sync) |
+| POST | `/mcp/servers/{id}/test` | Admin | Health check + preview of exposed tools |
+
 ---
 
 ## Cron Jobs (`/cron-jobs`)

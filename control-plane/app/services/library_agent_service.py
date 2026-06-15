@@ -113,6 +113,7 @@ async def create_agent_instance(
         system_prompt=template.system_prompt,
         prompt_template_id=template.prompt_template_id,
         model_id=template.model_id,
+        backend=getattr(template, "backend", "native") or "native",
         temperature=template.temperature,
         max_tokens=template.max_tokens,
         tools=list(template.tools or []),

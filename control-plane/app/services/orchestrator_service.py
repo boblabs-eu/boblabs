@@ -571,8 +571,13 @@ class OrchestratorService:
                 # Execute
                 tr = await tool_executor.execute(tool_name, tool_args)
 
-                # Emit tool_result event to frontend
-                yield f"data: {json.dumps({'tool_result': {'name': tool_name, 'success': tr.get('success', False), 'output': tr.get('output', '')[:2000]}, 'done': False})}\n\n"
+                # Emit tool_result event to frontend. Tool outputs may be dicts
+                # (JSON tools like gouv_data_fr) — _tool_output_preview stringifies
+                # before truncating so we never crash on `dict[:2000]`.
+                from app.services.lab_runner import _tool_output_preview
+
+                _tr_preview = _tool_output_preview(tr.get("output", ""))
+                yield f"data: {json.dumps({'tool_result': {'name': tool_name, 'success': tr.get('success', False), 'output': _tr_preview}, 'done': False})}\n\n"
 
                 # Append assistant tool call + result to messages for next LLM round
                 if native_tc:

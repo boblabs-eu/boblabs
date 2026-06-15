@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 import websockets
 
+from app.collectors.claude_cli import get_claude_cli_models
 from app.collectors.cpu import get_cpu_temperature, get_cpu_usage
 from app.collectors.disk import get_disk_usage
 from app.collectors.docker import get_docker_containers
@@ -241,8 +242,10 @@ class AgentWebSocketClient:
             terminal_manager.close_session(session_id)
 
         elif msg_type == "ai.models.discover":
-            # Report available Ollama models to control plane
-            models = get_ollama_models()
+            # Report available Ollama + Claude CLI models to control plane
+            # (claude-cli ids are namespaced "claude-cli:*", so the merged
+            # list stays self-describing).
+            models = get_ollama_models() + get_claude_cli_models(config.claude_cli_url)
             await self.ws.send(
                 json.dumps(
                     {
@@ -434,6 +437,11 @@ def _collect_all_metrics() -> dict:
         "listening_ports": ports,
         # Ollama models (for AI orchestrator)
         "ollama_models": get_ollama_models(),
+        # Claude CLI wrapper models (per-server provider, like Ollama).
+        # The port is configured agent-side, so report it for base_url
+        # construction control-plane side (same pattern as script_runner).
+        "claude_cli_models": get_claude_cli_models(config.claude_cli_url),
+        "claude_cli_port": _get_claude_cli_port(),
         # Riffusion models (audio generation)
         "riffusion_models": get_riffusion_models(config.riffusion_url),
         # GPU services (MusicGen, Bark, RVC)
@@ -464,6 +472,14 @@ def _get_script_runner_port() -> int:
 
     parsed = urlparse(config.script_runner_url)
     return parsed.port or 9101
+
+
+def _get_claude_cli_port() -> int:
+    """Extract port from claude-cli wrapper URL."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(config.claude_cli_url)
+    return parsed.port or 3021
 
 
 def _get_local_ip() -> str:

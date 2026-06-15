@@ -19,6 +19,7 @@ import TerminalPage from './pages/TerminalPage';
 import NewsPage from './pages/NewsPage';
 import Web3Page from './pages/Web3Page';
 import OrchestratorPage from './pages/OrchestratorPage';
+import McpPage from './pages/McpPage';
 import LandingPage from './pages/LandingPage';
 import DocsPage from './pages/DocsPage';
 import LoginPage from './pages/LoginPage';
@@ -98,6 +99,7 @@ function AppContent() {
           <Route path="/news" element={<NewsPage />} />
           <Route path="/web3" element={<Web3Page />} />
           <Route path="/orchestrator" element={<OrchestratorPage />} />
+          <Route path="/mcp" element={<McpPage />} />
           <Route path="/logs" element={<LogsPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

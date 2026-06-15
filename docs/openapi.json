@@ -592,6 +592,11 @@
             "title": "Anti Loop Enabled",
             "type": "boolean"
           },
+          "backend": {
+            "default": "native",
+            "title": "Backend",
+            "type": "string"
+          },
           "cron_expression": {
             "anyOf": [
               {
@@ -999,7 +1004,7 @@
             "title": "Chunk Size"
           },
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           },
@@ -1035,7 +1040,7 @@
       "Body_upload_lab_resource_api_v1_labs__lab_id__resources_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -2236,6 +2241,15 @@
             "title": "Anti Loop Enabled",
             "type": "boolean"
           },
+          "backend": {
+            "default": "native",
+            "enum": [
+              "native",
+              "hermes"
+            ],
+            "title": "Backend",
+            "type": "string"
+          },
           "callable_agents": {
             "default": [],
             "items": {
@@ -2376,6 +2390,11 @@
             "default": false,
             "title": "Anti Loop Enabled",
             "type": "boolean"
+          },
+          "backend": {
+            "default": "native",
+            "title": "Backend",
+            "type": "string"
           },
           "callable_agents": {
             "items": {},
@@ -2544,6 +2563,21 @@
               }
             ],
             "title": "Anti Loop Enabled"
+          },
+          "backend": {
+            "anyOf": [
+              {
+                "enum": [
+                  "native",
+                  "hermes"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
           },
           "callable_agents": {
             "anyOf": [
@@ -2781,6 +2815,15 @@
             "title": "Anti Loop Enabled",
             "type": "boolean"
           },
+          "backend": {
+            "default": "native",
+            "enum": [
+              "native",
+              "hermes"
+            ],
+            "title": "Backend",
+            "type": "string"
+          },
           "callable_agents": {
             "default": [],
             "items": {
@@ -2945,11 +2988,7 @@
             "type": "string"
           },
           "orchestrator": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/LabBlueprintOrchestrator"
-              }
-            ],
+            "$ref": "#/components/schemas/LabBlueprintOrchestrator",
             "default": {
               "max_tokens": 4096,
               "prompt": "",
@@ -2967,11 +3006,7 @@
             "type": "array"
           },
           "settings": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/LabBlueprintSettings"
-              }
-            ],
+            "$ref": "#/components/schemas/LabBlueprintSettings",
             "default": {
               "auto_sweep_memory": false,
               "tool_container_memory_mb": 512,
@@ -4613,6 +4648,15 @@
             "title": "Anti Loop Enabled",
             "type": "boolean"
           },
+          "backend": {
+            "default": "native",
+            "enum": [
+              "native",
+              "hermes"
+            ],
+            "title": "Backend",
+            "type": "string"
+          },
           "callable_agents": {
             "default": [],
             "items": {
@@ -4719,6 +4763,11 @@
             "default": false,
             "title": "Anti Loop Enabled",
             "type": "boolean"
+          },
+          "backend": {
+            "default": "native",
+            "title": "Backend",
+            "type": "string"
           },
           "callable_agents": {
             "items": {},
@@ -4846,6 +4895,21 @@
               }
             ],
             "title": "Anti Loop Enabled"
+          },
+          "backend": {
+            "anyOf": [
+              {
+                "enum": [
+                  "native",
+                  "hermes"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
           },
           "callable_agents": {
             "anyOf": [
@@ -5114,6 +5178,326 @@
           "rags"
         ],
         "title": "ListRagsOut",
+        "type": "object"
+      },
+      "McpServerCreate": {
+        "properties": {
+          "args": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Args",
+            "type": "array"
+          },
+          "auth_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Token"
+          },
+          "catalog_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Key"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "env": {
+            "default": {},
+            "title": "Env",
+            "type": "object"
+          },
+          "headers": {
+            "default": {},
+            "title": "Headers",
+            "type": "object"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "transport": {
+            "default": "http",
+            "title": "Transport",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "title": "McpServerCreate",
+        "type": "object"
+      },
+      "McpServerResponse": {
+        "properties": {
+          "args": {
+            "default": [],
+            "items": {},
+            "title": "Args",
+            "type": "array"
+          },
+          "auth_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Token"
+          },
+          "catalog_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Key"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "env": {
+            "default": {},
+            "title": "Env",
+            "type": "object"
+          },
+          "headers": {
+            "default": {},
+            "title": "Headers",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "transport": {
+            "title": "Transport",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "transport",
+          "enabled",
+          "source",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "McpServerResponse",
+        "type": "object"
+      },
+      "McpServerUpdate": {
+        "properties": {
+          "args": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Args"
+          },
+          "auth_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Token"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env"
+          },
+          "headers": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headers"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "transport": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transport"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "title": "McpServerUpdate",
         "type": "object"
       },
       "MessageCreate": {
@@ -7249,6 +7633,19 @@
         "title": "RunOut",
         "type": "object"
       },
+      "SaveFileContentBody": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "SaveFileContentBody",
+        "type": "object"
+      },
       "ServerCandidateResponse": {
         "properties": {
           "host": {
@@ -8150,6 +8547,13 @@
       },
       "ValidationError": {
         "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
           "loc": {
             "items": {
               "anyOf": [
@@ -8806,7 +9210,7 @@
   "info": {
     "description": "Distributed GPU Server Management Platform \u2014 Control Plane API",
     "title": "Bob Manager",
-    "version": "0.11.1"
+    "version": "0.12.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -12430,6 +12834,71 @@
           "labs",
           "labs"
         ]
+      },
+      "put": {
+        "description": "Overwrite the text content of an existing workspace file.\n\nEditing only \u2014 the file must already exist; this never creates files\nor directories. Scoped to text files (same allowlist as the inline\nviewer) and gated by EDIT permission on the lab.",
+        "operationId": "save_output_file_content_api_v1_labs__lab_id__output_files_content_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lab_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Lab Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveFileContentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Output File Content",
+        "tags": [
+          "labs",
+          "labs"
+        ]
       }
     },
     "/api/v1/labs/{lab_id}/output-files/download": {
@@ -14423,6 +14892,194 @@
         ]
       }
     },
+    "/api/v1/library-agents/{agent_id}/hermes/activate": {
+      "post": {
+        "description": "Pop (or start) the agent's Hermes container and wait until healthy.",
+        "operationId": "activate_hermes_api_v1_library_agents__agent_id__hermes_activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Activate Hermes",
+        "tags": [
+          "hermes"
+        ]
+      }
+    },
+    "/api/v1/library-agents/{agent_id}/hermes/container": {
+      "delete": {
+        "description": "Remove the container entirely (the ~/.hermes memory volume is kept).",
+        "operationId": "remove_hermes_container_api_v1_library_agents__agent_id__hermes_container_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove Hermes Container",
+        "tags": [
+          "hermes"
+        ]
+      }
+    },
+    "/api/v1/library-agents/{agent_id}/hermes/deactivate": {
+      "post": {
+        "description": "Stop the agent's Hermes container (memory volume is kept).",
+        "operationId": "deactivate_hermes_api_v1_library_agents__agent_id__hermes_deactivate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Deactivate Hermes",
+        "tags": [
+          "hermes"
+        ]
+      }
+    },
+    "/api/v1/library-agents/{agent_id}/hermes/status": {
+      "get": {
+        "description": "Container status for the agent-edit UI panel.",
+        "operationId": "hermes_status_api_v1_library_agents__agent_id__hermes_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Hermes Status",
+        "tags": [
+          "hermes"
+        ]
+      }
+    },
     "/api/v1/library-agents/{agent_id}/instances": {
       "get": {
         "description": "List all instances spawned from a given template.",
@@ -14601,6 +15258,362 @@
         "summary": "Get Library Agent Stats",
         "tags": [
           "library-agents"
+        ]
+      }
+    },
+    "/api/v1/llm-gateway/{tag}/v1/chat/completions": {
+      "post": {
+        "operationId": "chat_completions_api_v1_llm_gateway__tag__v1_chat_completions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag",
+            "required": true,
+            "schema": {
+              "title": "Tag",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Chat Completions",
+        "tags": [
+          "llm-gateway"
+        ]
+      }
+    },
+    "/api/v1/llm-gateway/{tag}/v1/models": {
+      "get": {
+        "description": "Minimal OpenAI models listing (some clients probe it on startup).",
+        "operationId": "list_models_api_v1_llm_gateway__tag__v1_models_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag",
+            "required": true,
+            "schema": {
+              "title": "Tag",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Models",
+        "tags": [
+          "llm-gateway"
+        ]
+      }
+    },
+    "/api/v1/mcp/catalog": {
+      "get": {
+        "description": "Curated presets the operator can enable in one step.",
+        "operationId": "list_catalog_api_v1_mcp_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Catalog",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/v1/mcp/servers": {
+      "get": {
+        "operationId": "list_servers_api_v1_mcp_servers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/McpServerResponse"
+                  },
+                  "title": "Response List Servers Api V1 Mcp Servers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Servers",
+        "tags": [
+          "mcp"
+        ]
+      },
+      "post": {
+        "operationId": "create_server_api_v1_mcp_servers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpServerCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Server",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/v1/mcp/servers/{server_id}": {
+      "delete": {
+        "operationId": "delete_server_api_v1_mcp_servers__server_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Server",
+        "tags": [
+          "mcp"
+        ]
+      },
+      "patch": {
+        "operationId": "update_server_api_v1_mcp_servers__server_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpServerUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Server",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/v1/mcp/servers/{server_id}/test": {
+      "post": {
+        "description": "Connect to a server and preview the tools it exposes.",
+        "operationId": "test_server_api_v1_mcp_servers__server_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Server",
+        "tags": [
+          "mcp"
         ]
       }
     },

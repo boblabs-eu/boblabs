@@ -190,6 +190,19 @@ async def _dispatch_agent_message(agent_name: str, data: dict, db_session_factor
             except Exception as e:
                 logger.warning("Failed to sync Ollama models for %s: %s", agent_name, e)
 
+        # Auto-sync Claude CLI wrapper models to DB if present
+        claude_cli_models = payload.get("claude_cli_models", [])
+        if claude_cli_models:
+            try:
+                await _sync_claude_cli_models(
+                    agent_name,
+                    claude_cli_models,
+                    payload.get("claude_cli_port", 3021),
+                    db_session_factory,
+                )
+            except Exception as e:
+                logger.warning("Failed to sync Claude CLI models for %s: %s", agent_name, e)
+
         # Auto-discover vLLM/HuggingFace containers
         docker_containers = payload.get("docker_containers", [])
         if docker_containers:
@@ -569,6 +582,88 @@ async def _sync_gpu_service_models(
                     "gpu": m.get("gpu", ""),
                     "vram_used_mb": m.get("vram_used_mb", 0),
                 },
+            )
+            seen_ids.append(result.id)
+
+        if seen_ids:
+            await model_repo.mark_unavailable(provider.id, seen_ids)
+
+        await db.commit()
+
+
+async def _sync_claude_cli_models(
+    agent_name: str,
+    models: list[dict],
+    port: int,
+    db_session_factory,
+) -> None:
+    """Auto-create a Claude CLI provider and sync its models.
+
+    The per-server claude-cli wrapper (see claude-cli/ at the repo root)
+    plays the same role as Ollama: an OpenAI-compatible HTTP front the
+    agent probes and reports. Model identifiers arrive already namespaced
+    ``claude-cli:<id>`` from the wrapper, so they can never collide with —
+    or be mistaken for — Anthropic API models in the shared model list.
+    The wrapper port is configured agent-side and reported in the metrics
+    payload (same pattern as script_runner_port).
+    """
+    async with db_session_factory() as db:
+        from app.models.orchestrator import AIProvider
+        from app.repositories.orchestrator_repo import AIModelRepository, AIProviderRepository
+        from app.repositories.server_repo import ServerRepository
+
+        server_repo = ServerRepository(db)
+        server = await server_repo.get_by_name(agent_name)
+        if not server:
+            return
+
+        base_url = f"http://{server.host}:{port}"
+        provider_repo = AIProviderRepository(db)
+        provider_name = f"claude_cli-{agent_name}"
+        provider = await provider_repo.get_by_name(provider_name)
+
+        if provider is None:
+            # Cluster I — pending+inactive on first sight.
+            provider = AIProvider(
+                name=provider_name,
+                provider_type="claude_cli",
+                base_url=base_url,
+                server_id=server.id,
+                is_active=False,
+                pending_approval=True,
+            )
+            provider = await provider_repo.create(provider)
+            logger.info(
+                "Auto-discovered Claude CLI provider (pending admin approval): %s -> %s",
+                provider_name,
+                base_url,
+            )
+        else:
+            # Cluster I — never flip is_active=True from the sync path;
+            # base_url/server_id may move (port change, agent migration).
+            updates: dict = {}
+            if provider.base_url != base_url:
+                updates["base_url"] = base_url
+            if provider.server_id != server.id:
+                updates["server_id"] = server.id
+            if updates:
+                await provider_repo.update(provider.id, **updates)
+
+        model_repo = AIModelRepository(db)
+        seen_ids = []
+        for m in models:
+            model_id = m.get("model", m.get("name", ""))
+            if not model_id:
+                continue
+            # Friendly name for name-displaying contexts; dropdowns render
+            # the namespaced model_identifier itself.
+            friendly = f"{model_id.removeprefix('claude-cli:')} (Claude CLI)"
+            result = await model_repo.upsert(
+                provider_id=provider.id,
+                model_identifier=model_id,
+                name=friendly,
+                capabilities={"family": "claude", "format": "claude-cli"},
+                parameters={},
             )
             seen_ids.append(result.id)
 

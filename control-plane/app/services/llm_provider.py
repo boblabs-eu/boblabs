@@ -1,7 +1,7 @@
 """Bob Manager — LLM Provider abstraction layer.
 
-Supports Ollama, HuggingFace Inference API, OpenAI-compatible APIs,
-and Anthropic (Claude) API.
+Supports Ollama, HuggingFace Inference API, OpenAI-compatible APIs
+(including the per-server claude-cli wrapper), and Anthropic (Claude) API.
 All providers expose a unified interface for chat completion (streaming)
 and model discovery.
 
@@ -581,7 +581,17 @@ class OpenAICompatibleProvider(LLMProvider):
                 json=payload,
                 headers=self._headers(),
             ) as response:
-                response.raise_for_status()
+                if response.status_code >= 400:
+                    # Surface the upstream error BODY (e.g. the Claude CLI
+                    # wrapper's {"detail": "claude CLI error: <real reason>"}),
+                    # not just the bare status line — so a paused/failed lab
+                    # shows WHY (rate limit vs overload vs context).
+                    body = (await response.aread()).decode(errors="replace")[:600]
+                    raise httpx.HTTPStatusError(
+                        f"HTTP {response.status_code} from {self.base_url}: {body}",
+                        request=response.request,
+                        response=response,
+                    )
                 async for line in response.aiter_lines():
                     line = line.strip()
                     if not line or not line.startswith("data: "):
@@ -804,7 +814,17 @@ class AnthropicProvider(LLMProvider):
                 json=payload,
                 headers=self._headers(),
             ) as response:
-                response.raise_for_status()
+                if response.status_code >= 400:
+                    # Surface the upstream error BODY (e.g. the Claude CLI
+                    # wrapper's {"detail": "claude CLI error: <real reason>"}),
+                    # not just the bare status line — so a paused/failed lab
+                    # shows WHY (rate limit vs overload vs context).
+                    body = (await response.aread()).decode(errors="replace")[:600]
+                    raise httpx.HTTPStatusError(
+                        f"HTTP {response.status_code} from {self.base_url}: {body}",
+                        request=response.request,
+                        response=response,
+                    )
                 async for line in response.aiter_lines():
                     line = line.strip()
                     if not line or not line.startswith("data: "):
@@ -923,6 +943,10 @@ def create_provider(provider_type: str, base_url: str, api_key: str | None = Non
     elif provider_type == "huggingface":
         return HuggingFaceProvider(base_url, api_key)
     elif provider_type == "openai":
+        return OpenAICompatibleProvider(base_url, api_key)
+    elif provider_type == "claude_cli":
+        # Per-server claude-cli wrapper (claude-cli/ at the repo root) —
+        # speaks the OpenAI dialect, so the generic client fits as-is.
         return OpenAICompatibleProvider(base_url, api_key)
     elif provider_type == "anthropic":
         return AnthropicProvider(base_url, api_key)

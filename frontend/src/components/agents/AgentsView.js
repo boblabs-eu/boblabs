@@ -19,7 +19,7 @@ import {
   getLabServerAccess, getLabServerCandidates, grantLabServerAccess, revokeLabServerAccess,
   getPromptTemplates,
 } from '../../services/api';
-import { AgentEditForm } from '../labs/LabsView';
+import { AgentEditForm, HermesPanel } from '../labs/LabsView';
 import '../labs/LabsView.css';
 
 /* ── Icons ── */
@@ -79,7 +79,7 @@ function renderMsgContent(content) {
 const EMPTY_AGENT = {
   name: '', description: '', system_prompt: '',
   role: '',
-  model_id: null, temperature: 0.7, max_tokens: 4096,
+  model_id: null, backend: 'native', temperature: 0.7, max_tokens: 4096,
   tools: [], tool_set_ids: [],
   is_active: true,
   cron_expression: '', cron_instruction: '',
@@ -167,7 +167,9 @@ function SubToolGroup({ toolDef, tools, onChange }) {
   const [expanded, setExpanded] = useState(false);
   const prefix = toolDef.name + ':';
   const subEntries = tools.filter(t => t.startsWith(prefix));
-  const selectedSubs = subEntries.map(t => t.split(':')[1]);
+  // slice(prefix.length) — not split(':')[1] — so group names that themselves
+  // contain a colon (e.g. MCP groups named "mcp:<slug>") parse correctly.
+  const selectedSubs = subEntries.map(t => t.slice(prefix.length));
   const allSelected = toolDef.subTools.length > 0 && toolDef.subTools.every(s => selectedSubs.includes(s.name));
   const someSelected = selectedSubs.length > 0;
 
@@ -1761,9 +1763,27 @@ export default function AgentsView({ allModels: allModelsRaw = [] }) {
                 />
               </div>
 
+              {/* Backend */}
+              <div className="agents-field">
+                <label>Backend</label>
+                <select
+                  value={editForm.backend || 'native'}
+                  onChange={e => setEditForm({ ...editForm, backend: e.target.value })}
+                >
+                  <option value="native">Native (Bob Lab loop)</option>
+                  <option value="hermes">Hermes (external agent)</option>
+                </select>
+              </div>
+
+              {(editForm.backend || 'native') === 'hermes' && editForm.id && (
+                <div className="agents-field agents-field-full">
+                  <HermesPanel agentKey={editForm.id} />
+                </div>
+              )}
+
               {/* Model */}
               <div className="agents-field">
-                <label>Model (optional override)</label>
+                <label>{(editForm.backend || 'native') === 'hermes' ? 'Model Hermes uses' : 'Model (optional override)'}</label>
                 <select
                   value={editForm.model_id || ''}
                   onChange={e => setEditForm({ ...editForm, model_id: e.target.value || null })}
@@ -1854,7 +1874,16 @@ export default function AgentsView({ allModels: allModelsRaw = [] }) {
                 </div>
               </div>
 
-              {/* Tools */}
+              {/* Tools — hidden for Hermes agents (Hermes runs its own tools) */}
+              {(editForm.backend || 'native') === 'hermes' && (
+                <div className="agents-field agents-field-full">
+                  <label>Tools</label>
+                  <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.45)' }}>
+                    Hermes runs its own tools inside its container — Bob Lab tools don't apply.
+                  </div>
+                </div>
+              )}
+              {(editForm.backend || 'native') !== 'hermes' && (
               <div className="agents-field agents-field-full">
                 <label>
                   Tools
@@ -1901,6 +1930,7 @@ export default function AgentsView({ allModels: allModelsRaw = [] }) {
                   })}
                 </div>
               </div>
+              )}
             </div>
           </div>
         )}

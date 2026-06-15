@@ -1,31 +1,110 @@
-fastapi==0.111.0
+# Bob Manager — control-plane runtime dependencies.
+#
+# All deps are version-pinned (no ``>=``) so the build is reproducible and
+# pip-audit can be run as a hard gate in CI. Run a fresh audit with:
+#
+#   pip-audit -r control-plane/requirements.txt
+#
+# To upgrade: bump the version below, re-run pip-audit, then test in dev
+# before deploying. Hash-mode pinning (`--require-hashes`) is a planned
+# follow-up — see CHANGELOG entry for v0.11.x.
+
+# ── Web framework ──
+# fastapi 0.136.3 pulls starlette>=0.46.0 (the latest line at the time of
+# this update is starlette 0.51.x), which fixes the chain of starlette
+# CVEs (CVE-2024-47874, CVE-2025-54121, CVE-2025-62727, PYSEC-2026-161
+# x2) that older starlette 0.37/0.41 carried. Major fastapi jump from
+# 0.111 → 0.136; verified Pydantic v2 / async-route shape unchanged
+# in CHANGELOG.
+fastapi==0.136.3
+# Explicit starlette pin — without this fastapi may resolve a vulnerable
+# starlette in some operator caches. starlette 1.0.1 fixes
+# PYSEC-2026-161 (Host header injection that bypasses request.url-based
+# middleware auth). 1.2.1 is the latest in the line.
+starlette==1.2.1
 uvicorn[standard]==0.29.0
 sqlalchemy[asyncio]==2.0.29
 asyncpg==0.29.0
 alembic==1.13.1
-pydantic==2.7.1
-pydantic-settings==2.2.1
-python-jose[cryptography]==3.3.0
+# pydantic 2.9 minimum — required by fastapi 0.136.3. Bump from 2.7.1.
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# ── Auth + JWT ──
+# python-jose 3.4.0 fixes the algorithm-confusion class of bugs that
+# 3.3.0 carried (PYSEC-2024-232/233, PYSEC-2025-185 — JWE bombs +
+# OpenSSH ECDSA key-format confusion). Stay on the python-jose lineage
+# for now; a migration to PyJWT is a separate effort because the API
+# shape is different.
+python-jose[cryptography]==3.4.0
+# pyasn1 stays on python-jose's pin (<0.5.0) — python-jose caps it
+# because pyasn1 0.5 broke the API surface jose relies on. The
+# CVE-2026-30922 advisory on older pyasn1 is "ASN.1 parsing DoS" and
+# is unreachable in our usage: we sign/verify with HS256 + a fixed
+# JWT_SECRET, never decode user-supplied PEM/JWK keys. Re-evaluate if
+# we ever migrate to PyJWT or accept asymmetric JWTs.
 passlib[bcrypt]==1.7.4
+
+# ── Transport ──
 websockets==12.0
-httpx==0.27.0
+# httpx 0.28.1 — needed to satisfy lightrag-hku's transitive constraint
+# (>=0.28.1 on the [api] extra) even though we only use the base lib.
+# Backward-compatible bump from 0.27.0.
+httpx==0.28.1
+# python-multipart 0.0.27 closes the full CVE chain (CVE-2024-53981,
+# CVE-2026-24486 path-traversal in UPLOAD_KEEP_FILENAME — not used here
+# but pinned defensively, CVE-2026-40347 + CVE-2026-42561 DoS via
+# crafted multipart preamble/epilogue).
+python-multipart==0.0.27
+
+# ── MCP (Model Context Protocol) client ──
+# Official Anthropic Python SDK. We use only the CLIENT side
+# (mcp.ClientSession + streamable-http / sse / stdio transports) to consume
+# external MCP servers (Stripe, data.gouv, Hermes, …) and expose their tools
+# to agents. We never run the MCP server side. Confirm the latest pin with
+# `pip index versions mcp` + re-run pip-audit before bumping.
+mcp==1.12.0
+
+# ── Parsing / I/O ──
 pyyaml==6.0.1
-python-multipart==0.0.9
 beautifulsoup4==4.12.3
-readability-lxml>=0.8.1
+# Pin to the version actually shipped in the live bob-api image.
+readability-lxml==0.8.4.1
+
+# ── Web / scraping ──
 playwright==1.49.1
 duckduckgo-search==7.5.3
+
+# ── Scheduling + mail ──
 croniter==2.0.5
 aiosmtplib==3.0.1
-docker>=7.0
-web3>=7.0
-eth-account>=0.13.0,<0.15
-qdrant-client>=1.12.0,<1.14  # pin close to server v1.12.6 (docker-compose.yml)
-sentence-transformers>=3.0.0
-pypdf>=5.4.0
-lightrag-hku>=0.1.0
-tweepy>=4.14.0
-Pillow>=10.0.0
+
+# ── Docker SDK ──
+docker==7.1.0
+
+# ── Web3 ──
+web3==7.16.0
+eth-account==0.13.7
+
+# ── Vector store / RAG ──
+qdrant-client==1.13.3  # close to server v1.12.6 (docker-compose.yml)
+sentence-transformers==5.5.1
+pypdf==6.12.2
+# lightrag-hku — we import only the base library (LightRAG, QueryParam).
+# CVE-2026-30762 (hardcoded JWT secret) and CVE-2026-39413 (JWT algorithm
+# confusion) both live in lightrag/api/auth.py — the LightRAG standalone
+# API server, which we don't use. Our usage is gated by our own auth and
+# never instantiates lightrag's AuthHandler. The 1.4.13+ versions also
+# tighten httpx / pydantic peer constraints in a way that conflicts
+# with our pinned versions, so we stay on 1.4.9.7. Re-evaluate if we
+# ever start the lightrag API server.
+lightrag-hku==1.4.9.7
+
+# ── Social ──
+tweepy==4.16.0
+
+# ── Imaging ──
+Pillow==12.2.0
 
 # ── Test harness (Phase 5 Session 1.5 — not loaded in prod images by default) ─
 # Install with: pip install -r requirements.txt -r requirements-test.txt

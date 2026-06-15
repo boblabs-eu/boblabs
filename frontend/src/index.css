@@ -3481,3 +3481,289 @@ label {
   font-size: 0.78rem;
   color: #b91c1c;
 }
+
+/* ═══════════════════════════════════════════════════
+   MCP PAGE — Model Context Protocol server management
+   ═══════════════════════════════════════════════════ */
+
+.mcp-page {
+  padding: 1.75rem 2rem;
+  max-width: 1100px;
+  margin: 0 auto;
+  color: var(--text-primary);
+}
+
+.mcp-page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.mcp-page-head h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 0.35rem;
+}
+
+.mcp-sub {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-width: 760px;
+  margin: 0;
+}
+
+.mcp-sub code,
+.mcp-warn code {
+  background: var(--bg-elevated);
+  color: var(--accent);
+  padding: 0.05em 0.35em;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+.mcp-error {
+  background: var(--error-soft);
+  border: 1px solid var(--error);
+  color: var(--error);
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  margin-bottom: 1rem;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+}
+
+.mcp-error-dismiss { opacity: 0.7; }
+
+.mcp-section-title {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 1.75rem 0 0.85rem;
+  font-weight: 600;
+}
+
+.mcp-section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Catalog grid */
+.mcp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.9rem;
+}
+
+.mcp-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.95rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  position: relative;
+}
+
+.mcp-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mcp-card-name { font-weight: 600; font-size: 0.95rem; }
+
+.mcp-card-desc {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin: 0;
+  flex: 1;
+}
+
+.mcp-tag {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.mcp-tag-transport {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+
+.mcp-card-enable,
+.mcp-card-state {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mcp-card-state { font-size: 0.78rem; }
+
+.mcp-on { color: var(--success); font-weight: 600; }
+.mcp-off { color: var(--error); font-weight: 600; }
+
+.mcp-docs {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  align-self: flex-start;
+}
+.mcp-docs:hover { color: var(--accent); }
+
+/* Inputs + buttons */
+.mcp-input {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text-primary);
+  padding: 0.45rem 0.6rem;
+  font-size: 0.82rem;
+  outline: none;
+}
+.mcp-input:focus { border-color: var(--accent); }
+.mcp-input-wide { flex: 1; }
+
+.mcp-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  padding: 0.4rem 0.75rem;
+  border-radius: 7px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mcp-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
+.mcp-btn:disabled { opacity: 0.5; cursor: default; }
+
+.mcp-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-foreground);
+}
+.mcp-btn-primary:hover:not(:disabled) { background: var(--accent-hover); color: var(--accent-foreground); }
+
+.mcp-btn-danger { color: var(--error); border-color: rgba(248, 113, 113, 0.4); }
+.mcp-btn-danger:hover:not(:disabled) { background: var(--error-soft); }
+
+/* Custom form */
+.mcp-custom-form {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  margin: 0.5rem 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.mcp-form-row { display: flex; gap: 0.6rem; }
+.mcp-form-row .mcp-input { flex: 1; }
+.mcp-warn { color: var(--text-muted); font-size: 0.76rem; margin: 0; }
+
+/* Server list */
+.mcp-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.mcp-empty {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 1.5rem;
+  text-align: center;
+  background: var(--bg-card);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+
+.mcp-row {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.7rem 0.95rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.4rem 0.75rem;
+  align-items: center;
+}
+
+.mcp-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.mcp-row-name { font-weight: 600; font-size: 0.9rem; }
+
+.mcp-slug {
+  font-size: 0.72rem;
+  background: var(--bg-elevated);
+  color: var(--accent);
+  padding: 0.1rem 0.4rem;
+  border-radius: 5px;
+}
+
+.mcp-url {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 280px;
+}
+
+.mcp-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.mcp-test {
+  grid-column: 1 / -1;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.mcp-test-tools { color: var(--text-muted); }
+
+/* Toggle switch */
+.mcp-switch { position: relative; display: inline-flex; cursor: pointer; }
+.mcp-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.mcp-switch-track {
+  width: 34px;
+  height: 19px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  position: relative;
+  transition: background 0.15s;
+}
+.mcp-switch-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 0.15s, background 0.15s;
+}
+.mcp-switch input:checked + .mcp-switch-track { background: var(--accent-soft); border-color: var(--accent); }
+.mcp-switch input:checked + .mcp-switch-track::after { transform: translateX(15px); background: var(--accent); }

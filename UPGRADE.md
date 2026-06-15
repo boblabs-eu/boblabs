@@ -72,6 +72,47 @@ production. The single rule: **never skip step 2 of the upgrade flow.**
 
 Most recent first.
 
+### 0.11.1 → 0.12.0
+
+**Theme**: Two new top-level capabilities — real Hermes agents (Nous
+Research) and a Claude CLI provider. Two additive schema migrations.
+
+- **Schema migrations**: 2 new revisions.
+  | Revision | Purpose |
+  |---|---|
+  | `0012_mcp_servers` | New table for MCP server definitions |
+  | `0013_agent_backend` | Adds `backend` column to `ai_agents` (default `native`) |
+
+  Both are additive; no data conversion required. Run
+  `alembic upgrade head` (handled automatically by `deploy-prod.sh`).
+- **Env vars**:
+  - **New (Hermes — only set if you want to use it)**: `HERMES_IMAGE`,
+    `HERMES_DEFAULT_TIMEOUT_SEC`, `HERMES_MEM_MB`, `HERMES_CPUS`.
+    Without `HERMES_IMAGE` set, the backend feature is hidden in the
+    UI; existing labs continue running unchanged.
+  - **New (Claude CLI — only on GPU servers that opt in)**:
+    `CLAUDE_CODE_OAUTH_TOKEN` (Max subscription token from
+    `claude setup-token`), `CLAUDE_CLI_MODELS`, `CLAUDE_CLI_PORT`,
+    `CLAUDE_CLI_CONCURRENCY`, `CLAUDE_CLI_TIMEOUT_SEC`,
+    `CLAUDE_CLI_TOOLS`, `CLAUDE_CLI_API_KEY`. See
+    [docs/CLAUDE_CLI.md](docs/CLAUDE_CLI.md) for setup. The sidecar
+    runs in `claude-cli/docker-compose.yml` on each GPU server that
+    should expose its Max subscription — it is **not** brought up by
+    the bob-manager root compose stack.
+- **Downtime**: ~30 s for migration + restart.
+- **No breaking changes.** Existing agents keep `backend='native'`
+  by default. Labs that don't switch to Hermes or claude-cli
+  providers continue identically.
+- **Hermes setup** (only if you want to use it):
+  1. Build the adapter image once: `docker build -t bob-hermes-adapter:latest hermes-adapter/`
+  2. Set `HERMES_IMAGE=bob-hermes-adapter:latest` in `.env`.
+  3. From the agent edit dialog, pick `backend: hermes`.
+- **Claude CLI setup** (only on GPU servers that should expose a Max sub):
+  1. On the GPU server: `cd claude-cli && cp .env.example .env`
+  2. Run `claude setup-token` locally, paste the `sk-ant-oat01-*` token into `.env` as `CLAUDE_CODE_OAUTH_TOKEN`.
+  3. `docker compose up -d` (in `claude-cli/`).
+  4. The agent's metrics tick auto-discovers it; an admin approves the resulting `claude_cli-<host>` provider once.
+
 ### 0.11.0 → 0.11.1
 
 **Theme**: Security patch — gate the metrics router + drop container processes off root.

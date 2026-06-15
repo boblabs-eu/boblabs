@@ -23,6 +23,11 @@ LoopTypeStr = Literal[
     "solo_agent",
 ]
 
+# Agent execution backend — 'native' (Bob Lab drives the LLM loop) vs
+# 'hermes' (turn delegated to a per-agent Hermes container). Mirrored by
+# the dispatch branch in lab_runner._call_agent.
+AgentBackendStr = Literal["native", "hermes"]
+
 
 # ── Settings ──────────────────────────────────────
 
@@ -369,6 +374,7 @@ class LabAgentCreate(BaseModel):
     system_prompt: str = ""
     prompt_template_id: UUID | None = None
     model_id: UUID | None = None
+    backend: AgentBackendStr = "native"
     temperature: float = 0.7
     max_tokens: int = 4096
     tools: list[str] = []
@@ -390,6 +396,7 @@ class LabAgentUpdate(BaseModel):
     system_prompt: str | None = None
     prompt_template_id: UUID | None = None
     model_id: UUID | None = None
+    backend: AgentBackendStr | None = None
     temperature: float | None = None
     max_tokens: int | None = None
     tools: list[str] | None = None
@@ -412,6 +419,7 @@ class LabAgentResponse(BaseModel):
     system_prompt: str
     prompt_template_id: UUID | None = None
     model_id: UUID | None
+    backend: str = "native"
     temperature: float
     max_tokens: int
     tools: list
@@ -441,6 +449,7 @@ class LibraryAgentCreate(BaseModel):
     system_prompt: str = ""
     prompt_template_id: UUID | None = None
     model_id: UUID | None = None
+    backend: AgentBackendStr = "native"
     temperature: float = 0.7
     max_tokens: int = 4096
     tools: list[str] = []
@@ -458,6 +467,7 @@ class LibraryAgentUpdate(BaseModel):
     system_prompt: str | None = None
     prompt_template_id: UUID | None = None
     model_id: UUID | None = None
+    backend: AgentBackendStr | None = None
     temperature: float | None = None
     max_tokens: int | None = None
     tools: list[str] | None = None
@@ -476,6 +486,7 @@ class LibraryAgentResponse(BaseModel):
     system_prompt: str
     prompt_template_id: UUID | None = None
     model_id: UUID | None
+    backend: str = "native"
     temperature: float
     max_tokens: int
     tools: list
@@ -545,6 +556,58 @@ class ToolSetResponse(BaseModel):
     name: str
     description: str
     tools: list
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ── MCP Servers ───────────────────────────────────
+
+
+class McpServerCreate(BaseModel):
+    # Catalog mode: pass catalog_key (+ optional auth_token). Custom mode: pass
+    # name + transport + url (or command). Unset fields are derived in the route.
+    name: str | None = None
+    catalog_key: str | None = None
+    transport: str = "http"
+    url: str | None = None
+    headers: dict = {}
+    auth_token: str | None = None
+    command: str | None = None
+    args: list[str] = []
+    env: dict = {}
+    enabled: bool = False
+
+
+class McpServerUpdate(BaseModel):
+    name: str | None = None
+    transport: str | None = None
+    url: str | None = None
+    headers: dict | None = None
+    auth_token: str | None = None
+    command: str | None = None
+    args: list[str] | None = None
+    env: dict | None = None
+    enabled: bool | None = None
+
+
+class McpServerResponse(BaseModel):
+    id: UUID
+    name: str
+    slug: str
+    transport: str
+    url: str | None = None
+    headers: dict = {}
+    auth_token: str | None = None
+    command: str | None = None
+    args: list = []
+    env: dict = {}
+    enabled: bool
+    source: str
+    catalog_key: str | None = None
+    last_seen_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -702,6 +765,7 @@ class LabBlueprintAgent(BaseModel):
     system_prompt: str = ""
     prompt_template: str | None = None
     model: str | None = None
+    backend: AgentBackendStr = "native"
     temperature: float = 0.7
     max_tokens: int = 4096
     tools: list[str] = []
@@ -796,6 +860,7 @@ class AgentBlueprintAgent(BaseModel):
     description: str = ""
     prompt_template: str | None = None
     model: str | None = None
+    backend: AgentBackendStr = "native"
     temperature: float = 0.7
     max_tokens: int = 4096
     tools: list[str] = []

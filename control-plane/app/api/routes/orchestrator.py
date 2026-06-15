@@ -97,6 +97,7 @@ SUPPORTED_PROVIDER_TYPES: list[dict[str, str]] = [
     {"type": "huggingface", "label": "HuggingFace"},
     {"type": "openai", "label": "OpenAI-Compatible"},
     {"type": "anthropic", "label": "Anthropic (Claude)"},
+    {"type": "claude_cli", "label": "Claude CLI"},
     {"type": "openai_cloud", "label": "OpenAI"},
     {"type": "xai", "label": "xAI (Grok)"},
     {"type": "groq", "label": "Groq"},
@@ -517,6 +518,27 @@ async def get_live_models(db: DbSession):
                     }
                 )
 
+    # ── Claude CLI wrapper providers: use metrics cache ─────────────
+    claude_cli_providers = [p for p in all_providers if p.provider_type == "claude_cli"]
+    for agent_name, metrics in all_metrics.items():
+        cli_models = metrics.get("claude_cli_models", [])
+        if cli_models:
+            matched_provider = next(
+                (p for p in claude_cli_providers if p.name == f"claude_cli-{agent_name}"),
+                None,
+            )
+            result.append(
+                {
+                    "provider_id": str(matched_provider.id) if matched_provider else None,
+                    "provider_name": matched_provider.name
+                    if matched_provider
+                    else f"claude_cli-{agent_name}",
+                    "provider_type": "claude_cli",
+                    "server": agent_name,
+                    "models": cli_models,
+                }
+            )
+
     # ── Script Runner (ToolAI) providers ─────────────
     all_runners = manager.get_all_script_runners()
     for agent_name, runner_info in all_runners.items():
@@ -768,6 +790,27 @@ async def sync_all_models(db: DbSession):
 
             if seen_ids:
                 await model_repo.mark_unavailable(provider.id, seen_ids)
+
+    # ── Also sync Claude CLI wrapper models from metrics cache ──
+    # Reuses the websocket-path sync (own session/commit) so the Sync All
+    # button and the 10s metrics tick stay behaviorally identical.
+    from app.database import async_session as _cli_session_factory
+    from app.websocket.agent_handler import _sync_claude_cli_models
+
+    for agent_name, metrics in all_metrics.items():
+        cli_models = metrics.get("claude_cli_models", [])
+        if not cli_models:
+            continue
+        try:
+            await _sync_claude_cli_models(
+                agent_name,
+                cli_models,
+                metrics.get("claude_cli_port", 3021),
+                _cli_session_factory,
+            )
+            total_synced += len(cli_models)
+        except Exception:
+            pass
 
     # ── Also discover ComfyUI providers directly ──
     for provider in all_providers:
@@ -1439,6 +1482,7 @@ async def list_builtin_tools():
     or subTools (list of sub-actions for tools like mail/twitter).
     """
     from app.services.tools import BUILTIN_TOOLS
+    from app.services.tools.mcp_registry import MCP_TOOL_META
 
     # Tools that have sub-action patterns (action parameter with fixed options)
     SUB_ACTION_TOOLS = {
@@ -1502,7 +1546,27 @@ async def list_builtin_tools():
     }
 
     result = []
+    # MCP tools are grouped per-server into one synthetic expandable entry
+    # named ``mcp:<slug>`` (reusing the SubToolGroup picker exactly like
+    # mail/twitter). They are collected here and appended after the flat tools.
+    mcp_groups: dict[str, dict] = {}
+
     for name, schema in sorted(BUILTIN_TOOLS.items()):
+        meta = MCP_TOOL_META.get(name)
+        if meta:
+            slug = meta["server_slug"]
+            group = mcp_groups.setdefault(
+                slug,
+                {
+                    "name": f"mcp:{slug}",
+                    "description": f"MCP · {meta['server_name']}",
+                    "mcp": True,
+                    "subTools": [],
+                },
+            )
+            group["subTools"].append({"name": meta["tool"], "desc": schema.get("description", "")})
+            continue
+
         entry = {
             "name": name,
             "description": schema.get("description", ""),
@@ -1518,6 +1582,9 @@ async def list_builtin_tools():
         elif name in SUB_ACTION_TOOLS:
             entry["subTools"] = SUB_ACTION_TOOLS[name]
         result.append(entry)
+
+    # Append MCP server groups (sorted by server name for stable ordering).
+    result.extend(sorted(mcp_groups.values(), key=lambda g: g["description"]))
     return result
 
 

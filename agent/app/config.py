@@ -26,6 +26,7 @@ class AgentConfig:
     ltx_video_url: str = os.getenv("LTX_VIDEO_URL", "http://localhost:3018")
     wan_video_url: str = os.getenv("WAN_VIDEO_URL", "http://localhost:3019")
     comfyui_url: str = os.getenv("COMFYUI_URL", "http://localhost:8188")
+    claude_cli_url: str = os.getenv("CLAUDE_CLI_URL", "http://localhost:3021")
 
 
 config = AgentConfig()

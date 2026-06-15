@@ -62,6 +62,12 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       TRADING_PRIVATE_KEYS: ${TRADING_PRIVATE_KEYS:-}
       ONEINCH_API_KEY: ${ONEINCH_API_KEY:-}
+      # Hermes external agent backend — image for the per-agent containers
+      # (built from hermes-adapter/). Empty = feature dormant.
+      HERMES_IMAGE: ${HERMES_IMAGE:-}
+      HERMES_DEFAULT_TIMEOUT_SEC: ${HERMES_DEFAULT_TIMEOUT_SEC:-1800}
+      HERMES_USE_GATEWAY: ${HERMES_USE_GATEWAY:-true}
+      HERMES_GATEWAY_URL: ${HERMES_GATEWAY_URL:-http://bob-api:8000}
       # Manage per-lab sandboxes through a restricted docker-socket-proxy
       # rather than mounting /var/run/docker.sock directly into bob-api.
       DOCKER_HOST: tcp://docker-socket-proxy:2375

@@ -139,7 +139,9 @@ function OrchSubToolGroup({ toolDef, tools, onChange }) {
   const [expanded, setExpanded] = useState(false);
   const prefix = toolDef.name + ':';
   const subEntries = tools.filter(t => t.startsWith(prefix));
-  const selectedSubs = subEntries.map(t => t.split(':')[1]);
+  // slice(prefix.length) — not split(':')[1] — so group names that themselves
+  // contain a colon (e.g. MCP groups named "mcp:<slug>") parse correctly.
+  const selectedSubs = subEntries.map(t => t.slice(prefix.length));
   const allSelected = toolDef.subTools.length > 0 && toolDef.subTools.every(s => selectedSubs.includes(s.name));
   const someSelected = selectedSubs.length > 0;
 

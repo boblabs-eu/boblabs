@@ -419,6 +419,7 @@ async def update_library_agent(agent_id: UUID, data: LibraryAgentUpdate, db: DbS
         "system_prompt",
         "prompt_template_id",
         "model_id",
+        "backend",
         "temperature",
         "max_tokens",
         "tools",
@@ -501,6 +502,7 @@ async def duplicate_library_agent(agent_id: UUID, db: DbSession):
         system_prompt=agent.system_prompt,
         prompt_template_id=agent.prompt_template_id,
         model_id=agent.model_id,
+        backend=agent.backend,
         temperature=agent.temperature,
         max_tokens=agent.max_tokens,
         tools=list(agent.tools),
@@ -509,6 +511,7 @@ async def duplicate_library_agent(agent_id: UUID, db: DbSession):
         callable_agents=list(agent.callable_agents),
         cron_expression=agent.cron_expression,
         cron_instruction=agent.cron_instruction,
+        anti_loop_enabled=agent.anti_loop_enabled,
     )
 
 

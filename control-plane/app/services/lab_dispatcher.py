@@ -173,6 +173,10 @@ class LabDispatcher:
             concurrency = _DEFAULT_CONCURRENCY
             if prov.provider_type in ("openai", "vllm", "huggingface"):
                 concurrency = 4
+            elif prov.provider_type == "claude_cli":
+                # One `claude -p` subprocess per request; the wrapper's own
+                # semaphore (CLAUDE_CLI_CONCURRENCY, default 2) is the hard cap.
+                concurrency = 2
             slot = _ProviderSlot(llm, prov, concurrency)
             _global_slots[provider_id] = slot
             return slot

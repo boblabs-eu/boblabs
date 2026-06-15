@@ -17,6 +17,7 @@
 | [Labs](LABS.md) | Persistent multi-agent lab system — data model, loop strategies, execution engine |
 | [Agents Tab](AGENTS_TAB.md) | Agents tab UI — template library, solo agent instances, feed, inspector, file viewer |
 | [Agents & Orchestration](AGENTS_AND_ORCHESTRATION.md) | Orchestrator behavior, agent execution model, memory system |
+| [Hermes Agent Backend](HERMES.md) | Run the real Nous Hermes agent as an agent backend — container lifecycle, adapter, task-completion protocol |
 | [Anti-Loop](ANTI_LOOP.md) | Loop-detection guards for agents and orchestrators |
 | [Tools & Sandbox](TOOLS_AND_SANDBOX.md) | All 40 built-in tools, sandbox isolation, safety controls |
 | [Prompt Structure](PROMPT_STRUCTURE.md) | Prompt assembly layers for orchestrators and agents |

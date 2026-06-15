@@ -39,6 +39,15 @@ const icons = {
       <line x1="6" y1="20" x2="6" y2="14" />
     </Icon>
   ),
+  mcp: (
+    <Icon>
+      <rect x="9" y="9" width="6" height="6" rx="1" />
+      <line x1="12" y1="3" x2="12" y2="9" />
+      <line x1="12" y1="15" x2="12" y2="21" />
+      <line x1="3" y1="12" x2="9" y2="12" />
+      <line x1="15" y1="12" x2="21" y2="12" />
+    </Icon>
+  ),
   workflows: (
     <Icon>
       <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
@@ -151,6 +160,7 @@ const coreNavItems = [
      (the lab-orchestrator role still uses that word inside Labs). The `featured`
      flag paints the icon accent + tints the row so it pops in the public nav. */
   { path: '/orchestrator', label: 'Console', icon: 'orchestrator', featured: true },
+  { path: '/mcp', label: 'MCP', icon: 'mcp' },
   { path: '/metrics', label: 'Metrics Servers', icon: 'metrics' },
   { path: '/rag', label: 'RAG', icon: 'rag' },
   { path: '/logs', label: 'Logs', icon: 'logs' },

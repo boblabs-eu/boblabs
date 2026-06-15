@@ -888,6 +888,7 @@ class CreateAgentIn(BaseModel):
     system_prompt: str = ""
     description: str = ""
     model: str  # model_identifier (e.g. "qwen3.6:35b")
+    backend: str = "native"  # 'native' | 'hermes' (validated at create time)
     temperature: float = 0.7
     max_tokens: int = 4096
     tools: list[str] = []
@@ -906,6 +907,7 @@ class AgentOut(BaseModel):
     role: str
     system_prompt: str
     model: str | None
+    backend: str = "native"
     temperature: float
     max_tokens: int
     tools: list[str]
@@ -1017,6 +1019,7 @@ def _agent_to_out(agent, app_id: str, model_identifier: str | None = None) -> Ag
         role=agent.role or "",
         system_prompt=agent.system_prompt or "",
         model=model_identifier,
+        backend=getattr(agent, "backend", "native") or "native",
         temperature=float(agent.temperature or 0.7),
         max_tokens=int(agent.max_tokens or 4096),
         tools=list(agent.tools or []),
@@ -1079,12 +1082,16 @@ async def create_app_agent(request: Request, db: DbSession):
     tool_set_ids = await _resolve_tool_set_ids(db, payload.tool_sets)
     full_name = make_app_agent_name(app_id, payload.name)
 
+    if payload.backend not in ("native", "hermes"):
+        raise HTTPException(400, f"Unsupported backend: {payload.backend}")
+
     repo = LibraryAgentRepository(db)
     agent = await repo.create(
         name=full_name,
         role=payload.role,
         system_prompt=payload.system_prompt,
         model_id=model_id,
+        backend=payload.backend,
         temperature=payload.temperature,
         max_tokens=payload.max_tokens,
         tools=list(payload.tools or []),
@@ -1205,6 +1212,7 @@ async def import_app_agent(request: Request, db: DbSession):
         role=bp.agent.role,
         system_prompt=bp.agent.system_prompt,
         model_id=model_id,
+        backend=bp.agent.backend,
         temperature=bp.agent.temperature,
         max_tokens=bp.agent.max_tokens,
         tools=list(bp.agent.tools or []),
