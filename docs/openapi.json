@@ -5881,8 +5881,15 @@
             "type": "integer"
           },
           "orchestrator_model": {
-            "title": "Orchestrator Model",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orchestrator Model"
           },
           "orchestrator_provider": {
             "title": "Orchestrator Provider",
@@ -5907,7 +5914,6 @@
           }
         },
         "required": [
-          "orchestrator_model",
           "orchestrator_provider",
           "max_concurrent_tasks",
           "artifact_storage_path",
@@ -9210,7 +9216,7 @@
   "info": {
     "description": "Distributed GPU Server Management Platform \u2014 Control Plane API",
     "title": "Bob Manager",
-    "version": "0.12.3"
+    "version": "0.12.4"
   },
   "openapi": "3.1.0",
   "paths": {

@@ -5,7 +5,39 @@ All notable changes to Bob Labs are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.12.3] — 2026-06-16 — Fix phantom-default-model trap + dispatcher auto-fallback
+## [0.12.4] — 2026-06-17 — Fix `/orchestrator/settings` 500 (0.12.3 regression)
+
+0.12.3's migration 0015 nulled `orchestrator_settings.orchestrator_model`
+but the API surface still declared the field as non-nullable. After
+upgrading to 0.12.3, `GET /api/v1/orchestrator/settings` returned 500,
+the FE's `loadSettings()` silently caught it, `settings` stayed
+falsy, and the entire Default Model section disappeared from the
+orchestrator console — including the placeholder that 0.12.3 added.
+
+### Fixed
+
+- **`GET /api/v1/orchestrator/settings` HTTP 500** when
+  `orchestrator_model` is NULL. `OrchestratorSettingsResponse`
+  declared `orchestrator_model: str` (non-nullable); Pydantic
+  refused to validate the NULL value and FastAPI converted the
+  `ResponseValidationError` into a 500. Now declared as
+  `str | None = None`.
+- **ORM-level phantom `'qwen2.5:72b'` default re-introduced on
+  lazy singleton creation.** The SQLAlchemy model still had
+  `Mapped[str] = mapped_column(String(255), default="qwen2.5:72b")`
+  — meaning any deployment that hit the upsert path (the route
+  auto-upserts when the singleton row is missing) would
+  resurrect the phantom default at the Python layer, defeating
+  migration 0015. Now `Mapped[str | None]` with no python default
+  and explicit `nullable=True`.
+
+### Upgrade notes
+
+`git pull && docker compose up -d --build`. No new migration, no
+env-var changes. After restart, the Default Model dropdown
+reappears with the `— pick a model —` placeholder added in 0.12.3.
+
+## [0.12.3] — 2026-06-17 — Fix phantom default + sandbox-image clone-dir trap
 
 Patch release closing the last 0.12.x first-install trap. After
 0.12.2 healed the schema, fresh installers hit a second wall:
@@ -39,6 +71,18 @@ selected.
   persisting the new resolution back to the lab so the user isn't
   blocked. Only 422 if no models are registered at all (which
   remains a true error).
+
+- **Lab Run / agent-instance Run 500 on any clone directory not named
+  `bob-manager`.** `control-plane/app/services/container_manager.py:21`
+  hardcodes `SANDBOX_IMAGE = 'bob-manager-bob-sandbox:latest'`, but
+  `docker compose` derives image prefixes from the project name —
+  which defaults to the clone directory. A clone into `boblabs/`
+  built `boblabs-bob-sandbox`, so the control plane asked Docker
+  for `bob-manager-bob-sandbox`, Docker tried to pull from a registry,
+  got 404, and Run failed silently with HTTP 500.
+
+  Fix: pin `name: bob-manager` at the top of `docker-compose.yml` so
+  the project prefix is stable regardless of clone directory.
 
 ### Changed
 

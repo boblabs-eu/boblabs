@@ -87,3 +87,27 @@ async def test_orchestrator_settings_default_is_null_after_init(db) -> None:
     assert val is None, (
         f"orchestrator_settings.orchestrator_model should be NULL on fresh install; got {val!r}"
     )
+
+
+@pytest.mark.asyncio
+async def test_settings_endpoint_serves_200_with_null_orchestrator_model(
+    anonymous_client, db
+) -> None:
+    """GET /api/v1/orchestrator/settings must return 200 (not 500) when
+    orchestrator_model is NULL — the post-0.12.3 state. 0.12.3 shipped
+    migration 0015 that nulled the column but left the Pydantic
+    response schema declaring it as a non-nullable `str`, which caused
+    `ResponseValidationError → 500`. 0.12.4: `str | None = None`."""
+    # Conftest already left orchestrator_model NULL (0015 effect). Force
+    # NULL again here to be robust against any later mutation in the
+    # session.
+    await db.execute(text("UPDATE orchestrator_settings SET orchestrator_model=NULL WHERE id=1"))
+    await db.commit()
+
+    res = await anonymous_client.get("/api/v1/orchestrator/settings")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["orchestrator_model"] is None, body
+    # Sanity: other fields still serialize correctly.
+    assert "orchestrator_provider" in body
+    assert "max_concurrent_tasks" in body

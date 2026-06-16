@@ -28,7 +28,7 @@ class OrchestratorSettings(Base):
     __tablename__ = "orchestrator_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    orchestrator_model: Mapped[str] = mapped_column(String(255), default="qwen2.5:72b")
+    orchestrator_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
     orchestrator_provider: Mapped[str] = mapped_column(String(50), default="ollama")
     orchestrator_server_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

@@ -1,6 +1,13 @@
 # Bob Manager — Control Plane Docker Compose
 # Usage: docker compose up -d
 
+# Pin the project name so image prefixes are stable regardless of clone
+# directory (boblabs/, bob-manager/, whatever). control-plane references
+# `bob-manager-bob-sandbox` by name; without this pin, a clone into a
+# differently-named directory builds `<dirname>-bob-sandbox` and the
+# sandbox launch 404's on `docker pull`.
+name: bob-manager
+
 services:
   # ── PostgreSQL Database ─────────────────────────
   bob-db:

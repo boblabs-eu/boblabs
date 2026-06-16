@@ -33,7 +33,7 @@ AgentBackendStr = Literal["native", "hermes"]
 
 
 class OrchestratorSettingsResponse(BaseModel):
-    orchestrator_model: str
+    orchestrator_model: str | None = None
     orchestrator_provider: str
     orchestrator_server_id: UUID | None = None
     max_concurrent_tasks: int

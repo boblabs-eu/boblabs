@@ -72,11 +72,30 @@ production. The single rule: **never skip step 2 of the upgrade flow.**
 
 Most recent first.
 
+### 0.12.3 → 0.12.4
+
+**Theme**: Fixes a 0.12.3 regression — the migration nulled
+`orchestrator_settings.orchestrator_model` but the API response
+schema still declared the field non-nullable, so `GET /settings`
+500'd and the Default Model section disappeared from the FE.
+
+- **Schema migrations**: none.
+- **Env vars**: no changes.
+- **Downtime**: ~10 s for the restart.
+- **Action**: `git pull && docker compose up -d --build`.
+
+The fix is two annotations:
+`OrchestratorSettingsResponse.orchestrator_model: str | None = None`
+and `OrchestratorSettings.orchestrator_model: Mapped[str | None]`
+(dropping the Python-side `default="qwen2.5:72b"` that would have
+re-introduced the phantom default whenever the singleton row was
+lazily created).
+
 ### 0.12.2 → 0.12.3
 
-**Theme**: Closes the last 0.12.x first-install trap. After 0.12.2
-healed the schema, Run on a lab still 422'd because `init.sql`
-hardcoded a default model nobody had loaded.
+**Theme**: Closes two more first-install traps — a phantom default
+model and a hardcoded sandbox image name that broke any clone not
+in a directory called `bob-manager`.
 
 - **Schema migration**: 1 new revision `0015_orchestrator_model_default`.
   Drops the bogus column default and nulls out singleton rows still
