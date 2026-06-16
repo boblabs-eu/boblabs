@@ -5,6 +5,59 @@ All notable changes to Bob Labs are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.3] — 2026-06-16 — Fix phantom-default-model trap + dispatcher auto-fallback
+
+Patch release closing the last 0.12.x first-install trap. After
+0.12.2 healed the schema, fresh installers hit a second wall:
+clicking **Run** on a lab returned `422 — Lab has no model configured
+and no default model set`, even though their `Models` tab showed
+several available models and the FE dropdown displayed one of them
+selected.
+
+### Fixed
+
+- **Phantom default model in `orchestrator_settings`.** `init.sql`
+  declared `orchestrator_model VARCHAR(255) DEFAULT 'qwen2.5:72b'`,
+  and the singleton-row INSERT didn't override it — so every fresh
+  install began with the default set to a 72B model nobody had
+  loaded. The FE `<select>` then rendered the first valid option
+  visually (browser fallback for off-list `value` props), which
+  looked correct but didn't actually persist anything until the
+  user explicitly re-clicked the dropdown. Lab dispatcher read the
+  literal stale string from the DB and 422'd.
+
+  Migration `0015_orchestrator_model_default` drops the column
+  default and nulls out the singleton row's value if it still
+  equals `'qwen2.5:72b'`. `init.sql` updated to declare the column
+  with no default.
+
+- **Dispatcher refused to run when default was stale.** Both
+  `/labs/{id}/run` and `/library-agents/.../inject` raised 422 if
+  the `orchestrator_settings.orchestrator_model` string didn't
+  match any registered `ai_models.model_identifier`. Now they fall
+  back to the first registered model with a `WARNING` log,
+  persisting the new resolution back to the lab so the user isn't
+  blocked. Only 422 if no models are registered at all (which
+  remains a true error).
+
+### Changed
+
+- **FE dropdown** (`OrchestratorPage` default-model selector) now
+  renders `— pick a model —` placeholder when the saved
+  `orchestrator_model` is empty OR doesn't match any currently-
+  available model. A hint line surfaces the actual saved value when
+  it's stale (`Saved default 'X' is not currently available — pick
+  one above`), so users see the truth instead of a misleadingly-
+  selected first option.
+
+### Upgrade notes
+
+`docker compose up -d --build` after `git pull`. The new migration
+runs automatically on the next bob-api startup. Existing installs
+where you've already picked a working default keep that value; only
+installs still on the phantom `'qwen2.5:72b'` get nulled (and the
+dispatcher auto-falls-back on the next Run).
+
 ## [0.12.2] — 2026-06-16 — Fix fresh-install schema drift (Alembic stamp head bug)
 
 Critical patch. **0.12.1 still left fresh installs broken** because the

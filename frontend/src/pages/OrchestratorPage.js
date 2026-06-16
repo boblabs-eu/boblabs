@@ -881,15 +881,22 @@ export default function OrchestratorPage() {
                 <div className="orch-section-title">Default Model</div>
                 <select
                   className="orch-select orch-default-model-select"
-                  value={settings.orchestrator_model || ''}
+                  value={
+                    settings.orchestrator_model && allModelNames.includes(settings.orchestrator_model)
+                      ? settings.orchestrator_model
+                      : ''
+                  }
                   onChange={e => handleUpdateSettings('orchestrator_model', e.target.value)}
                 >
+                  <option value="">— pick a model —</option>
                   {allModelNames.map(n => (
                     <option key={n} value={n}>{n}{n === settings.orchestrator_model ? ' ★' : ''}</option>
                   ))}
                 </select>
                 <div className="orch-default-model-hint">
-                  Used when no model is selected per-message
+                  {settings.orchestrator_model && !allModelNames.includes(settings.orchestrator_model)
+                    ? `Saved default '${settings.orchestrator_model}' is not currently available — pick one above`
+                    : 'Used when no model is selected per-message'}
                 </div>
               </div>
             )}

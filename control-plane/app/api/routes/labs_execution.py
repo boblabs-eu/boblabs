@@ -5,6 +5,7 @@ ACL. Admins bypass via ``check_permission``. Mirrors the pattern in
 ``labs.py``.
 """
 
+import logging
 import shutil
 from uuid import UUID
 
@@ -22,6 +23,7 @@ from app.schemas.orchestrator import LabInject
 from app.services.authorization import Permission, check_permission
 from app.services.lab_runner import get_runner, is_runner_reserved, reserve_runner
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["labs"])
 
 
@@ -47,7 +49,9 @@ async def run_lab(
         raise HTTPException(409, "Lab runner already active")
 
     if not lab.orchestrator_model_id:
-        # Fall back to the system-wide default model from OrchestratorSettings
+        # Fall back to the system-wide default model from OrchestratorSettings,
+        # or to the first registered model if the configured default is
+        # missing or stale (e.g. 0.12.0-0.12.2 init.sql hardcoded 'qwen2.5:72b').
         from app.repositories.orchestrator_repo import (
             AIModelRepository,
             OrchestratorSettingsRepository,
@@ -55,18 +59,30 @@ async def run_lab(
 
         settings_repo = OrchestratorSettingsRepository(db)
         settings = await settings_repo.get()
-        if not settings or not settings.orchestrator_model:
-            raise HTTPException(422, "Lab has no model configured and no default model set")
+        configured_ident = (settings.orchestrator_model if settings else "") or ""
         model_repo = AIModelRepository(db)
         all_models = await model_repo.get_all()
         resolved_id = None
-        for m in all_models:
-            if m.model_identifier == settings.orchestrator_model:
-                resolved_id = m.id
-                break
+        if configured_ident:
+            for m in all_models:
+                if m.model_identifier == configured_ident:
+                    resolved_id = m.id
+                    break
+        if not resolved_id and all_models:
+            resolved_id = all_models[0].id
+            logger.warning(
+                "Orchestrator default '%s' does not match any registered model; "
+                "falling back to '%s' for lab %s",
+                configured_ident or "(unset)",
+                all_models[0].model_identifier,
+                lab_id,
+            )
         if not resolved_id:
             raise HTTPException(
-                422, f"Default model '{settings.orchestrator_model}' not found in AI models"
+                422,
+                "No models are registered with the orchestrator. Connect an "
+                "agent so its Ollama (or other provider) models can sync, "
+                "then try again.",
             )
         lab.orchestrator_model_id = resolved_id
         await repo.update(lab_id, orchestrator_model_id=resolved_id)
@@ -293,19 +309,33 @@ async def inject_message(
     if needs_orch_model or agents_missing_model:
         settings_row = await OrchestratorSettingsRepository(db).get()
         default_ident = (settings_row.orchestrator_model if settings_row else "") or ""
+        all_models = await AIModelRepository(db).get_all()
         default_model = None
         if default_ident:
-            for m in await AIModelRepository(db).get_all():
+            for m in all_models:
                 if m.model_identifier == default_ident:
                     default_model = m
                     break
+        # Fallback: if the configured default doesn't match a registered
+        # model (stale setting from 0.12.0–0.12.2's hardcoded init.sql
+        # default, or operator deleted that model), pick the first model
+        # available. Better than refusing to run.
+        if default_model is None and all_models:
+            default_model = all_models[0]
+            logger.warning(
+                "Orchestrator default '%s' does not match any registered model; "
+                "falling back to '%s' for lab %s",
+                default_ident or "(unset)",
+                default_model.model_identifier,
+                lab_id,
+            )
         if default_model is None:
             await db.commit()
             raise HTTPException(
                 422,
-                "Lab or its agent has no model configured and no default "
-                "orchestrator model is set — open Orchestrator settings and "
-                "pick a model before injecting.",
+                "No models are registered with the orchestrator. Connect an "
+                "agent so its Ollama (or other provider) models can sync, "
+                "then try again.",
             )
         if needs_orch_model:
             await repo.update(lab_id, orchestrator_model_id=default_model.id)

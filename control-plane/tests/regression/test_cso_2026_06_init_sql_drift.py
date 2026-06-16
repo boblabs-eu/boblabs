@@ -81,4 +81,4 @@ async def test_fresh_install_schema_has_all_migrated_columns(db) -> None:
     assert mcp_exists, "mcp_servers table missing — migration 0012 did not run"
 
     head = (await db.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-    assert head == "0014_secret_at_rest", f"alembic not at head: {head}"
+    assert head == "0015_orchestrator_model_default", f"alembic not at head: {head}"

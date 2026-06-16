@@ -565,7 +565,7 @@ CREATE TABLE public.module_tasks (
 
 CREATE TABLE public.orchestrator_settings (
     id integer DEFAULT 1 NOT NULL,
-    orchestrator_model character varying(255) DEFAULT 'qwen2.5:72b'::character varying,
+    orchestrator_model character varying(255),
     orchestrator_provider character varying(50) DEFAULT 'ollama'::character varying,
     orchestrator_server_id uuid,
     max_concurrent_tasks integer DEFAULT 4,

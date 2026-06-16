@@ -3,11 +3,14 @@
 Standalone reusable agent definitions. Mounted at /api/v1/library-agents.
 """
 
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import and_, func, or_, select, text
+
+logger = logging.getLogger(__name__)
 
 from app.api.dependencies import DbSession, get_current_user
 from app.database import async_session
@@ -366,17 +369,35 @@ async def inject_agent_instance(
         )
 
         settings = await OrchestratorSettingsRepository(db).get()
-        if not settings or not settings.orchestrator_model:
+        configured_ident = (settings.orchestrator_model if settings else "") or ""
+        all_models = await AIModelRepository(db).get_all()
+        resolved = None
+        if configured_ident:
+            for m in all_models:
+                if m.model_identifier == configured_ident:
+                    resolved = m
+                    break
+        # Fallback: if the configured default doesn't match a registered
+        # model (stale setting from 0.12.0-0.12.2 init.sql hardcoded
+        # default), use the first available model.
+        if resolved is None and all_models:
+            resolved = all_models[0]
+            logger.warning(
+                "Orchestrator default '%s' does not match any registered model; "
+                "falling back to '%s' for agent-inject (lab %s)",
+                configured_ident or "(unset)",
+                resolved.model_identifier,
+                lab_id,
+            )
+        if resolved is None:
             await db.commit()
             raise HTTPException(
                 422,
-                "Agent has no model configured and no default model set — "
-                "open the Agent tab and pick a model before injecting.",
+                "No models are registered with the orchestrator. Connect an "
+                "agent so its Ollama (or other provider) models can sync, "
+                "then try again.",
             )
-        for m in await AIModelRepository(db).get_all():
-            if m.model_identifier == settings.orchestrator_model:
-                await repo.update(lab_id, orchestrator_model_id=m.id)
-                break
+        await repo.update(lab_id, orchestrator_model_id=resolved.id)
 
     # Normalize terminal states back to 'created' so the loop starts cleanly.
     if lab.status in ("completed", "failed"):

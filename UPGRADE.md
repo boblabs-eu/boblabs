@@ -72,6 +72,45 @@ production. The single rule: **never skip step 2 of the upgrade flow.**
 
 Most recent first.
 
+### 0.12.2 → 0.12.3
+
+**Theme**: Closes the last 0.12.x first-install trap. After 0.12.2
+healed the schema, Run on a lab still 422'd because `init.sql`
+hardcoded a default model nobody had loaded.
+
+- **Schema migration**: 1 new revision `0015_orchestrator_model_default`.
+  Drops the bogus column default and nulls out singleton rows still
+  carrying `'qwen2.5:72b'`. Additive + idempotent. Runs automatically.
+- **Env vars**: no changes.
+- **Downtime**: ~10 s for the migration + restart.
+- **Action required**: just `git pull && docker compose up -d --build`.
+
+#### What was broken
+
+`control-plane/app/migrations/init.sql` declared
+`orchestrator_settings.orchestrator_model VARCHAR(255) DEFAULT 'qwen2.5:72b'`.
+The singleton INSERT didn't override, so every fresh install began
+with the default set to a 72B model nobody had loaded. The FE
+`<select>` rendered the first valid option visually but didn't
+actually persist anything until the user explicitly clicked the
+dropdown again. Lab dispatcher read the literal `'qwen2.5:72b'`
+from the DB → no matching model → 422 with "no default model set".
+
+#### What 0.12.3 changes
+
+- Migration `0015` clears the phantom default; new installs and
+  affected upgrades land with `orchestrator_model=NULL`.
+- Dispatcher (`/labs/{id}/run`, `/library-agents/.../inject`) falls
+  back to the first registered model with a `WARNING` log when the
+  configured default is missing or stale. Only 422's if no models
+  are registered at all.
+- FE dropdown shows `— pick a model —` when the saved default is
+  empty or off-list, with a hint surfacing the actual saved value.
+
+If you already manually picked a working default (e.g. `hermes3:8b`),
+your setting is preserved — the migration only nulls rows still on
+`'qwen2.5:72b'`.
+
 ### 0.12.1 → 0.12.2
 
 **Theme**: Critical fix — 0.12.1 left fresh installs still broken
