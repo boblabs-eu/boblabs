@@ -103,41 +103,43 @@ empty, no labs creatable.
 
 #### Recovery for already-installed 0.11.0 / 0.12.0 / 0.12.1 deployments
 
-The 0.12.2 startup hook only stamps **fresh** DBs (no
-`alembic_version` table). A broken-stamped DB needs manual recovery.
-
-**Option A — clean wipe (no real data yet):**
+**0.12.2 self-heals the broken-stamp state on startup.** Just pull
+and restart:
 
 ```bash
 cd /path/to/boblabs
-docker compose down -v          # -v removes the bob-db volume
 git pull
 docker compose up -d --build
+docker compose logs -f bob-api | grep -i alembic
 ```
 
-**Option B — keep data, re-stamp Alembic to 0001 and let it re-run:**
+If your DB was in the broken state, you'll see:
 
-```bash
-cd /path/to/boblabs
-docker compose down
-git pull
-docker compose up -d bob-db
-docker exec -i bob-db psql -U bob -d bob_manager -c \
-  "UPDATE alembic_version SET version_num='0001_baseline';"
-docker compose up -d bob-api
-docker compose logs -f bob-api  # watch for "Alembic: migrations applied"
+```
+[WARNING] Alembic: detected broken-stamp from 0.11.0-0.12.1
+          (alembic_version at head but schema missing migration 0005+);
+          re-stamping to 0001_baseline so catch-up migrations replay
+[INFO]    Running upgrade 0001_baseline -> 0002_blog_slug, …
+[INFO]    Running upgrade 0013_agent_backend -> 0014_secret_at_rest, …
+[INFO]    Alembic: migrations applied
 ```
 
-Every migration past 0001 is idempotent (uses `IF NOT EXISTS` /
-`DO $$` guards), so a re-run on a partially-broken DB is safe — no
-duplicate-key errors, no data loss.
-
-After recovery, verify the schema reached head:
+Every migration past 0001 is idempotent (`IF NOT EXISTS` / `DO $$`
+guards), so the replay on a partially-broken DB is safe — no
+data loss, no duplicate-key errors. Verify when done:
 
 ```bash
 docker exec bob-db psql -U bob -d bob_manager -c \
   "SELECT version_num FROM alembic_version;"
 # Expected: 0014_secret_at_rest
+```
+
+If you prefer to wipe and start fresh (no real data yet):
+
+```bash
+docker compose down -v          # -v removes the bob-db volume
+git pull
+docker compose up -d --build
 ```
 
 ### 0.12.0 → 0.12.1

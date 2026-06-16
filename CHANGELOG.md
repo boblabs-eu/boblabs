@@ -46,28 +46,28 @@ not from the approval gate.
      `mcp_servers`, …) exists, and `alembic_version` equals the
      latest revision id.
 
-### Upgrade notes for already-broken deployments
+### Self-heal for already-broken deployments
 
-If your `docker compose up` of 0.12.0 or 0.12.1 ever succeeded, your
-DB has `alembic_version = '0014_secret_at_rest'` (or similar head)
-**but is missing the columns from 0005-0014**. The 0.12.2 startup
-hook only stamps fresh DBs — it will NOT detect this broken-stamped
-state. Two recovery paths:
+0.12.2 also detects and auto-recovers the 0.11.0-0.12.1 broken-stamp
+state. On startup, if `alembic_version` claims head but
+`ai_providers.pending_approval` (added by migration 0005) is missing,
+the hook logs a WARNING and re-stamps to `0001_baseline` so the
+catch-up migrations replay. Operators on a broken 0.11.0/0.12.0/0.12.1
+deployment just need `git pull && docker compose up -d --build` —
+no manual psql required. Watch the logs for:
 
-- **Wipe + reinstall** (cleanest if you have no real data):
-  `docker compose down -v && git pull && docker compose up -d --build`
+```
+[WARNING] Alembic: detected broken-stamp from 0.11.0-0.12.1
+          (alembic_version at head but schema missing migration 0005+);
+          re-stamping to 0001_baseline so catch-up migrations replay
+[INFO]    Running upgrade 0001_baseline -> 0002_blog_slug, …
+[INFO]    Running upgrade 0013_agent_backend -> 0014_secret_at_rest, …
+[INFO]    Alembic: migrations applied
+```
 
-- **Keep data, manual re-stamp**:
-  ```bash
-  docker compose down
-  git pull
-  docker compose up -d bob-db
-  docker exec -i bob-db psql -U bob -d bob_manager -c \
-    "UPDATE alembic_version SET version_num='0001_baseline';"
-  docker compose up -d
-  ```
-  Alembic will then re-run 0002-0014. All are idempotent — no data
-  loss, no duplicate-key errors.
+The detection probe only fires once — after the catch-up replay,
+the column exists and the branch is dead until a future bug somehow
+re-introduces the broken-stamp state.
 
 ## [0.12.1] — 2026-06-16 — Fix the "no models in console" first-install trap
 

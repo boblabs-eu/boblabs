@@ -251,6 +251,24 @@ async def run_database_migrations():
             has_alembic = (
                 await db.execute(text("SELECT to_regclass('public.alembic_version') IS NOT NULL"))
             ).scalar()
+            # Self-heal the 0.11.0–0.12.1 broken-stamp state: alembic_version
+            # claims head, but `ai_providers.pending_approval` (migration 0005)
+            # is missing because init.sql drifted and the old code stamped
+            # head over an incomplete schema. Down-stamp to 0001_baseline so
+            # the upgrade below replays 0002-0014 on the partial schema.
+            # Every migration past 0001 is idempotent — replay is safe.
+            broken_stamp = False
+            if has_alembic:
+                has_pending_approval = (
+                    await db.execute(
+                        text(
+                            "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+                            "WHERE table_schema='public' AND table_name='ai_providers' "
+                            "AND column_name='pending_approval')"
+                        )
+                    )
+                ).scalar()
+                broken_stamp = not has_pending_approval
 
         ini_path = Path(__file__).resolve().parent.parent / "alembic.ini"
         if not ini_path.exists():
@@ -261,6 +279,13 @@ async def run_database_migrations():
 
         if not has_alembic:
             logger.info("Alembic: stamping DB to 0001_baseline (first run)")
+            await asyncio.to_thread(command.stamp, cfg, "0001_baseline")
+        elif broken_stamp:
+            logger.warning(
+                "Alembic: detected broken-stamp from 0.11.0-0.12.1 "
+                "(alembic_version at head but schema missing migration 0005+); "
+                "re-stamping to 0001_baseline so catch-up migrations replay"
+            )
             await asyncio.to_thread(command.stamp, cfg, "0001_baseline")
 
         logger.info("Alembic: upgrading to head")

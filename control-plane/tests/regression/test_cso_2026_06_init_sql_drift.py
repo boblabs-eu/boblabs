@@ -36,6 +36,23 @@ def test_main_py_stamps_baseline_not_head() -> None:
     )
 
 
+def test_main_py_self_heals_broken_stamp() -> None:
+    """0.11.0–0.12.1 deployments shipped with alembic_version=head but the
+    schema missing migration 0005+. 0.12.2 must detect this state and
+    re-stamp to 0001_baseline so the catch-up migrations replay."""
+    main_py = Path(__file__).resolve().parents[2] / "app" / "main.py"
+    src = main_py.read_text()
+    # The detection probe must look for a column from 0005+ (the earliest
+    # missing one in the bug report).
+    assert "pending_approval" in src, (
+        "self-heal must probe for ai_providers.pending_approval (migration 0005) "
+        "to detect the 0.11.0-0.12.1 broken-stamp state"
+    )
+    assert "broken_stamp" in src or "broken-stamp" in src, (
+        "self-heal branch must be present — see CHANGELOG 0.12.2 recovery section"
+    )
+
+
 @pytest.mark.asyncio
 async def test_fresh_install_schema_has_all_migrated_columns(db) -> None:
     """Every column the 0.12.1 user-bug logs flagged as missing must exist
