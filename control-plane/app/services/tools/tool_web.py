@@ -208,13 +208,16 @@ async def _sandbox_post(
     """POST `payload` to a per-lab sandbox endpoint. Returns the JSON response.
 
     All browser tools route through the sandbox so headless Chromium runs in
-    the lab-isolated container, never inside the control plane.
+    the lab-isolated container, never inside the control plane. CSO #8 —
+    requests are HMAC-signed when ``SANDBOX_HMAC_SECRET`` is configured so
+    a compromised peer sandbox can't drive ours.
     """
+    from app.services.sandbox_client import signed_post
+
     url = await executor.get_sandbox_url()
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(f"{url}{endpoint}", json=payload)
-        resp.raise_for_status()
-        return resp.json()
+    resp = await signed_post(url, endpoint, payload, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
 
 
 async def browser_navigate(executor: ToolExecutor, args: dict) -> dict:

@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from app.services.sandbox_client import signed_post_json
+
 if TYPE_CHECKING:
     from app.services.tool_executor import ToolExecutor
 
@@ -39,17 +41,17 @@ async def python_exec(executor: ToolExecutor, args: dict) -> dict:
 
     try:
         sandbox_url = await executor.get_sandbox_url()
-        async with httpx.AsyncClient(timeout=executor.timeout_sec + 5) as client:
-            resp = await client.post(
-                f"{sandbox_url}/python_exec",
-                json={
-                    "lab_id": str(executor.lab_id),
-                    "code": code,
-                    "timeout_sec": executor.timeout_sec,
-                    "max_output_kb": executor.max_output_bytes // 1024,
-                },
-            )
-            return resp.json()
+        return await signed_post_json(
+            sandbox_url,
+            "/python_exec",
+            {
+                "lab_id": str(executor.lab_id),
+                "code": code,
+                "timeout_sec": executor.timeout_sec,
+                "max_output_kb": executor.max_output_bytes // 1024,
+            },
+            timeout=executor.timeout_sec + 5,
+        )
     except httpx.TimeoutException:
         return {
             "success": False,
@@ -67,17 +69,17 @@ async def shell_exec(executor: ToolExecutor, args: dict) -> dict:
 
     try:
         sandbox_url = await executor.get_sandbox_url()
-        async with httpx.AsyncClient(timeout=executor.timeout_sec + 5) as client:
-            resp = await client.post(
-                f"{sandbox_url}/shell_exec",
-                json={
-                    "lab_id": str(executor.lab_id),
-                    "command": command,
-                    "timeout_sec": executor.timeout_sec,
-                    "max_output_kb": executor.max_output_bytes // 1024,
-                },
-            )
-            return resp.json()
+        return await signed_post_json(
+            sandbox_url,
+            "/shell_exec",
+            {
+                "lab_id": str(executor.lab_id),
+                "command": command,
+                "timeout_sec": executor.timeout_sec,
+                "max_output_kb": executor.max_output_bytes // 1024,
+            },
+            timeout=executor.timeout_sec + 5,
+        )
     except httpx.TimeoutException:
         return {
             "success": False,

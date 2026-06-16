@@ -5,6 +5,7 @@ Sub-modules: labs_blueprint (import/export), labs_execution (lifecycle),
              labs_files (resources, output files, messages, memories).
 """
 
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -37,7 +38,24 @@ from app.services.lab_runner import get_runner
 
 router = APIRouter(prefix="/labs", tags=["labs"])
 
+logger = logging.getLogger(__name__)
+
 LAB_RESOURCES_ROOT = Path(os.environ.get("LAB_RESOURCES_PATH", "/data/lab_resources"))
+
+
+async def _stop_hermes_for_agent(agent) -> None:
+    """Best-effort: stop a hermes instance's container (named volume kept) so a
+    deleted instance doesn't linger until the next startup sweep. Native agents
+    are skipped; docker errors never block the delete."""
+    if (getattr(agent, "backend", "native") or "native") != "hermes":
+        return
+    try:
+        from app.services.hermes.executor import hermes_container_key
+        from app.services.hermes.runtime import stop_hermes
+
+        await stop_hermes(hermes_container_key(agent))
+    except Exception:
+        logger.warning("Hermes container cleanup failed for agent %s", getattr(agent, "id", "?"))
 
 
 # ══════════════════════════════════════════════════
@@ -178,6 +196,9 @@ async def delete_lab(lab_id: UUID, db: DbSession, user: dict = Depends(get_curre
     runner = get_runner(lab_id)
     if runner:
         await runner.stop()
+    # Stop any per-instance Hermes containers (volumes kept) before the rows go.
+    for agent in await LabAgentRepository(db).get_by_lab(lab_id):
+        await _stop_hermes_for_agent(agent)
     # Destroy per-lab sandbox container
     from app.services.container_manager import destroy_sandbox
 
@@ -323,7 +344,11 @@ async def update_lab_agent(lab_id: UUID, agent_id: UUID, data: LabAgentUpdate, d
 
 @router.delete("/{lab_id}/agents/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_lab_agent(lab_id: UUID, agent_id: UUID, db: DbSession):
-    await LabAgentRepository(db).delete(agent_id)
+    repo = LabAgentRepository(db)
+    agent = await repo.get_by_id(agent_id)
+    if agent:
+        await _stop_hermes_for_agent(agent)
+    await repo.delete(agent_id)
 
 
 # ══════════════════════════════════════════════════

@@ -485,6 +485,21 @@ class LabDispatcher:
             tools=tools,
         )
 
+    async def is_claude_agent(self, agent: LabAgent) -> bool:
+        """True when the agent's brain is a full-capacity claude-agent:* model.
+
+        Such an agent runs Claude Code with its OWN tools + multi-turn inside the
+        claude-cli wrapper; the caller delegates the whole task and takes the final
+        text (no Bob Lab tool loop), exactly like the Hermes path.
+        """
+        if getattr(agent, "model_id", None) is None:
+            return False
+        try:
+            ident = await self._get_model_identifier(agent.model_id)
+        except Exception:
+            return False
+        return ident.startswith("claude-agent:")
+
     async def call_agent(
         self,
         agent: LabAgent,

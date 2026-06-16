@@ -13,12 +13,27 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     HOME=/root
 
-# Minimal system deps for Hermes' core tools (rg powers its file/search
-# tools; git for repo work; ffmpeg/node are intentionally omitted — the
-# corresponding tools degrade gracefully when their backend is missing).
+# System deps for Hermes' tools. rg powers file/search, git for repo work,
+# ffmpeg backs the audio/video/media tools, Node.js 22 powers JS tooling.
+#
+# Hermes' KEYLESS web access = the `browser` toolset (browser_navigate/snapshot/
+# click/…). Unlike `web_search`/`web_extract` (which need a paid Exa/Tavily key),
+# the browser toolset needs NO API key — just the `agent-browser` CLI (npm,
+# global) driving a local Chromium. Both are installed here so the browser tools
+# light up out of the box. AGENT_BROWSER_EXECUTABLE_PATH (set below) points
+# agent-browser at the system Chromium so it never downloads its own build.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git ripgrep curl ca-certificates \
+    && apt-get install -y --no-install-recommends \
+        git ripgrep curl ca-certificates gnupg xz-utils ffmpeg \
+        chromium fonts-liberation \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g agent-browser \
+    && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*
+
+# Keyless local browser: agent-browser drives this system Chromium build.
+ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 
 # The real Hermes (library entrypoint: run_agent.AIAgent). The [anthropic]
 # extra enables Hermes' native anthropic api_mode for Claude models picked in

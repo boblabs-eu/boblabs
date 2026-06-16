@@ -259,8 +259,14 @@ async def _execute_agent_cron(
             # skipped and Hermes' reply text can never trigger Bob Lab tools.
             from app.services.hermes import is_hermes_agent
 
+            dispatcher = LabDispatcher(db)
             hermes_backed = is_hermes_agent(agent)
-            if hermes_backed:
+            claude_agent_backed = (not hermes_backed) and await dispatcher.is_claude_agent(agent)
+            if hermes_backed or claude_agent_backed:
+                # Hermes runs its own loop+tools; claude-agent:* runs Claude Code's
+                # own loop+tools in the wrapper. Either way keep agent_tools empty so
+                # the Bob Lab tool loop is skipped and the reply text isn't parsed
+                # for <tool_call> blocks.
                 agent_tools = []
                 native_tools = None
             else:
@@ -294,13 +300,14 @@ async def _execute_agent_cron(
                 except Exception as e:
                     logger.warning("CRON exec: sandbox setup failed for lab %s: %s", lab.id, e)
 
-            # ── Call agent LLM (or delegate the turn to Hermes) ──
-            dispatcher = LabDispatcher(db)
+            # ── Call agent LLM (or delegate the turn to Hermes / Claude Code) ──
             if hermes_backed:
                 from app.services.hermes import execute_hermes_turn
 
                 result = await execute_hermes_turn(db, agent, instruction)
             else:
+                # claude-agent:* passes tools=None (native_tools already None) and
+                # uses Claude Code's OWN tools inside the wrapper.
                 result = await dispatcher.call_agent(agent, msgs, lab_id=lab.id, tools=native_tools)
 
             # ── Tool loop ──

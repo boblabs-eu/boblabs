@@ -25,19 +25,20 @@ router = APIRouter(prefix="/library-agents", tags=["hermes"])
 
 
 async def _resolve_agent(db, agent_id: UUID):
-    """Accept a library-agent id OR a (standalone) lab-agent id.
+    """Accept a lab-agent (instance) id — or a library-agent id for back-compat.
 
-    The UI's HermesPanel passes `agent.library_agent_id || agent.id`, so for an
-    ad-hoc lab agent (created directly in a lab, no template) the id is a
-    lab_agents row. Resolve both and return (agent, container_key) — the key
-    matches what the executor uses (`hermes_container_key`).
+    Containers are now keyed per *instance* (the lab_agents row), so the UI's
+    HermesPanel passes the instance's own `agent.id`. Resolve the LabAgent
+    first and key it via `hermes_container_key` (the instance id). A
+    library-agent id still resolves (templates have no container of their own,
+    but callers may pass one) — keyed by its own id for symmetry.
     """
-    agent = await LibraryAgentRepository(db).get_by_id(agent_id)
-    if agent:
-        return agent, agent.id
     lab_agent = await LabAgentRepository(db).get_by_id(agent_id)
     if lab_agent:
         return lab_agent, hermes_container_key(lab_agent)
+    agent = await LibraryAgentRepository(db).get_by_id(agent_id)
+    if agent:
+        return agent, agent.id
     raise HTTPException(404, "Agent not found")
 
 

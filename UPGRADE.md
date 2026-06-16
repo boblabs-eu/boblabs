@@ -72,6 +72,45 @@ production. The single rule: **never skip step 2 of the upgrade flow.**
 
 Most recent first.
 
+### 0.12.0 → 0.12.1
+
+**Theme**: Fixes the "no models in console" first-install trap by
+flipping the default for auto-discovered providers from
+pending-on-sight to auto-approved.
+
+- **Schema migrations**: none.
+- **Env vars (new, optional)**: `BOB_REQUIRE_PROVIDER_APPROVAL`
+  (default `false`).
+- **Downtime**: ~10 s for the restart.
+
+#### ⚠️ Default-behavior change (security-relevant)
+
+Before 0.12.1, every auto-discovered AI provider (Ollama, Claude CLI,
+ComfyUI, …) landed `pending_approval=True, is_active=False`. The
+dispatcher refused to route until an admin approved it. The gate had
+**no UI surface and no docs**, so first-time installers saw an empty
+model list with no hint.
+
+In 0.12.1 the **default flips to auto-approve**. New providers are
+immediately dispatchable.
+
+**If you relied on the strict gate** (the cluster I behavior from
+0.10.0+), add to your control-plane `.env` before restarting:
+
+```
+BOB_REQUIRE_PROVIDER_APPROVAL=true
+```
+
+Then restart `bob-api`. Newly-discovered providers will once again
+land as pending. The orchestrator console now renders pending rows
+grayed-out with an inline **Approve** button (one click), and the
+server logs a clear `WARNING` with the curl command for headless
+approval.
+
+**Threat model reminder**: the strict gate mitigates a leaked
+`AGENT_SECRET` being used to register a malicious `base_url`. If
+your agent network is fully trusted, the default is appropriate.
+
 ### 0.11.1 → 0.12.0
 
 **Theme**: Two new top-level capabilities — real Hermes agents (Nous

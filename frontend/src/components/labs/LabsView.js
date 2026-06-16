@@ -3897,7 +3897,7 @@ export function AgentEditForm({
         <option value="hermes">Hermes (external agent)</option>
       </select>
       {(form.backend || 'native') === 'hermes' && (
-        <HermesPanel agentKey={agent.library_agent_id || agent.id} />
+        <HermesPanel agentKey={agent.id} />
       )}
       <label className="lab-form-label">
         {(form.backend || 'native') === 'hermes' ? 'Model Hermes uses' : 'Model'}
@@ -4217,7 +4217,11 @@ function LibraryAgentEditForm({ agent, allModels, toolSets, promptTemplates = []
         <option value="hermes">Hermes (external agent)</option>
       </select>
       {(form.backend || 'native') === 'hermes' && (
-        <HermesPanel agentKey={agent.id} />
+        <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', margin: '4px 0 8px', lineHeight: 1.4 }}>
+          Each instance of this agent runs its own isolated Hermes container —
+          memory, skills and SOUL are not shared between instances. Activate or
+          deactivate from a specific instance.
+        </div>
       )}
       <label className="lab-form-label">
         {(form.backend || 'native') === 'hermes' ? 'Model Hermes uses' : 'Model'}

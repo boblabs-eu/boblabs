@@ -157,6 +157,13 @@ In the web UI, open **Hardware → Servers**. Within ~30 seconds you should see 
 
 In **Models → Feed**, every running model on every host shows up with current load. The dispatcher will start routing requests to it automatically.
 
+> **Don't see your models?** Since 0.12.1 auto-discovered providers
+> are approved on sight, so this should "just work". If you (or
+> your ops team) set `BOB_REQUIRE_PROVIDER_APPROVAL=true` on the
+> control plane, new providers land as **pending** until an admin
+> clicks the inline **Approve** button in the orchestrator console.
+> See [CONFIGURATION.md](?doc=CONFIGURATION#provider-auto-discovery-since-0121).
+
 ---
 
 ## What's next?

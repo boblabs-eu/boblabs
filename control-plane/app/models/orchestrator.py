@@ -19,6 +19,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.services.crypto import EncryptedString
 
 # ── Orchestrator Settings (singleton) ─────────────
 
@@ -52,7 +53,11 @@ class AIProvider(Base):
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     provider_type: Mapped[str] = mapped_column(String(50), nullable=False)
     base_url: Mapped[str] = mapped_column(String(500), nullable=False)
-    api_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Fernet-encrypted at rest under KEY_ENCRYPTION_SECRET (CSO #4).
+    # Column sized for the ciphertext form (~1.3x plaintext + 100B
+    # overhead); legacy plaintext rows pass through until re-encrypted
+    # by ``app.scripts.encrypt_secrets``.
+    api_key: Mapped[str | None] = mapped_column(EncryptedString(2000), nullable=True)
     server_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("servers.id", ondelete="SET NULL"),
@@ -125,7 +130,8 @@ class McpServer(Base):
     # HTTP/SSE transports use url (+ headers/auth_token); stdio uses command/args/env.
     url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     headers: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
-    auth_token: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    # Fernet-encrypted at rest under KEY_ENCRYPTION_SECRET (CSO #4).
+    auth_token: Mapped[str | None] = mapped_column(EncryptedString(4000), nullable=True)
     command: Mapped[str | None] = mapped_column(String(500), nullable=True)
     args: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
     env: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")

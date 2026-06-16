@@ -334,6 +334,103 @@ per-process / cross-user metrics from the container variant become
 unavailable — expected trade-off for not running the metrics daemon
 as root.
 
+### CSO #4 — Secret-at-rest for LLM/MCP credential columns
+
+`ai_providers.api_key` and `mcp_servers.auth_token` are now Fernet-
+encrypted at rest under `KEY_ENCRYPTION_SECRET`. A DB backup, replica
+stream, or read-only audit dump no longer leaks the operator's LLM
+provider wallet.
+
+The column type is bidirectional during rollout — legacy plaintext
+rows are detected by the absence of the Fernet `gAAAAA` prefix and
+read through as-is until the operator runs the one-shot script:
+
+```bash
+# 1. Add KEY_ENCRYPTION_SECRET=<any non-empty string> to the bob-api env
+#    (docker-compose / .env / your secrets manager).
+# 2. Redeploy bob-api so the new env is picked up.
+docker compose up -d bob-api
+
+# 3. One-shot rewrite of every plaintext row to its Fernet form.
+docker compose exec bob-api python -m app.scripts.encrypt_secrets
+
+# Sample expected output:
+#   ai_providers.api_key: 3 rewritten, 1 skipped
+#   mcp_servers.auth_token: 0 rewritten, 0 skipped
+#   All target rows encrypted on disk.
+```
+
+Once the script reports success, **rotate the secret out of any
+plaintext config** — the deployment now strictly needs that exact
+secret value to start, so losing it bricks the LLM dispatcher.
+
+Rotation (changing `KEY_ENCRYPTION_SECRET`) is not yet supported —
+do not change it after the first rewrite without a dedicated re-
+encrypt-under-new-key path.
+
+### CSO #5 — Default JWT lifetime dropped to 60 minutes
+
+`JWT_EXPIRE_MINUTES` default changed from 1440 (24h) to 60 (1h) to
+shrink the impact window of a leaked token. Operators who want
+the legacy 24h window can set the env var explicitly. A separate
+follow-up will add refresh-token rotation so the shorter access-
+token lifetime doesn't bite the UX.
+
+### CSO #8 — Per-sandbox HMAC + lab-id binding
+
+All per-lab sandbox containers used to share `bob-manager_bob-network`
+with no authentication; an attacker who achieved RCE inside any
+sandbox could hit any other sandbox at `http://bob-lab-<other_uuid>:9000`
+and execute code in its workspace. Two locks now apply:
+
+1. **HMAC-SHA256** signatures on every control-plane → sandbox
+   request, under shared `SANDBOX_HMAC_SECRET`. Signature window
+   is 60 seconds; replay outside it is rejected.
+2. **Per-container lab-id binding** — each sandbox now starts with
+   `SANDBOX_LAB_ID=<lab_id>` in its env (passed by
+   [container_manager.py](../control-plane/app/services/container_manager.py))
+   and rejects any request whose body `lab_id` doesn't match.
+
+To roll out: set `SANDBOX_HMAC_SECRET=<random 32+ char string>` in
+the bob-api env, redeploy bob-api, and let lab runs spin up new
+sandboxes naturally (they'll inherit the secret). Existing in-flight
+sandboxes from before the redeploy stay in legacy unsigned mode
+until they're recycled; `docker compose down sandbox && docker
+compose up -d` (or `make smoke`-like) recycles them all immediately.
+
+Empty `SANDBOX_HMAC_SECRET` keeps the legacy unsigned behavior so
+the rollout doesn't require a flag-day.
+
+## Troubleshooting
+
+### Models not showing in the orchestrator console
+
+The agent connects, the server appears in the dashboard, the agent's
+logs show `httpx HTTP Request: GET http://localhost:11434/api/tags
+200 OK` (so Ollama is reachable + has models) — but the orchestrator
+console shows no models.
+
+Cause: the control plane is running with
+`BOB_REQUIRE_PROVIDER_APPROVAL=true`, so auto-discovered providers
+land as `pending_approval=True, is_active=False` and the dispatcher
+refuses to route to them.
+
+Fix (one of):
+
+1. Open the orchestrator console — pending providers render
+   grayed-out with an inline **Approve** button. Click it.
+2. Approve via the API:
+   ```bash
+   curl -X POST -H 'Authorization: Bearer <admin-token>' \
+     https://<control-plane>/api/v1/orchestrator/providers/<id>/approve
+   ```
+3. If you want auto-approval as the default (the standard behavior
+   since 0.12.1), unset `BOB_REQUIRE_PROVIDER_APPROVAL` (or set it
+   to `false`) in the control-plane env and restart `bob-api`.
+
+See [CONFIGURATION.md](CONFIGURATION.md#provider-auto-discovery-since-0121)
+for the security trade-off behind the env var.
+
 ## Related Documents
 
 - [GPU_SERVICES.md](GPU_SERVICES.md) — GPU pipeline services

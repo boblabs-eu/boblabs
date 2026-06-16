@@ -1080,6 +1080,22 @@ class LabRunner:
                 if is_hermes_agent(agent):
                     agent_tools = []
                     result = await execute_hermes_turn(db, agent, task_item.instruction)
+                elif await dispatcher.is_claude_agent(agent):
+                    # ── Full-capacity claude-agent:* backend: Claude Code runs
+                    # its OWN tools + loop inside the wrapper and returns the final
+                    # text. Like Hermes, agent_tools MUST stay empty — it skips the
+                    # Bob Lab tool loop below and prevents any <tool_call> text in
+                    # the reply from triggering Bob Lab tools.
+                    agent_tools = []
+                    msgs = self._build_agent_messages(
+                        agent,
+                        task_item.instruction,
+                        lab,
+                        memories=agent_memories,
+                        resources=lab_resources,
+                        resolved_tools=[],
+                    )
+                    result = await dispatcher.call_agent(agent, msgs, lab_id=lab.id, tools=None)
                 else:
                     # Build native tool schema for hybrid tool calling
                     agent_tools = await self._resolve_tools(

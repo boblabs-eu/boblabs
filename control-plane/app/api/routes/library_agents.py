@@ -186,6 +186,17 @@ async def delete_agent_instance(lab_id: UUID, db: DbSession):
             await runner.stop()
         except Exception:
             pass
+    # Stop any per-instance Hermes container (named volume kept) so the
+    # deleted instance doesn't linger until the next startup sweep.
+    try:
+        from app.services.hermes.executor import hermes_container_key
+        from app.services.hermes.runtime import stop_hermes
+
+        for agent in await LabAgentRepository(db).get_by_lab(lab_id):
+            if (getattr(agent, "backend", "native") or "native") == "hermes":
+                await stop_hermes(hermes_container_key(agent))
+    except Exception:
+        pass
     await repo.delete(lab_id)
     await db.commit()
 

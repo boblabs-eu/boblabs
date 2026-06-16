@@ -1,0 +1,22 @@
+services:
+  bob-test-db:
+    image: postgres:16-alpine
+    container_name: bob-test-db
+    environment:
+      POSTGRES_USER: bobtest
+      POSTGRES_PASSWORD: bobtest
+      POSTGRES_DB: bob_test
+    ports:
+      - "127.0.0.1:5433:5432"
+    # init.sql creates the baseline schema (matches alembic 0001_baseline).
+    # The test runner then `alembic stamp 0001_baseline` + `upgrade head`
+    # to apply 0002+ on top.
+    volumes:
+      - ./control-plane/app/migrations/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bobtest -d bob_test"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+    tmpfs:
+      - /var/lib/postgresql/data

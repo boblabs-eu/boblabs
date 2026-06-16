@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from app.services.sandbox_client import signed_post_json
+
 if TYPE_CHECKING:
     from app.services.tool_executor import ToolExecutor
 
@@ -196,20 +198,18 @@ async def _youtube_download_audio(executor: ToolExecutor, args: dict) -> dict:
 
     try:
         sandbox_url = await executor.get_sandbox_url()
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=10.0, read=330.0, write=10.0, pool=10.0)
-        ) as client:
-            resp = await client.post(
-                f"{sandbox_url}/youtube_download",
-                json={
-                    "lab_id": str(executor.lab_id),
-                    "url": url,
-                    "audio_format": fmt,
-                    "timeout_sec": min(executor.timeout_sec, 300),
-                    "max_output_kb": executor.max_output_bytes // 1024,
-                },
-            )
-            result = resp.json()
+        result = await signed_post_json(
+            sandbox_url,
+            "/youtube_download",
+            {
+                "lab_id": str(executor.lab_id),
+                "url": url,
+                "audio_format": fmt,
+                "timeout_sec": min(executor.timeout_sec, 300),
+                "max_output_kb": executor.max_output_bytes // 1024,
+            },
+            timeout=330.0,
+        )
     except httpx.TimeoutException:
         return {"success": False, "output": "YouTube download timed out."}
     except Exception as e:
@@ -253,18 +253,16 @@ async def _youtube_list_channel(executor: ToolExecutor, args: dict) -> dict:
 
     try:
         sandbox_url = await executor.get_sandbox_url()
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=10.0, read=180.0, write=10.0, pool=10.0)
-        ) as client:
-            resp = await client.post(
-                f"{sandbox_url}/youtube_channel_list",
-                json={
-                    "lab_id": str(executor.lab_id),
-                    "channel_url": channel_url,
-                    "max_videos": max_videos,
-                },
-            )
-            result = resp.json()
+        result = await signed_post_json(
+            sandbox_url,
+            "/youtube_channel_list",
+            {
+                "lab_id": str(executor.lab_id),
+                "channel_url": channel_url,
+                "max_videos": max_videos,
+            },
+            timeout=180.0,
+        )
     except httpx.TimeoutException:
         return {"success": False, "output": "YouTube channel listing timed out."}
     except Exception as e:

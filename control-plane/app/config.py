@@ -15,7 +15,22 @@ class Settings(BaseSettings):
     agent_secret: str = "change-this-to-a-random-secret-token"
     jwt_secret: str = "change-this-jwt-secret-key"
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 1440
+    jwt_expire_minutes: int = 60
+    # Encryption-at-rest key for sensitive DB columns (LLM provider
+    # api_keys, MCP auth tokens). Empty = encryption disabled and rows
+    # stay plaintext (compat mode). Set to any non-empty string; a
+    # 32-byte Fernet key is derived deterministically. After enabling
+    # the var, run ``python -m app.scripts.encrypt_secrets`` once to
+    # re-encrypt existing plaintext rows in-place.
+    key_encryption_secret: str = ""
+
+    # HMAC secret for control-plane <-> sandbox container auth (CSO #8).
+    # Closes lateral movement between per-lab sandboxes that share the
+    # internal docker network. Empty = unsigned (legacy compat). Must be
+    # set to the SAME non-empty value on the sandbox-side env for the
+    # sandbox to enforce signatures (container_manager.py passes this
+    # secret through to each new sandbox container).
+    sandbox_hmac_secret: str = ""
 
     # Server
     host: str = "0.0.0.0"

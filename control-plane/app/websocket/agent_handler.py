@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app.config import settings
+from app.services.provider_policy import provider_requires_approval
 from app.websocket.hub import manager
 
 logger = logging.getLogger(__name__)
@@ -404,26 +405,39 @@ async def _sync_ollama_models(
                 await provider_repo.update(provider.id, name=provider_name)
 
         if provider is None:
-            # Cluster I — auto-created providers default to pending+inactive.
-            # The agent self-reports its host and any peer who learned
-            # AGENT_SECRET could publish an arbitrary base_url; require an
-            # admin to approve the row (sets pending_approval=False,
-            # is_active=True) via /api/v1/admin/providers/<id>/approve
-            # before the engine routes dispatch to it.
+            # Cluster I — auto-created providers can be gated behind admin
+            # approval to mitigate AGENT_SECRET-leak (an attacker who learned
+            # the secret could publish an arbitrary base_url). Since 0.12.1
+            # the default is auto-approve (the gate had no UI surface and
+            # broke every fresh OSS install). Set
+            # BOB_REQUIRE_PROVIDER_APPROVAL=true to restore the strict gate;
+            # admins then approve via the inline button in the orchestrator
+            # console or POST /api/v1/orchestrator/providers/<id>/approve.
+            gate = provider_requires_approval()
             provider = AIProvider(
                 name=provider_name,
                 provider_type="ollama",
                 base_url=f"http://{server.host}:11434",
                 server_id=server.id,
-                is_active=False,
-                pending_approval=True,
+                is_active=not gate,
+                pending_approval=gate,
             )
             provider = await provider_repo.create(provider)
-            logger.info(
-                "Auto-discovered Ollama provider (pending admin approval): %s -> %s",
-                provider_name,
-                server.host,
-            )
+            if gate:
+                logger.warning(
+                    "Auto-discovered Ollama provider PENDING approval: %s -> %s "
+                    "(approve in orchestrator console or POST /api/v1/orchestrator/providers/%s/approve)",
+                    provider_name,
+                    server.host,
+                    provider.id,
+                )
+            else:
+                logger.info(
+                    "Auto-discovered Ollama provider auto-approved: %s -> %s "
+                    "(set BOB_REQUIRE_PROVIDER_APPROVAL=true to require admin approval)",
+                    provider_name,
+                    server.host,
+                )
 
         # Upsert models
         model_repo = AIModelRepository(db)
@@ -485,21 +499,31 @@ async def _sync_riffusion_models(
         provider = await provider_repo.get_by_name(provider_name)
 
         if provider is None:
-            # Cluster I — pending+inactive on first sight.
+            # Cluster I — gated by BOB_REQUIRE_PROVIDER_APPROVAL (see ollama path above).
+            gate = provider_requires_approval()
             provider = AIProvider(
                 name=provider_name,
                 provider_type="riffusion",
                 base_url=f"http://{server.host}:3013",
                 server_id=server.id,
-                is_active=False,
-                pending_approval=True,
+                is_active=not gate,
+                pending_approval=gate,
             )
             provider = await provider_repo.create(provider)
-            logger.info(
-                "Auto-discovered Riffusion provider (pending admin approval): %s -> %s",
-                provider_name,
-                server.host,
-            )
+            if gate:
+                logger.warning(
+                    "Auto-discovered Riffusion provider PENDING approval: %s -> %s "
+                    "(approve in orchestrator console or POST /api/v1/orchestrator/providers/%s/approve)",
+                    provider_name,
+                    server.host,
+                    provider.id,
+                )
+            else:
+                logger.info(
+                    "Auto-discovered Riffusion provider auto-approved: %s -> %s",
+                    provider_name,
+                    server.host,
+                )
 
         # Upsert models
         model_repo = AIModelRepository(db)
@@ -548,23 +572,35 @@ async def _sync_gpu_service_models(
         provider = await provider_repo.get_by_name(provider_name)
 
         if provider is None:
-            # Cluster I — pending+inactive on first sight.
+            # Cluster I — gated by BOB_REQUIRE_PROVIDER_APPROVAL.
+            gate = provider_requires_approval()
             provider = AIProvider(
                 name=provider_name,
                 provider_type=provider_type,
                 base_url=f"http://{server.host}:{default_port}",
                 server_id=server.id,
-                is_active=False,
-                pending_approval=True,
+                is_active=not gate,
+                pending_approval=gate,
             )
             provider = await provider_repo.create(provider)
-            logger.info(
-                "Auto-discovered %s provider (pending admin approval): %s -> %s:%d",
-                provider_type,
-                provider_name,
-                server.host,
-                default_port,
-            )
+            if gate:
+                logger.warning(
+                    "Auto-discovered %s provider PENDING approval: %s -> %s:%d "
+                    "(approve in orchestrator console or POST /api/v1/orchestrator/providers/%s/approve)",
+                    provider_type,
+                    provider_name,
+                    server.host,
+                    default_port,
+                    provider.id,
+                )
+            else:
+                logger.info(
+                    "Auto-discovered %s provider auto-approved: %s -> %s:%d",
+                    provider_type,
+                    provider_name,
+                    server.host,
+                    default_port,
+                )
 
         model_repo = AIModelRepository(db)
         seen_ids = []
@@ -623,21 +659,31 @@ async def _sync_claude_cli_models(
         provider = await provider_repo.get_by_name(provider_name)
 
         if provider is None:
-            # Cluster I — pending+inactive on first sight.
+            # Cluster I — gated by BOB_REQUIRE_PROVIDER_APPROVAL.
+            gate = provider_requires_approval()
             provider = AIProvider(
                 name=provider_name,
                 provider_type="claude_cli",
                 base_url=base_url,
                 server_id=server.id,
-                is_active=False,
-                pending_approval=True,
+                is_active=not gate,
+                pending_approval=gate,
             )
             provider = await provider_repo.create(provider)
-            logger.info(
-                "Auto-discovered Claude CLI provider (pending admin approval): %s -> %s",
-                provider_name,
-                base_url,
-            )
+            if gate:
+                logger.warning(
+                    "Auto-discovered Claude CLI provider PENDING approval: %s -> %s "
+                    "(approve in orchestrator console or POST /api/v1/orchestrator/providers/%s/approve)",
+                    provider_name,
+                    base_url,
+                    provider.id,
+                )
+            else:
+                logger.info(
+                    "Auto-discovered Claude CLI provider auto-approved: %s -> %s",
+                    provider_name,
+                    base_url,
+                )
         else:
             # Cluster I — never flip is_active=True from the sync path;
             # base_url/server_id may move (port change, agent migration).
@@ -656,13 +702,21 @@ async def _sync_claude_cli_models(
             if not model_id:
                 continue
             # Friendly name for name-displaying contexts; dropdowns render
-            # the namespaced model_identifier itself.
-            friendly = f"{model_id.removeprefix('claude-cli:')} (Claude CLI)"
+            # the namespaced model_identifier itself. claude-agent:* are the
+            # FULL-capacity models (Claude Code's own tools + multi-turn);
+            # claude-cli:* stay text-only for labs.
+            is_agentic = model_id.startswith("claude-agent:")
+            bare = model_id.removeprefix("claude-cli:").removeprefix("claude-agent:")
+            friendly = f"{bare} (Claude CLI agent)" if is_agentic else f"{bare} (Claude CLI)"
             result = await model_repo.upsert(
                 provider_id=provider.id,
                 model_identifier=model_id,
                 name=friendly,
-                capabilities={"family": "claude", "format": "claude-cli"},
+                capabilities={
+                    "family": "claude",
+                    "format": "claude-agent" if is_agentic else "claude-cli",
+                    "agentic": is_agentic,
+                },
                 parameters={},
             )
             seen_ids.append(result.id)
@@ -730,21 +784,31 @@ async def _sync_vllm_containers(
 
             provider = await provider_repo.get_by_name(provider_name)
             if provider is None:
-                # Cluster I — pending+inactive on first sight.
+                # Cluster I — gated by BOB_REQUIRE_PROVIDER_APPROVAL.
+                gate = provider_requires_approval()
                 provider = AIProvider(
                     name=provider_name,
                     provider_type="huggingface",
                     base_url=base_url,
                     server_id=server.id,
-                    is_active=False,
-                    pending_approval=True,
+                    is_active=not gate,
+                    pending_approval=gate,
                 )
                 provider = await provider_repo.create(provider)
-                logger.info(
-                    "Auto-discovered HuggingFace provider (pending admin approval): %s -> %s",
-                    provider_name,
-                    base_url,
-                )
+                if gate:
+                    logger.warning(
+                        "Auto-discovered HuggingFace provider PENDING approval: %s -> %s "
+                        "(approve in orchestrator console or POST /api/v1/orchestrator/providers/%s/approve)",
+                        provider_name,
+                        base_url,
+                        provider.id,
+                    )
+                else:
+                    logger.info(
+                        "Auto-discovered HuggingFace provider auto-approved: %s -> %s",
+                        provider_name,
+                        base_url,
+                    )
             elif provider.base_url != base_url:
                 # Update base_url if port changed
                 await provider_repo.update(provider.id, base_url=base_url)
@@ -828,21 +892,31 @@ async def _sync_comfyui_from_probe(
             provider = result.scalar_one_or_none()
 
         if provider is None:
-            # Cluster I — pending+inactive on first sight.
+            # Cluster I — gated by BOB_REQUIRE_PROVIDER_APPROVAL.
+            gate = provider_requires_approval()
             provider = AIProvider(
                 name=canonical_name,
                 provider_type="comfyui",
                 base_url=base_url,
                 server_id=server.id,
-                is_active=False,
-                pending_approval=True,
+                is_active=not gate,
+                pending_approval=gate,
             )
-            await provider_repo.create(provider)
-            logger.info(
-                "Auto-discovered ComfyUI provider via probe (pending admin approval): %s -> %s",
-                canonical_name,
-                base_url,
-            )
+            provider = await provider_repo.create(provider)
+            if gate:
+                logger.warning(
+                    "Auto-discovered ComfyUI provider via probe PENDING approval: %s -> %s "
+                    "(approve in orchestrator console or POST /api/v1/orchestrator/providers/%s/approve)",
+                    canonical_name,
+                    base_url,
+                    provider.id,
+                )
+            else:
+                logger.info(
+                    "Auto-discovered ComfyUI provider via probe auto-approved: %s -> %s",
+                    canonical_name,
+                    base_url,
+                )
         else:
             # Cluster I — never flip is_active=True on an existing row from
             # the sync path; admins do that via /admin/providers/<id>/approve.
@@ -913,21 +987,31 @@ async def _sync_comfyui_containers(
                 provider = result.scalar_one_or_none()
 
             if provider is None:
-                # Cluster I — pending+inactive on first sight.
+                # Cluster I — gated by BOB_REQUIRE_PROVIDER_APPROVAL.
+                gate = provider_requires_approval()
                 provider = AIProvider(
                     name=canonical_name,
                     provider_type="comfyui",
                     base_url=base_url,
                     server_id=server.id,
-                    is_active=False,
-                    pending_approval=True,
+                    is_active=not gate,
+                    pending_approval=gate,
                 )
-                await provider_repo.create(provider)
-                logger.info(
-                    "Auto-discovered ComfyUI provider (pending admin approval): %s -> %s",
-                    canonical_name,
-                    base_url,
-                )
+                provider = await provider_repo.create(provider)
+                if gate:
+                    logger.warning(
+                        "Auto-discovered ComfyUI provider PENDING approval: %s -> %s "
+                        "(approve in orchestrator console or POST /api/v1/orchestrator/providers/%s/approve)",
+                        canonical_name,
+                        base_url,
+                        provider.id,
+                    )
+                else:
+                    logger.info(
+                        "Auto-discovered ComfyUI provider auto-approved: %s -> %s",
+                        canonical_name,
+                        base_url,
+                    )
                 continue
 
             # Cluster I — never auto-flip is_active=True on an existing row.

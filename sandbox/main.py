@@ -5,6 +5,8 @@ Only has access to the lab_resources volume.
 """
 
 import asyncio
+import hashlib
+import hmac
 import ipaddress
 import json
 import logging
@@ -18,7 +20,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger("sandbox")
@@ -27,6 +30,95 @@ logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="bob-sandbox", docs_url=None, redoc_url=None)
 
 LAB_RESOURCES_ROOT = Path(os.environ.get("LAB_RESOURCES_PATH", "/data/lab_resources"))
+
+# CSO #8 — per-container identity + shared HMAC secret. Both are set
+# by the control-plane's container_manager.py at creation time. Empty
+# values keep legacy behavior (unsigned + any lab_id accepted) so the
+# rollout is a same-day env var flip rather than a flag day.
+SANDBOX_LAB_ID = os.environ.get("SANDBOX_LAB_ID", "")
+SANDBOX_HMAC_SECRET = os.environ.get("SANDBOX_HMAC_SECRET", "")
+SIGNATURE_WINDOW_SECONDS = 60
+_AUTH_HEADER = "x-bob-sandbox-auth"
+# Endpoints exempt from auth + lab_id binding. Health check is unauth so
+# the control-plane's `_wait_healthy` poll can succeed before it has any
+# need to sign — and so docker HEALTHCHECK probes (if added later) work.
+_UNAUTH_PATHS = {"/health"}
+
+
+def _parse_auth_header(header_value: str) -> tuple[int, str] | None:
+    """Parse ``t=<ts>,sig=<hex>``. Returns None on any malformed input."""
+    try:
+        parts = dict(p.split("=", 1) for p in header_value.split(","))
+        ts = int(parts.get("t", ""))
+        sig = parts.get("sig", "")
+        if not sig:
+            return None
+        return ts, sig
+    except (ValueError, AttributeError):
+        return None
+
+
+def _verify_signature(ts: int, sig: str, body: bytes) -> bool:
+    """HMAC-SHA256 over ``<ts>.<sha256_hex(body)>``. Constant-time compare."""
+    body_digest = hashlib.sha256(body).hexdigest()
+    message = f"{ts}.{body_digest}".encode("ascii")
+    expected = hmac.new(SANDBOX_HMAC_SECRET.encode("utf-8"), message, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, sig)
+
+
+@app.middleware("http")
+async def _sandbox_auth_middleware(request: Request, call_next):
+    """CSO #8 — verify HMAC + bind lab_id to this container.
+
+    Skips ``/health``. Skips entirely when no secret is configured
+    (legacy compat). For protected requests:
+      1. Header ``X-Bob-Sandbox-Auth`` must be present + parseable.
+      2. ``ts`` must be within ``SIGNATURE_WINDOW_SECONDS`` of now.
+      3. Signature must verify against the request body bytes.
+      4. If the JSON body has a ``lab_id`` field and this container
+         was started with ``SANDBOX_LAB_ID``, they must match — so a
+         compromised peer sandbox can't talk to us about its own lab.
+    """
+    if request.url.path in _UNAUTH_PATHS or not SANDBOX_HMAC_SECRET:
+        return await call_next(request)
+
+    # Read the body once; cache it so FastAPI's route handlers can
+    # still parse the JSON afterwards.
+    body = await request.body()
+
+    header = request.headers.get(_AUTH_HEADER, "")
+    parsed = _parse_auth_header(header)
+    if parsed is None:
+        return JSONResponse(
+            {"detail": "Missing or malformed X-Bob-Sandbox-Auth header"}, status_code=401
+        )
+    ts, sig = parsed
+    now = int(time.time())
+    if abs(now - ts) > SIGNATURE_WINDOW_SECONDS:
+        return JSONResponse({"detail": "Signature timestamp out of window"}, status_code=401)
+    if not _verify_signature(ts, sig, body):
+        return JSONResponse({"detail": "Invalid sandbox signature"}, status_code=401)
+
+    # Lab-id binding — only enforced when SANDBOX_LAB_ID is set AND the
+    # request body includes a ``lab_id`` field. (The browser endpoints
+    # don't include one and stay locked to this container by the
+    # signature alone.)
+    if SANDBOX_LAB_ID and body:
+        try:
+            payload = json.loads(body)
+        except (ValueError, json.JSONDecodeError):
+            payload = None
+        if isinstance(payload, dict) and "lab_id" in payload:
+            if str(payload.get("lab_id") or "") != SANDBOX_LAB_ID:
+                return JSONResponse(
+                    {"detail": "lab_id does not match this sandbox"}, status_code=403
+                )
+
+    # Re-inject the body so downstream handlers can re-read it. FastAPI
+    # caches ``request._body`` from the first ``await request.body()``;
+    # nothing more is needed here.
+    return await call_next(request)
+
 
 SHELL_WHITELIST = {
     "curl",

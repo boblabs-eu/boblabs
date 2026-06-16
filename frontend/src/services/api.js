@@ -250,6 +250,7 @@ export const createAIProvider = (data) => api.post('/orchestrator/providers', da
 export const updateAIProvider = (id, data) => api.put(`/orchestrator/providers/${id}`, data);
 export const deleteAIProvider = (id) => api.delete(`/orchestrator/providers/${id}`);
 export const testAIProvider = (id) => api.post(`/orchestrator/providers/${id}/test`);
+export const approveAIProvider = (id) => api.post(`/orchestrator/providers/${id}/approve`);
 
 export const getAIModels = (providerId) => {
   const params = {};

@@ -55,6 +55,18 @@ async def ensure_sandbox(
     except docker.errors.NotFound:
         pass
 
+    # CSO #8 — bind the sandbox to this lab + carry the shared HMAC
+    # secret so the sandbox can reject (a) requests from other
+    # sandboxes on the same network and (b) requests whose body
+    # ``lab_id`` doesn't match. Both knobs are optional — empty values
+    # mean the sandbox stays in legacy unsigned/unbound mode.
+    from app.config import settings
+
+    sandbox_env = {
+        "SANDBOX_LAB_ID": str(lab_id),
+        "SANDBOX_HMAC_SECRET": settings.sandbox_hmac_secret or "",
+    }
+
     await asyncio.to_thread(
         client.containers.run,
         SANDBOX_IMAGE,
@@ -64,6 +76,7 @@ async def ensure_sandbox(
         volumes={LAB_RESOURCES_VOLUME: {"bind": "/data/lab_resources", "mode": "rw"}},
         mem_limit=f"{memory_mb}m",
         nano_cpus=int(cpus * 1e9),
+        environment=sandbox_env,
         labels={
             "bob-manager.role": "lab-sandbox",
             "bob-manager.lab-id": str(lab_id),

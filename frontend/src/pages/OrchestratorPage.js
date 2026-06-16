@@ -24,6 +24,7 @@ import {
   createAIProvider,
   deleteAIProvider,
   testAIProvider,
+  approveAIProvider,
   getLiveModels,
   getAIModels,
   getUniqueModels,
@@ -518,6 +519,13 @@ export default function OrchestratorPage() {
     } finally {
       setTimeout(() => setProviderTestStatus(prev => { const n = {...prev}; delete n[id]; return n; }), 3000);
     }
+  }
+
+  async function handleApproveProvider(id) {
+    try {
+      await approveAIProvider(id);
+      loadProviders();
+    } catch (e) { console.error('Failed to approve provider', e); }
   }
 
   async function handleUpdateSettings(key, value) {
@@ -1042,13 +1050,30 @@ export default function OrchestratorPage() {
                     {expanded && (
                       <div className="orch-provider-expanded">
                         {group.map(p => (
-                          <div key={p.id} className="orch-sub-provider">
+                          <div
+                            key={p.id}
+                            className="orch-sub-provider"
+                            style={p.pending_approval ? { opacity: 0.6, borderLeft: '3px solid var(--warning, #d97706)' } : undefined}
+                          >
                             <div className="orch-sub-provider-header">
                               <span className={`orch-provider-type ${p.provider_type}`}>{p.provider_type}</span>
                               <span className="orch-provider-url" style={{ marginBottom: 0, flex: 1 }}>{p.base_url}</span>
+                              {p.pending_approval && (
+                                <span title="Auto-discovered — needs admin approval before models become dispatchable" style={{ fontSize: '0.7rem', color: 'var(--warning, #d97706)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pending</span>
+                              )}
                             </div>
                             {!p._synthetic && (
                             <div className="orch-provider-actions">
+                              {p.pending_approval && (
+                                <button
+                                  className="orch-btn-sm"
+                                  onClick={() => handleApproveProvider(p.id)}
+                                  title="Approve this auto-discovered provider so its models become dispatchable"
+                                  style={{ background: 'var(--success, #059669)', color: '#fff', borderColor: 'var(--success, #059669)' }}
+                                >
+                                  Approve
+                                </button>
+                              )}
                               <button
                                 className="orch-btn-sm"
                                 onClick={() => handleTestProvider(p.id)}
@@ -1174,14 +1199,31 @@ export default function OrchestratorPage() {
               const pModels = getProviderModels(p);
               const online = isProviderOnline(p);
               return (
-                <div key={p.id} className="orch-fullview-provider">
+                <div
+                  key={p.id}
+                  className="orch-fullview-provider"
+                  style={p.pending_approval ? { opacity: 0.6, borderLeft: '3px solid var(--warning, #d97706)' } : undefined}
+                >
                   <div className="orch-fullview-provider-header">
                     <span className={`orch-provider-type ${p.provider_type}`}>{p.provider_type}</span>
                     <span className={`orch-status-dot-sm ${online ? 'online' : 'offline'}`} />
                     <span className="orch-fullview-url">{p.base_url}</span>
+                    {p.pending_approval && (
+                      <span title="Auto-discovered — needs admin approval before models become dispatchable" style={{ fontSize: '0.7rem', color: 'var(--warning, #d97706)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pending</span>
+                    )}
                   </div>
                   {!p._synthetic && (
                     <div className="orch-provider-actions" style={{ marginBottom: 8 }}>
+                      {p.pending_approval && (
+                        <button
+                          className="orch-btn-sm"
+                          onClick={() => handleApproveProvider(p.id)}
+                          title="Approve this auto-discovered provider so its models become dispatchable"
+                          style={{ background: 'var(--success, #059669)', color: '#fff', borderColor: 'var(--success, #059669)' }}
+                        >
+                          Approve
+                        </button>
+                      )}
                       <button className="orch-btn-sm" onClick={() => handleTestProvider(p.id)} disabled={providerTestStatus[p.id] === 'testing'} title="Test connection">
                         {providerTestStatus[p.id] === 'testing' ? IC.loader : providerTestStatus[p.id] === 'ok' ? <span style={{color:'var(--success)'}}>OK</span> : providerTestStatus[p.id] === 'fail' ? <span style={{color:'var(--error)'}}>FAIL</span> : 'Test'}
                       </button>

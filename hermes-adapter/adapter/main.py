@@ -221,7 +221,7 @@ async def info():
         version = metadata.version("hermes-agent")
     except Exception:  # noqa: BLE001
         version = "unknown"
-    return {"hermes_version": version, "adapter": "bob-hermes-adapter/1.2", "tools": []}
+    return {"hermes_version": version, "adapter": "bob-hermes-adapter/1.3", "tools": []}
 
 
 # ── Task-completion protocol ─────────────────────────────────────────

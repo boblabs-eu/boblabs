@@ -33,24 +33,26 @@ Because the branch lives at the single agent-dispatch seam, hermes agents work i
 
 ## The Hermes container
 
-Each hermes-backed **library agent** gets its own container (all lab instances of that template share one Hermes brain):
+Each hermes-backed **instance** gets its own container and volume — memory is **never shared between instances**. The library agent is the shared *definition* (prompt, model, persona), not a shared brain: two instances of the same template, or the same template dropped into two labs, each keep their own `MEMORY.md`, `USER.md`, skills, `SOUL.md`, and session transcripts.
 
 | Property | Value |
 |----------|-------|
-| Name | `bob-hermes-<first 12 chars of library_agent_id>` |
+| Name | `bob-hermes-<first 12 chars of the instance (lab-agent) id>` |
 | Image | `HERMES_IMAGE` (built from [hermes-adapter/](../hermes-adapter/)) |
 | Port | 8770 (internal, `HERMES_INTERNAL_PORT`) |
 | Network | `bob-network` (same as sandboxes) |
-| Memory volume | named volume `bob-hermes-<id>` → `/root/.hermes` — **persistent** |
+| Memory volume | named volume `bob-hermes-<id>` → `/root/.hermes` — **persistent, per-instance** |
 | Resources | `HERMES_MEM_MB` (2048) / `HERMES_CPUS` (2.0) |
 | Label | `bob-manager.role=hermes-agent` (orphan cleanup on bob-api startup) |
 
 Lifecycle:
 
-- **Activate** (UI panel or `POST /library-agents/{id}/hermes/activate`) pops the container and waits for health. Activation is a convenience — any task **lazily ensures** the container, so a Lab run works without pre-activation.
-- **Deactivate** stops the container; **container delete** removes it. In both cases the `~/.hermes` volume is **kept on purpose**: Hermes' memory, skills, and session transcripts survive, and re-activation restores the same brain. (The docker-socket-proxy denies volume-remove APIs anyway — `VOLUMES: 0`.)
-- Turns are **serialized per container** (Hermes is a single-loop agent): concurrent tasks from several labs queue rather than interleave. Container creation is also lock-protected against concurrent ensure races.
+- **Activate** (the instance's UI panel, keyed by its lab-agent id) pops the container and waits for health. Activation is a convenience — any task **lazily ensures** the container, so a Lab run works without pre-activation. The library-agent (template) editor shows a note instead of a panel, since a template has no container of its own.
+- **Deactivate** stops the container; **container delete** removes it. Deleting the instance, its lab, or an agent row also stops its container. In every case the `~/.hermes` volume is **kept on purpose**: Hermes' memory, skills, and session transcripts survive, and re-activation restores that instance's brain. (The docker-socket-proxy denies volume-remove APIs anyway — `VOLUMES: 0`.)
+- Turns are **serialized per container** (Hermes is a single-loop agent): concurrent tasks queue rather than interleave. Container creation is also lock-protected against concurrent ensure races.
 - Stale containers from a previous bob-api run are removed at startup (volumes kept).
+
+> **Migration note:** instances were previously keyed by their *template*, so they shared one volume. After this change each instance keys by its own id and starts from a **fresh, empty** volume on its next run; the old shared `bob-hermes-<template_id>` container is swept at startup (its volume is left behind, never auto-deleted). Previously-accumulated shared memory does not carry into the new isolated volumes.
 
 ## The adapter (inside the image)
 
@@ -135,7 +137,7 @@ The `backend` field round-trips everywhere agents do: template PATCH cascade to 
 | DELETE | `/library-agents/{id}/hermes/container` | Yes | Remove the container (volume kept) |
 | GET | `/library-agents/{id}/hermes/status` | Yes | `{image_configured, running, healthy, url, backend}` |
 
-The routes accept a library-agent id **or** a standalone lab-agent id (an ad-hoc lab agent without a template keys its own container).
+The routes accept the **instance (lab-agent) id** — the container is keyed per instance. (A library-agent id still resolves for back-compat, but a template has no container of its own.)
 
 ## Configuration
 

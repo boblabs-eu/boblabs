@@ -21,10 +21,15 @@ CLAUDE_CLI_MODELS env var (default ``haiku,opus,sonnet`` — bare aliases
 track the latest model of each tier; pin e.g. ``claude-opus-4-8`` for a
 fixed version).
 
-v1 is text-only at the OpenAI layer: ``tools`` schemas are accepted (logged) but
-not advertised to the model; a native ``tool_use`` the model emits anyway is
-recovered and converted to the lab's <tool_call> TEXT. Images are dropped from
-multimodal content.
+Two model families are served:
+  • ``claude-cli:<id>``   — TEXT-only (the lab drives tools): ``tools`` schemas
+    are accepted (logged) but not advertised; a native ``tool_use`` the model
+    emits anyway is recovered as the lab's <tool_call> TEXT.
+  • ``claude-agent:<id>`` — FULL-capacity Claude Code agent: its OWN tools
+    (Bash/Read/Write/WebSearch/Task/…), multi-turn, non-interactive permissions.
+    The control plane routes such an agent straight here and takes the final
+    result text (no lab tool loop). Opt-in via CLAUDE_CLI_AGENT_MODELS.
+Images are dropped from multimodal content (text-only at the OpenAI layer).
 
 Auth: the CLI itself authenticates via CLAUDE_CODE_OAUTH_TOKEN (from
 ``claude setup-token`` — Max subscription, not API credits). The wrapper is
@@ -51,6 +56,10 @@ logger = logging.getLogger("claude-cli-wrapper")
 app = FastAPI(title="bob claude-cli wrapper")
 
 MODEL_PREFIX = "claude-cli:"
+# Full-capacity "agent" models run Claude Code with its OWN tools + multi-turn
+# (see the agentic branch in _one_shot). Namespaced separately so labs keep
+# using the text-only claude-cli:* models exactly as before.
+AGENT_MODEL_PREFIX = "claude-agent:"
 
 # Every knob is env-driven — CLAUDE_CLI_MODELS is the single source of truth
 # for the model list (the literal below is only its default value).
@@ -78,23 +87,58 @@ _slots = asyncio.Semaphore(_CONCURRENCY)
 # the error_max_turns failure. Override only to ALLOW built-ins (rare): CLAUDE_CLI_TOOLS="Read".
 _CLI_TOOLS = os.getenv("CLAUDE_CLI_TOOLS", "")  # "" = disable all built-in tools
 
+# ── Full-capacity agent mode (claude-agent:*) ─────────────────────────
+# Unlike the text-only models above, these run Claude Code as a REAL agent:
+# its OWN tools (Bash/Read/Write/Edit/WebSearch/WebFetch/Task/…), multi-turn,
+# non-interactive permissions. The control plane routes a claude-agent:* agent
+# straight here and takes the final result text (no lab tool loop). Max sub, no API.
+# Opt-in: empty unless CLAUDE_CLI_AGENT_MODELS is set (e.g. "opus,sonnet").
+_AGENT_MODELS_DEFAULT = ""
+_AGENT_MAX_TURNS = max(1, int(os.getenv("CLAUDE_CLI_AGENT_MAX_TURNS", "40")))
+_AGENT_TIMEOUT_SEC = float(os.getenv("CLAUDE_CLI_AGENT_TIMEOUT_SEC", "900"))
+_AGENT_EXTRA_ARGS = os.getenv("CLAUDE_CLI_AGENT_EXTRA_ARGS", "").split()
+# Headless tool execution needs a non-interactive permission decision. Default
+# skips the prompt entirely (the container is the sandbox); override with
+# CLAUDE_CLI_AGENT_PERMISSION_MODE=acceptEdits|plan|… to use --permission-mode.
+_AGENT_PERMISSION_MODE = os.getenv("CLAUDE_CLI_AGENT_PERMISSION_MODE", "")
+_AGENT_PERMISSION_ARGS = (
+    ["--permission-mode", _AGENT_PERMISSION_MODE]
+    if _AGENT_PERMISSION_MODE
+    else ["--dangerously-skip-permissions"]
+)
+
 _claude_version: str | None = None
 
 
 def configured_models() -> list[str]:
-    """Bare model ids from CLAUDE_CLI_MODELS (read per call so a container
-    env change only needs a restart, never a rebuild)."""
+    """Bare text-only model ids from CLAUDE_CLI_MODELS (read per call so a
+    container env change only needs a restart, never a rebuild)."""
     raw = os.getenv("CLAUDE_CLI_MODELS", _MODELS_ENV_DEFAULT)
     return [m.strip() for m in raw.split(",") if m.strip()]
 
 
+def configured_agent_models() -> list[str]:
+    """Bare full-capacity model ids from CLAUDE_CLI_AGENT_MODELS (opt-in)."""
+    raw = os.getenv("CLAUDE_CLI_AGENT_MODELS", _AGENT_MODELS_DEFAULT)
+    return [m.strip() for m in raw.split(",") if m.strip()]
+
+
 def namespaced_models() -> list[str]:
-    return [f"{MODEL_PREFIX}{m}" for m in configured_models()]
+    return [f"{MODEL_PREFIX}{m}" for m in configured_models()] + [
+        f"{AGENT_MODEL_PREFIX}{m}" for m in configured_agent_models()
+    ]
+
+
+def is_agent_model(model: str) -> bool:
+    return model.startswith(AGENT_MODEL_PREFIX)
 
 
 def strip_prefix(model: str) -> str:
-    """Accept both 'claude-cli:opus' (control plane) and bare 'opus' (curl)."""
-    return model[len(MODEL_PREFIX) :] if model.startswith(MODEL_PREFIX) else model
+    """Accept 'claude-cli:opus' / 'claude-agent:opus' (control plane) or bare 'opus'."""
+    for prefix in (AGENT_MODEL_PREFIX, MODEL_PREFIX):
+        if model.startswith(prefix):
+            return model[len(prefix) :]
+    return model
 
 
 def _check_auth(request: Request) -> None:
@@ -183,44 +227,72 @@ async def _run_claude(args: list[str], stdin_text: str, timeout: float) -> tuple
     return proc.returncode or 0, stdout.decode(errors="replace"), stderr.decode(errors="replace")
 
 
-async def _one_shot(model: str, system_prompt: str, prompt: str) -> tuple[str, int, int]:
-    """Run one `claude -p` turn as a TEXT model. Returns (content, tokens_in, tokens_out).
+async def _one_shot(
+    model: str, system_prompt: str, prompt: str, agentic: bool = False
+) -> tuple[str, int, int]:
+    """Run one `claude -p` invocation. Returns (content, tokens_in, tokens_out).
 
-    The lab drives tools itself: the model is expected to emit <tool_call> TEXT
-    blocks the control plane executes. But opus is trained toward NATIVE
-    function-calling and — depending on the account's server-side flags — will
-    sometimes emit a real `tool_use` instead, even though --tools "" defines no
-    tools (so it can't execute and the turn aborts as error_max_turns → 502).
-    Rather than fight that, we read the streamed output and CONVERT any native
-    tool_use block back into the lab's <tool_call> TEXT form, so both shapes work
-    identically. With no native tools defined, the model names the tool from the
-    prompt (the lab's own file_read / gouv_data_fr / …), so the conversion is faithful.
+    TWO modes:
+
+    • TEXT (default) — the lab drives tools: the model is expected to emit
+      <tool_call> TEXT blocks the control plane executes. opus, trained toward
+      NATIVE function-calling, will sometimes emit a real `tool_use` anyway even
+      though --tools "" defines none; we recover that block as <tool_call> TEXT so
+      both shapes work. One turn, no tools.
+
+    • AGENTIC (claude-agent:*) — Claude Code runs as a REAL agent with its OWN
+      tools (Bash/Read/Write/WebSearch/Task/…), multi-turn, non-interactive
+      permissions. We return its FINAL `result` text; the intermediate tool steps
+      run inside the container and are NOT surfaced as <tool_call> to the caller.
     """
-    # System prompt passes through VERBATIM (it teaches the <tool_call> protocol);
-    # native tools are disabled at the CLI level only — --tools "" (built-ins) and
-    # --strict-mcp-config (ambient MCP). stream-json exposes each content block so
-    # we can recover a native tool_use instead of failing the call.
-    args = [
-        "-p",
-        "--output-format",
-        "stream-json",
-        "--verbose",  # required with stream-json under -p
-        "--model",
-        model,
-        "--max-turns",
-        "1",
-        "--system-prompt",
-        system_prompt,
-        "--tools",
-        _CLI_TOOLS,
-        "--strict-mcp-config",
-    ]
-    args += _EXTRA_ARGS
-    # Prompt goes via stdin — long lab transcripts would blow past ARG_MAX.
-    rc, stdout, stderr = await _run_claude(args, prompt, _TIMEOUT_SEC)
+    if agentic:
+        args = [
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--verbose",  # required with stream-json under -p
+            "--model",
+            model,
+            "--max-turns",
+            str(_AGENT_MAX_TURNS),
+            "--strict-mcp-config",  # ignore any stray MCP in the persisted volume
+        ]
+        args += _AGENT_PERMISSION_ARGS
+        if system_prompt:
+            # APPEND (not replace) so Claude Code keeps its native agent system
+            # prompt — the one that knows how to drive its own tools.
+            args += ["--append-system-prompt", system_prompt]
+        args += _AGENT_EXTRA_ARGS
+        timeout = _AGENT_TIMEOUT_SEC
+    else:
+        # System prompt passes through VERBATIM (it teaches the <tool_call> protocol);
+        # native tools are disabled at the CLI level only — --tools "" (built-ins) and
+        # --strict-mcp-config (ambient MCP). stream-json exposes each content block so
+        # we can recover a native tool_use instead of failing the call.
+        args = [
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--verbose",  # required with stream-json under -p
+            "--model",
+            model,
+            "--max-turns",
+            "1",
+            "--system-prompt",
+            system_prompt,
+            "--tools",
+            _CLI_TOOLS,
+            "--strict-mcp-config",
+        ]
+        args += _EXTRA_ARGS
+        timeout = _TIMEOUT_SEC
+
+    # Prompt goes via stdin — long transcripts would blow past ARG_MAX.
+    rc, stdout, stderr = await _run_claude(args, prompt, timeout)
 
     text_parts: list[str] = []
-    tool_call_blocks: list[str] = []  # native tool_use → lab <tool_call> TEXT
+    tool_call_blocks: list[str] = []  # native tool_use → lab <tool_call> TEXT (text mode)
+    tool_use_count = 0  # agentic: how many tools Claude actually ran
     result_event: dict | None = None
     for line in stdout.splitlines():
         line = line.strip()
@@ -237,18 +309,27 @@ async def _one_shot(model: str, system_prompt: str, prompt: str) -> tuple[str, i
                 if btype == "text":
                     text_parts.append(block.get("text") or "")
                 elif btype == "tool_use":
-                    tc = {"name": block.get("name"), "arguments": block.get("input") or {}}
-                    tool_call_blocks.append(
-                        "<tool_call>\n" + json.dumps(tc, ensure_ascii=False) + "\n</tool_call>"
-                    )
+                    tool_use_count += 1
+                    if not agentic:
+                        tc = {"name": block.get("name"), "arguments": block.get("input") or {}}
+                        tool_call_blocks.append(
+                            "<tool_call>\n" + json.dumps(tc, ensure_ascii=False) + "\n</tool_call>"
+                        )
         elif etype == "result":
             result_event = ev
 
-    # Reply = model text first, then any native tool_use recovered as <tool_call>.
-    parts = [p for p in text_parts if p] + tool_call_blocks
-    content = "\n\n".join(parts).strip()
-    if not content and result_event:
-        content = str(result_event.get("result") or "")
+    if agentic:
+        # The final answer is the `result` event; per-turn text is scratch work
+        # we don't surface. Fall back to the last text block if result is empty.
+        content = str((result_event or {}).get("result") or "").strip()
+        if not content and text_parts:
+            content = (text_parts[-1] or "").strip()
+    else:
+        # Reply = model text first, then any native tool_use recovered as <tool_call>.
+        parts = [p for p in text_parts if p] + tool_call_blocks
+        content = "\n\n".join(parts).strip()
+        if not content and result_event:
+            content = str(result_event.get("result") or "")
 
     subtype = (result_event or {}).get("subtype")
     # error_max_turns is EXPECTED when opus emitted a native tool_use — we already
@@ -273,7 +354,15 @@ async def _one_shot(model: str, system_prompt: str, prompt: str) -> tuple[str, i
         )
         raise HTTPException(502, f"claude CLI error (subtype={subtype}): {tail}")
 
-    if tool_call_blocks:
+    if agentic and tool_use_count:
+        logger.info(
+            "agentic run used %d tool call(s) (model=%s, max_turns=%d, subtype=%s)",
+            tool_use_count,
+            model,
+            _AGENT_MAX_TURNS,
+            subtype,
+        )
+    elif tool_call_blocks:
         logger.info(
             "recovered %d native tool_use block(s) → <tool_call> text (model=%s, subtype=%s)",
             len(tool_call_blocks),
@@ -349,17 +438,19 @@ async def chat_completions(request: Request):
     body = await request.json()
 
     requested = str(body.get("model") or "")
+    agentic = is_agent_model(requested)
     bare = strip_prefix(requested)
-    if bare not in configured_models():
+    valid = configured_agent_models() if agentic else configured_models()
+    if bare not in valid:
         raise HTTPException(
             400,
-            f"Unknown model '{requested}'. Configured (CLAUDE_CLI_MODELS): "
-            + ", ".join(namespaced_models()),
+            f"Unknown model '{requested}'. Configured: " + ", ".join(namespaced_models()),
         )
 
-    if body.get("tools"):
-        logger.warning("ignoring %d tools (claude-cli wrapper is text-only v1)", len(body["tools"]))
-    # temperature / max_tokens have no CLI equivalent — accepted and ignored.
+    if body.get("tools") and not agentic:
+        logger.warning("ignoring %d tools (claude-cli text-only model)", len(body["tools"]))
+    # In agentic mode the model uses Claude Code's OWN tools, so any `tools` the
+    # caller passes are intentionally ignored too. temperature/max_tokens: n/a.
 
     system_prompt, prompt = flatten_messages(body.get("messages") or [])
     if not prompt.strip():
@@ -367,10 +458,13 @@ async def chat_completions(request: Request):
 
     async with _slots:
         started = time.time()
-        content, tokens_in, tokens_out = await _one_shot(bare, system_prompt, prompt)
+        content, tokens_in, tokens_out = await _one_shot(
+            bare, system_prompt, prompt, agentic=agentic
+        )
         logger.info(
-            "one-shot done (model=%s, %.1fs, in=%d out=%d)",
-            bare,
+            "%s done (model=%s, %.1fs, in=%d out=%d)",
+            "agentic" if agentic else "one-shot",
+            requested,
             time.time() - started,
             tokens_in,
             tokens_out,

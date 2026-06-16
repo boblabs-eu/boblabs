@@ -5,6 +5,69 @@ All notable changes to Bob Labs are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] — 2026-06-16 — Fix the "no models in console" first-install trap
+
+Patch release fixing a discoverability bug reported against the
+public 0.12.0 cut. **Includes one security-relevant default change**
+— see Changed.
+
+### Fixed
+
+- **First-install: orchestrator console shows zero models.** A user
+  cloned `boblabs`, ran `agent/install.sh` on a GPU server, and
+  `docker compose up` on the control-plane host. The dashboard
+  correctly showed the GPU server online, the agent's logs confirmed
+  Ollama was reachable (`httpx GET http://localhost:11434/api/tags
+  200 OK`), but the orchestrator console showed **no models** — so
+  no lab could be created. Root cause: auto-discovered providers
+  landed `pending_approval=True, is_active=False` (cluster I gate
+  from 0.10.0) with no UI surface to approve them. See Changed.
+
+### Changed
+
+- **⚠️ Default behavior**: auto-discovered AI providers (Ollama,
+  Claude CLI, ComfyUI, vLLM, HuggingFace, …) are now **auto-approved
+  on first sight**. They land `is_active=True, pending_approval=False`
+  and are immediately dispatchable.
+
+  Operators who want the original strict gate (e.g. partially-trusted
+  agent networks where a leaked `AGENT_SECRET` is in the threat model)
+  set `BOB_REQUIRE_PROVIDER_APPROVAL=true` in the control-plane env.
+  Pending providers then render grayed-out in the orchestrator console
+  with an inline **Approve** button (one click), and the server logs a
+  clear `WARNING` line with the curl command for headless approval.
+
+  Both modes are covered by
+  [test_cluster_i_provider_pending.py](control-plane/tests/regression/test_cluster_i_provider_pending.py).
+
+### Added
+
+- Inline **Approve** button + "Pending" badge on auto-discovered
+  providers in the orchestrator console
+  ([frontend/src/pages/OrchestratorPage.js](frontend/src/pages/OrchestratorPage.js)).
+  Only visible in strict mode; defaults install see no pending rows.
+- New API surface: `POST /api/v1/orchestrator/providers/{id}/approve`
+  is now reachable from the frontend via
+  `approveAIProvider(id)` in [frontend/src/services/api.js](frontend/src/services/api.js).
+  (The route itself shipped in 0.10.0 — only the UI was missing.)
+- Troubleshooting section in [docs/AGENT.md](docs/AGENT.md) —
+  "Models not showing in the orchestrator console" walks the user
+  through the three resolution paths.
+- Post-install hint in [agent/install.sh](agent/install.sh) — printed
+  on successful install, explains the auto-approve default + the
+  strict-mode opt-in.
+- [docs/CONFIGURATION.md](docs/CONFIGURATION.md) documents
+  `BOB_REQUIRE_PROVIDER_APPROVAL` under "Provider auto-discovery".
+
+### Notes
+
+- All four components aligned at **0.12.1**.
+- No schema migrations.
+- OpenAPI artifact at [docs/openapi.json](docs/openapi.json)
+  regenerated for the version field; route surface unchanged.
+
+[0.12.1]: https://github.com/boblabs-eu/boblabs/releases/tag/v0.12.1
+
 ## [0.12.0] — 2026-06-15 — Real Hermes agents + Claude CLI provider
 
 The biggest release since `0.10.0`. Two new top-level capabilities —

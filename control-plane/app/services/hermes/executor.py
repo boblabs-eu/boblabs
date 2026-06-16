@@ -32,9 +32,12 @@ def is_hermes_agent(agent) -> bool:
 
 
 def hermes_container_key(agent):
-    """Container key: the library template id when present (all instances of a
-    template share one Hermes brain), else the lab-agent's own id."""
-    return getattr(agent, "library_agent_id", None) or agent.id
+    """Container key: the instance's own id, so every instance gets its OWN
+    container + named volume and therefore isolated native memory (MEMORY.md,
+    USER.md, skills, SOUL.md, sessions). The library agent is the shared
+    *definition*, not a shared brain — instances of one template never mix
+    memory."""
+    return agent.id
 
 
 async def execute_hermes_turn(
@@ -81,6 +84,10 @@ async def execute_hermes_turn(
             system_prompt=agent.system_prompt or "",
             instruction=instruction,
             model=model_spec,
+            # Per-instance session id — the container is already isolated per
+            # instance, but this also namespaces the adapter's own transcript
+            # (bob_sessions/<sid>.json) instead of the shared "boblab" default.
+            options={"session_id": str(agent.id)},
             timeout_sec=timeout_sec or settings.hermes_default_timeout_sec,
         )
     duration_ms = int((time.monotonic() - start) * 1000)

@@ -36,6 +36,12 @@ All environment variables across all services.
 | `ADMIN_EMAIL` | `""` | Email address for trial request notifications |
 | `APP_BASE_URL` | `http://localhost:3000` | Public URL of the platform (used in emails) |
 
+### Provider auto-discovery (since 0.12.1)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BOB_REQUIRE_PROVIDER_APPROVAL` | `false` | When `true`, an auto-discovered AI provider (Ollama, Claude CLI, ComfyUI, …) lands as `pending_approval=True, is_active=False` and an admin must click "Approve" in the orchestrator console (or `POST /api/v1/orchestrator/providers/{id}/approve`) before its models become dispatchable. Set this in environments where the agent network is partially untrusted — it mitigates the scenario in which a leaked `AGENT_SECRET` is used to register a malicious `base_url`. Default `false` because the gate broke every fresh open-source install before the inline approval UI shipped. |
+
 ### Email / SMTP
 
 | Variable | Default | Description |
