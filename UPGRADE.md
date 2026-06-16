@@ -72,6 +72,74 @@ production. The single rule: **never skip step 2 of the upgrade flow.**
 
 Most recent first.
 
+### 0.12.1 → 0.12.2
+
+**Theme**: Critical fix — 0.12.1 left fresh installs still broken
+because the actual root cause was Alembic schema drift, not the
+provider-approval gate. 0.12.2 fixes the startup logic so fresh
+DBs reach head correctly.
+
+- **Schema migrations**: none new (0014 stays head).
+- **Env vars**: no changes.
+- **Downtime**: ~10 s for the restart on a healthy DB.
+- **Action required for anyone who installed 0.11.0–0.12.1**: see
+  recovery section below.
+
+#### What was broken
+
+`control-plane/app/main.py` stamped Alembic to `head` whenever
+`blog_posts.slug` existed in the schema. That column was in
+`init.sql`, but the rest of `init.sql` had drifted nine revisions
+behind the migration chain. Fresh installs therefore ended up with
+`alembic_version='0014_secret_at_rest'` (lying) and a schema
+missing every column added by migrations 0005-0014:
+`ai_providers.pending_approval`, `lab_agents.backend`,
+`library_agents.backend`, `mcp_servers` (entire table),
+`blog_tokens.token_hash`, `access_tokens.token_hash`.
+
+Visible symptom: orchestrator console crashes on
+`column ai_providers.pending_approval does not exist`, models tab
+empty, no labs creatable.
+
+#### Recovery for already-installed 0.11.0 / 0.12.0 / 0.12.1 deployments
+
+The 0.12.2 startup hook only stamps **fresh** DBs (no
+`alembic_version` table). A broken-stamped DB needs manual recovery.
+
+**Option A — clean wipe (no real data yet):**
+
+```bash
+cd /path/to/boblabs
+docker compose down -v          # -v removes the bob-db volume
+git pull
+docker compose up -d --build
+```
+
+**Option B — keep data, re-stamp Alembic to 0001 and let it re-run:**
+
+```bash
+cd /path/to/boblabs
+docker compose down
+git pull
+docker compose up -d bob-db
+docker exec -i bob-db psql -U bob -d bob_manager -c \
+  "UPDATE alembic_version SET version_num='0001_baseline';"
+docker compose up -d bob-api
+docker compose logs -f bob-api  # watch for "Alembic: migrations applied"
+```
+
+Every migration past 0001 is idempotent (uses `IF NOT EXISTS` /
+`DO $$` guards), so a re-run on a partially-broken DB is safe — no
+duplicate-key errors, no data loss.
+
+After recovery, verify the schema reached head:
+
+```bash
+docker exec bob-db psql -U bob -d bob_manager -c \
+  "SELECT version_num FROM alembic_version;"
+# Expected: 0014_secret_at_rest
+```
+
 ### 0.12.0 → 0.12.1
 
 **Theme**: Fixes the "no models in console" first-install trap by

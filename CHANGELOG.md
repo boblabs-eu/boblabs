@@ -5,6 +5,70 @@ All notable changes to Bob Labs are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.2] — 2026-06-16 — Fix fresh-install schema drift (Alembic stamp head bug)
+
+Critical patch. **0.12.1 still left fresh installs broken** because the
+true root cause was deeper than the cluster-I gate: Alembic was being
+stamped to `head` on first run, skipping every migration past whatever
+state `init.sql` happened to contain. `init.sql` had drifted nine
+revisions behind the chain, so the user-reported "no models" symptom
+came from `column ai_providers.pending_approval does not exist` —
+not from the approval gate.
+
+### Fixed
+
+- **Fresh-install fatal: Alembic stamped `head` instead of `0001_baseline`.**
+  `control-plane/app/main.py`'s startup hook saw `blog_posts.slug`
+  (present in `init.sql`) and concluded the DB was at head, then
+  ran a no-op upgrade. Result: every fresh install since 0.11.0
+  shipped with a DB missing the columns/tables added by migrations
+  0005-0014 — `ai_providers.pending_approval`, `lab_agents.backend`,
+  `library_agents.backend`, `mcp_servers`, `blog_tokens.token_hash`,
+  `access_tokens.token_hash`, plus the 0014 secret-at-rest widening.
+  The orchestrator console crashed querying any of these columns.
+
+  The fix: always stamp `0001_baseline` (not `head`) when no
+  `alembic_version` table exists. Migrations 0002-0014 then run on
+  top of `init.sql`, exactly matching the test-runner path that has
+  been green since 0.11.0. Every migration past 0001 is idempotent
+  (`IF NOT EXISTS` / `DO $$` guards), so the replay is safe whether
+  init.sql is one revision behind or many.
+
+### Added
+
+- `tests/regression/test_cso_2026_06_init_sql_drift.py` — two-pronged
+  guard against re-introduction:
+  1. Static check: `main.py` must stamp `0001_baseline`, must NOT
+     contain `stamp head` for the fresh-install path.
+  2. Runtime check: after the conftest bootstrap (init.sql + stamp
+     0001 + upgrade head), assert every column the 0.12.1 user-bug
+     logs flagged (`pending_approval`, `token_hash`, `backend`,
+     `mcp_servers`, …) exists, and `alembic_version` equals the
+     latest revision id.
+
+### Upgrade notes for already-broken deployments
+
+If your `docker compose up` of 0.12.0 or 0.12.1 ever succeeded, your
+DB has `alembic_version = '0014_secret_at_rest'` (or similar head)
+**but is missing the columns from 0005-0014**. The 0.12.2 startup
+hook only stamps fresh DBs — it will NOT detect this broken-stamped
+state. Two recovery paths:
+
+- **Wipe + reinstall** (cleanest if you have no real data):
+  `docker compose down -v && git pull && docker compose up -d --build`
+
+- **Keep data, manual re-stamp**:
+  ```bash
+  docker compose down
+  git pull
+  docker compose up -d bob-db
+  docker exec -i bob-db psql -U bob -d bob_manager -c \
+    "UPDATE alembic_version SET version_num='0001_baseline';"
+  docker compose up -d
+  ```
+  Alembic will then re-run 0002-0014. All are idempotent — no data
+  loss, no duplicate-key errors.
+
 ## [0.12.1] — 2026-06-16 — Fix the "no models in console" first-install trap
 
 Patch release fixing a discoverability bug reported against the

@@ -226,9 +226,17 @@ async def run_database_migrations():
     """Auto-stamp + upgrade Alembic to head.
 
     Logic:
-    - Fresh install (init.sql already created schema with slug column): stamp head, no-op upgrade.
-    - Legacy prod (blog_posts exists, no slug column, no alembic_version): stamp 0001, upgrade to head.
-    - Already-migrated DB: upgrade to head (no-op if up-to-date).
+    - No alembic_version table: stamp 0001_baseline so migrations 0002+ run.
+      Covers BOTH fresh installs (init.sql created the 0001-era schema) and
+      legacy prod DBs that pre-date alembic. Every migration past 0001 must
+      be idempotent (IF NOT EXISTS / IF EXISTS guards or DO blocks) because
+      it runs on top of whatever init.sql last committed.
+    - alembic_version table present: upgrade to head (no-op if already there).
+
+    Earlier releases (0.11.0–0.12.1) stamped *head* when init.sql had a
+    known recent column. That broke fresh installs the moment init.sql
+    drifted from the live migration chain — and it had drifted by 9
+    revisions. See CHANGELOG 0.12.2.
     """
     from pathlib import Path
 
@@ -243,19 +251,6 @@ async def run_database_migrations():
             has_alembic = (
                 await db.execute(text("SELECT to_regclass('public.alembic_version') IS NOT NULL"))
             ).scalar()
-            has_blog = (
-                await db.execute(text("SELECT to_regclass('public.blog_posts') IS NOT NULL"))
-            ).scalar()
-            has_slug = False
-            if has_blog:
-                has_slug = (
-                    await db.execute(
-                        text(
-                            "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
-                            "WHERE table_schema='public' AND table_name='blog_posts' AND column_name='slug')"
-                        )
-                    )
-                ).scalar()
 
         ini_path = Path(__file__).resolve().parent.parent / "alembic.ini"
         if not ini_path.exists():
@@ -265,15 +260,8 @@ async def run_database_migrations():
         cfg.set_main_option("script_location", str(ini_path.parent / "app" / "migrations"))
 
         if not has_alembic:
-            # First time alembic sees this DB. Decide stamp target.
-            if has_blog and has_slug:
-                # Fresh install via init.sql (slug already present). Stamp to head.
-                logger.info("Alembic: stamping fresh DB to head")
-                await asyncio.to_thread(command.stamp, cfg, "head")
-            else:
-                # Legacy prod (no slug). Stamp baseline so 0002 will run.
-                logger.info("Alembic: stamping legacy DB to 0001_baseline")
-                await asyncio.to_thread(command.stamp, cfg, "0001_baseline")
+            logger.info("Alembic: stamping DB to 0001_baseline (first run)")
+            await asyncio.to_thread(command.stamp, cfg, "0001_baseline")
 
         logger.info("Alembic: upgrading to head")
         await asyncio.to_thread(command.upgrade, cfg, "head")
