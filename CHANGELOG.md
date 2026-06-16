@@ -5,6 +5,55 @@ All notable changes to Bob Labs are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.5] — 2026-06-17 — Self-heal `lab_resources` volume ownership on redeploy
+
+CSO #3 (released earlier in the 0.12.x line) dropped root for the
+`bob-api` and `bob-sandbox` containers — both now run as UID 1000.
+Docker volumes inherit ownership from whoever writes them first.
+Any deployment that had ever started a pre-CSO #3 (root) container
+kept `bob-manager_lab_resources` and `bob-manager_qdrant_staging`
+owned by `root:root`, which caused `Errno 13: Permission denied`
+on **every** lab Run and agent-instance Run after upgrading to
+0.12.x — manifesting as the lab/agent failing at the synthesis or
+context-materialization step.
+
+The recovery one-liner was documented in two Dockerfile comment
+blocks plus `docs/AGENT.md`, but operators were still tripping it
+cold. `deploy-prod.sh` now self-heals the volume ownership on
+every redeploy — idempotent, no-op when ownership already matches,
+and creates the volumes if absent (so it's safe on fresh installs too).
+
+### Fixed
+
+- **`Errno 13: Permission denied` on `/data/lab_resources/<lab_id>/`**
+  after upgrading from any pre-CSO #3 release. `deploy-prod.sh`'s
+  new **Step 2.5** runs a throwaway `alpine:3.20` container that
+  `chown -R 1000:1000`s both named volumes before bringing services
+  back up.
+
+### Hardened
+
+- **Pinned alpine versions in documented recovery commands.**
+  `control-plane/Dockerfile`, `sandbox/Dockerfile`, and
+  `docs/AGENT.md` previously used `alpine:latest` in the manual
+  chown one-liner. Now pinned to `alpine:3.20` for reproducibility.
+
+### Upgrade notes
+
+Canonical install / upgrade path remains `bash deploy-prod.sh` —
+no env-var changes, no migrations. Watch for the new
+`✔ Volume ownership ensured (uid 1000)` line during deploy.
+
+Operators who hit the trap before upgrading and want to fix it
+without waiting for the full redeploy can run:
+
+```bash
+docker run --rm -v bob-manager_lab_resources:/data alpine:3.20 \
+    chown -R 1000:1000 /data
+docker run --rm -v bob-manager_qdrant_staging:/data alpine:3.20 \
+    chown -R 1000:1000 /data
+```
+
 ## [0.12.4] — 2026-06-17 — Fix `/orchestrator/settings` 500 (0.12.3 regression)
 
 0.12.3's migration 0015 nulled `orchestrator_settings.orchestrator_model`
@@ -33,9 +82,13 @@ orchestrator console — including the placeholder that 0.12.3 added.
 
 ### Upgrade notes
 
-`git pull && docker compose up -d --build`. No new migration, no
-env-var changes. After restart, the Default Model dropdown
-reappears with the `— pick a model —` placeholder added in 0.12.3.
+Canonical install / upgrade path is `bash deploy-prod.sh` — it
+handles the sandbox image build that plain `docker compose up
+--build` skips (the service has `profiles: [build-only]`).
+
+After upgrade, the Default Model dropdown reappears with the
+`— pick a model —` placeholder added in 0.12.3. No new migration,
+no env-var changes.
 
 ## [0.12.3] — 2026-06-17 — Fix phantom default + sandbox-image clone-dir trap
 

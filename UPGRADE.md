@@ -72,6 +72,44 @@ production. The single rule: **never skip step 2 of the upgrade flow.**
 
 Most recent first.
 
+### 0.12.4 → 0.12.5
+
+**Theme**: Self-heal `lab_resources` + `qdrant_staging` volume
+ownership on every redeploy. CSO #3 dropped root for both
+`bob-api` and `bob-sandbox` (USER 1000); Docker volumes ever
+written by a pre-CSO #3 (root) container kept root ownership and
+caused `Errno 13: Permission denied` on every lab Run / agent
+Run after upgrading to 0.12.x.
+
+- **Schema migrations**: none.
+- **Env vars**: no changes.
+- **Downtime**: ~10 s for the restart.
+- **Action**: `git pull && bash deploy-prod.sh`.
+
+`deploy-prod.sh` now runs a throwaway `alpine:3.20` container
+between the build step and the DB migration step that `chown -R
+1000:1000`s both named volumes. Idempotent — no-op when ownership
+already matches — so safe on every redeploy and on fresh installs.
+
+Watch for the new `▶ Ensuring volume ownership (CSO #3 — UID 1000)…`
+/ `✔ Volume ownership ensured (uid 1000)` lines during deploy.
+
+#### If you can't redeploy right now
+
+Operators who hit the trap (lab or agent Run fails with `Errno 13:
+Permission denied: '/data/lab_resources/<lab_id>/…'`) and don't
+want to wait for the full redeploy can run the chown directly:
+
+```bash
+docker run --rm -v bob-manager_lab_resources:/data alpine:3.20 \
+    chown -R 1000:1000 /data
+docker run --rm -v bob-manager_qdrant_staging:/data alpine:3.20 \
+    chown -R 1000:1000 /data
+```
+
+No container restart needed afterwards — Linux re-reads ownership
+per syscall, so the next lab/agent Run picks it up.
+
 ### 0.12.3 → 0.12.4
 
 **Theme**: Fixes a 0.12.3 regression — the migration nulled
@@ -82,7 +120,7 @@ schema still declared the field non-nullable, so `GET /settings`
 - **Schema migrations**: none.
 - **Env vars**: no changes.
 - **Downtime**: ~10 s for the restart.
-- **Action**: `git pull && docker compose up -d --build`.
+- **Action**: `bash deploy-prod.sh` (canonical install/upgrade path).
 
 The fix is two annotations:
 `OrchestratorSettingsResponse.orchestrator_model: str | None = None`
@@ -90,6 +128,24 @@ and `OrchestratorSettings.orchestrator_model: Mapped[str | None]`
 (dropping the Python-side `default="qwen2.5:72b"` that would have
 re-introduced the phantom default whenever the singleton row was
 lazily created).
+
+#### About lab Run 500s ("bob-manager-bob-sandbox image not found")
+
+If you've been seeing `Failed to run instance` or `500` on **Run**,
+the cause is that the sandbox image hasn't been built locally.
+`bob-sandbox` has `profiles: [build-only]`, so plain
+`docker compose up -d --build` skips it. **Use `bash deploy-prod.sh`
+— it builds the sandbox image explicitly.** Or do it once by hand:
+
+```bash
+docker compose build bob-sandbox
+docker compose up -d
+```
+
+After the sandbox image is locally tagged as
+`bob-manager-bob-sandbox:latest` (note: the `name: bob-manager` pin
+added in 0.12.3 makes this consistent across clone directories),
+**Run** completes with HTTP 202.
 
 ### 0.12.2 → 0.12.3
 

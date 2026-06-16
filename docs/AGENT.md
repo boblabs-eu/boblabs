@@ -315,7 +315,7 @@ docker compose down
 
 # Chown each named volume to uid 1000 via a throwaway alpine container
 for vol in bob-manager_lab_resources bob-manager_qdrant_staging bob-manager_app_uploads; do
-  docker run --rm -v "$vol":/data alpine chown -R 1000:1000 /data
+  docker run --rm -v "$vol":/data alpine:3.20 chown -R 1000:1000 /data
 done
 
 # Rebuild with the new Dockerfiles + start

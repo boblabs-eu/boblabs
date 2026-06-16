@@ -64,6 +64,20 @@ else
   warn "Sandbox build skipped (--no-sandbox)"
 fi
 
+# ── Step 2.5: Ensure volume ownership matches container UID 1000 ──
+# CSO #3 made bob-api + bob-sandbox run as UID 1000. Docker volumes
+# that were ever written by a pre-CSO #3 (root) container keep root
+# ownership, which causes Errno 13 on every lab/agent Run. Idempotent:
+# chown is a no-op when ownership already matches. Pinned alpine for
+# reproducibility.
+log "Ensuring volume ownership (CSO #3 — UID 1000)..."
+docker run --rm \
+    -v bob-manager_lab_resources:/lab_resources \
+    -v bob-manager_qdrant_staging:/qdrant_staging \
+    alpine:3.20 \
+    sh -c "chown -R 1000:1000 /lab_resources /qdrant_staging"
+ok "Volume ownership ensured (uid 1000)"
+
 # ── Step 3: Database migrations ──────────────────
 if [ "$SKIP_MIGRATIONS" = false ]; then
   log "Ensuring database is running..."

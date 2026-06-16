@@ -29,10 +29,11 @@ COPY alembic.ini ./
 # the lab_resources and qdrant_staging volumes (rw); both inherit
 # 1000:1000 from the first write on a fresh deploy. For existing
 # deployments, operator must chown the volumes once before redeploy:
-#   docker run --rm -v bob-manager_lab_resources:/data alpine \
+#   docker run --rm -v bob-manager_lab_resources:/data alpine:3.20 \
 #     chown -R 1000:1000 /data
-#   docker run --rm -v bob-manager_qdrant_staging:/data alpine \
+#   docker run --rm -v bob-manager_qdrant_staging:/data alpine:3.20 \
 #     chown -R 1000:1000 /data
+# (deploy-prod.sh now does this automatically on every redeploy.)
 # The bob-api process never needs to bind a privileged port (uvicorn
 # on :8000) so dropping privileges is safe.
 RUN if ! id -u 1000 >/dev/null 2>&1; then \

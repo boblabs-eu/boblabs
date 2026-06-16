@@ -46,8 +46,71 @@ def test_docker_compose_pins_project_name() -> None:
 
 def test_container_manager_default_matches_compose_image_prefix() -> None:
     """SANDBOX_IMAGE default must match what docker-compose builds."""
-    cm = Path(__file__).resolve().parents[2] / "app" / "services" / "container_manager.py"
+    cm = (
+        Path(__file__).resolve().parents[2]
+        / "app"
+        / "services"
+        / "container_manager.py"
+    )
     src = cm.read_text()
     assert (
-        'SANDBOX_IMAGE = os.environ.get("SANDBOX_IMAGE", "bob-manager-bob-sandbox:latest")' in src
+        'SANDBOX_IMAGE = os.environ.get("SANDBOX_IMAGE", "bob-manager-bob-sandbox:latest")'
+        in src
     ), "container_manager.py default must match the pinned compose project name"
+
+
+def test_deploy_prod_sh_builds_sandbox_image() -> None:
+    """deploy-prod.sh is the canonical install path; it must build bob-sandbox.
+
+    bob-sandbox is `profiles: [build-only]` (kept that way intentionally —
+    docker compose up doesn't start it). The image MUST get built via
+    deploy-prod.sh, otherwise the first lab Run 500s because
+    container_manager.py asks Docker for an image that was never built.
+    """
+    candidates = [
+        Path(__file__).resolve().parents[3] / "deploy-prod.sh",
+        Path("/repo/deploy-prod.sh"),
+        Path("/workspace/deploy-prod.sh"),
+    ]
+    deploy_sh = next((p for p in candidates if p.exists()), None)
+    if deploy_sh is None:
+        pytest.skip("deploy-prod.sh not on disk in this runner")
+    src = deploy_sh.read_text()
+    assert "$COMPOSE build bob-sandbox" in src, (
+        "deploy-prod.sh must explicitly `docker compose build bob-sandbox` — "
+        "the service has `profiles: [build-only]` so plain `up --build` skips it. "
+        "Without this line, first-install lab Run 500s."
+    )
+
+
+def test_deploy_prod_sh_chowns_volumes_to_uid_1000() -> None:
+    """deploy-prod.sh must chown lab_resources + qdrant_staging to 1000:1000.
+
+    CSO #3 dropped root for bob-api + bob-sandbox (both run as UID 1000).
+    Docker volumes that were ever written by a pre-CSO #3 (root) container
+    keep root ownership, which causes Errno 13 on every lab/agent Run.
+    deploy-prod.sh's Step 2.5 self-heals this; without that step, upgrades
+    from any pre-CSO #3 release break lab Run + agent Run. See CHANGELOG 0.12.5.
+    """
+    candidates = [
+        Path(__file__).resolve().parents[3] / "deploy-prod.sh",
+        Path("/repo/deploy-prod.sh"),
+        Path("/workspace/deploy-prod.sh"),
+    ]
+    deploy_sh = next((p for p in candidates if p.exists()), None)
+    if deploy_sh is None:
+        pytest.skip("deploy-prod.sh not on disk in this runner")
+    src = deploy_sh.read_text()
+    assert "bob-manager_lab_resources:/lab_resources" in src, (
+        "deploy-prod.sh must mount bob-manager_lab_resources for the chown step"
+    )
+    assert "bob-manager_qdrant_staging:/qdrant_staging" in src, (
+        "deploy-prod.sh must mount bob-manager_qdrant_staging for the chown step"
+    )
+    assert "alpine:3.20" in src, (
+        "deploy-prod.sh must use a PINNED alpine tag (alpine:3.20), not :latest"
+    )
+    assert "chown -R 1000:1000" in src, (
+        "deploy-prod.sh must chown the named volumes to 1000:1000 — "
+        "otherwise pre-CSO #3 upgrades hit Errno 13 on every lab/agent Run."
+    )

@@ -126,6 +126,12 @@ services:
       - bob-network
 
   # ── Sandbox image (per-lab containers created dynamically) ──
+  # Build-only target: per-lab sandbox containers are launched at runtime
+  # by control-plane/container_manager.py against this image name
+  # (bob-manager-bob-sandbox:latest, fixed by the `name:` pin at top).
+  # The `build-only` profile keeps this service out of plain
+  # `docker compose up`; the canonical install path is `bash deploy-prod.sh`
+  # which builds it explicitly. See UPGRADE.md for first-install steps.
   bob-sandbox:
     build:
       context: ./sandbox

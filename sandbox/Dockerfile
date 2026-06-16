@@ -29,8 +29,9 @@ COPY main.py .
 # matching ownership — on a fresh deploy the volume inherits 1000:1000
 # from the first write. For existing deployments, the operator must
 # run once before redeploy:
-#   docker run --rm -v bob-manager_lab_resources:/data alpine \
+#   docker run --rm -v bob-manager_lab_resources:/data alpine:3.20 \
 #     chown -R 1000:1000 /data
+# (deploy-prod.sh now does this automatically on every redeploy.)
 RUN if ! id -u 1000 >/dev/null 2>&1; then \
         useradd -u 1000 -m -s /bin/bash sandbox; \
     fi && chown -R 1000:1000 /app
