@@ -1209,14 +1209,21 @@ export default function AgentsView({ allModels: allModelsRaw = [] }) {
     loadInstanceLinks(selectedInstanceId);
   }, [selectedInstanceId, loadInstanceData, loadInstanceLinks]);
 
-  // Poll messages/memories/output for selected instance while running/paused
+  // Poll the selected instance's data AND the instance list while open.
+  // We deliberately do NOT gate on status===running/paused — a completed
+  // lab can be woken up by inject (handleInjectInstance), and without
+  // polling here the badge stays stale until the user remounts the panel.
+  // Verified via DevTools Network: the previous gate caused the entire
+  // bug — when no instance was active, instances-list polling never
+  // started, so the badge couldn't refresh after inject.
   useEffect(() => {
     if (!selectedInstanceId) return;
-    const inst = instances.find(i => i.lab_id === selectedInstanceId);
-    if (!inst || (inst.status !== 'running' && inst.status !== 'paused')) return;
-    const t = setInterval(() => loadInstanceData(selectedInstanceId), 3000);
+    const t = setInterval(() => {
+      loadInstanceData(selectedInstanceId);
+      loadInstances();
+    }, 3000);
     return () => clearInterval(t);
-  }, [selectedInstanceId, instances, loadInstanceData]);
+  }, [selectedInstanceId, loadInstanceData, loadInstances]);
 
   // Auto-scroll feed when new messages arrive
   useEffect(() => {
@@ -1228,7 +1235,14 @@ export default function AgentsView({ allModels: allModelsRaw = [] }) {
     try {
       await injectLabMessage(selectedInstanceId, { content: injectText.trim() });
       setInjectText('');
-      await loadInstanceData(selectedInstanceId);
+      // Refresh the instance LIST too — inject on a completed lab flips the
+      // status to running, but without this the polling effect below stays
+      // dormant (it gates on status), leaving the badge stuck on "completed"
+      // until the user navigates away and back.
+      await Promise.all([
+        loadInstances(),
+        loadInstanceData(selectedInstanceId),
+      ]);
     } catch (e) {
       console.error('Failed to inject', e);
       alert(e?.response?.data?.detail || 'Failed to inject message');

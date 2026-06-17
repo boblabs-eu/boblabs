@@ -72,6 +72,34 @@ production. The single rule: **never skip step 2 of the upgrade flow.**
 
 Most recent first.
 
+### 0.12.6 → 0.12.7
+
+**Theme**: Frontend fix — the Agents console no longer freezes on
+`COMPLETED` after injecting a message into a completed instance.
+
+Root cause: the instances-list polling effect was gated on
+`some(i => i.status === 'running' || 'paused')`, which is
+chicken-and-egg: with no other active instance, polling never
+started, so the just-injected instance's status badge couldn't
+refresh. Verified via DevTools Network — on an environment where
+another instance happened to be running, the global poller ran
+incidentally and masked the bug.
+
+Two changes in `frontend/src/components/agents/AgentsView.js`:
+
+- `handleInjectInstance` now refreshes the instance list (not just
+  the per-instance messages), so the status badge picks up the
+  server-side flip from `completed` to `running` within ~200 ms.
+- The per-instance polling effect drops the
+  `status === running/paused` gate. Polls every 3 s whenever an
+  instance is open, refreshing both the per-instance data and the
+  instances list.
+
+- **Schema migrations**: none.
+- **Env vars**: no changes.
+- **Downtime**: ~10 s for the restart.
+- **Action**: `git pull && bash deploy-prod.sh` — rebuilds `bob-ui`.
+
 ### 0.12.5 → 0.12.6
 
 **Theme**: Make `bob-hermes-adapter` discoverable + buildable through

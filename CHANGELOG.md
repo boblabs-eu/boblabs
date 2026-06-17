@@ -5,6 +5,52 @@ All notable changes to Bob Labs are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.7] — 2026-06-17 — Agents console: status badge stops going stale after inject
+
+User reported that injecting a message into a **completed** agent
+instance correctly woke the backend (the Models tab load-balancer
+feed showed live activity) but the Agents console kept showing
+`COMPLETED` with iteration frozen until the user navigated away
+(e.g. to Models tab) and back. After remount the status was
+correct.
+
+Verified via DevTools Network: after the inject POST, the FE issues
+`GET .../agents`, `.../messages`, `.../memories`, `.../resources`,
+`.../output-files` (per-instance data) but does **not** call
+`GET .../library-agents/instances` — so the `instances` array stays
+stale. The instances-list polling effect was gated on
+`instances.some(i => i.status === 'running' || 'paused')`, which is
+chicken-and-egg: with no other active instance, the gate is false,
+polling never starts, and the just-injected instance's status can't
+refresh. The local-dev environment happened to mask this because the
+operator had another instance in `running` state, which kept the
+global poller alive.
+
+### Fixed
+
+- **`handleInjectInstance` now refreshes the instance list too**, not
+  just `loadInstanceData`. This catches the immediate status flip
+  from `completed` → `running` within ~200 ms instead of waiting
+  for polling.
+- **Per-instance polling no longer gates on
+  `status === running/paused`**. Polls the per-instance data AND
+  the instances list every 3 s whenever an instance is open. Now
+  the badge stays in sync regardless of other instances' state.
+
+### Hardened
+
+- **`deploy-prod.sh` reads `HERMES_IMAGE` via `grep | cut`** instead
+  of sourcing `.env`. The previous `. ./.env` would abort the build
+  under `set -e` if any `.env` value contained a shell-special char
+  (e.g. `&` in an SMTP password) — same grep|cut idiom already used
+  elsewhere in the script.
+
+### Upgrade notes
+
+Canonical path: `git pull && bash deploy-prod.sh`. No env changes,
+no migrations. FE-only behaviour change — rebuild of `bob-ui`
+happens automatically in deploy-prod.sh's build step.
+
 ## [0.12.6] — 2026-06-17 — Hermes-adapter discoverability: document `HERMES_IMAGE` + auto-build
 
 Operators adding their first Hermes-backed agent hit

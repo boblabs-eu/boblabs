@@ -74,9 +74,11 @@ fi
 # adding a Hermes-backed agent hit "ERROR: Hermes image not configured".
 if [ "$NO_HERMES" = false ] && [ -f hermes-adapter/Dockerfile ]; then
   log "Building hermes-adapter image..."
-  # shellcheck disable=SC1091
-  if [ -f .env ]; then set -a; . ./.env; set +a; fi
-  HERMES_TAG="${HERMES_IMAGE:-bob-hermes-adapter:latest}"
+  # Read ONLY HERMES_IMAGE — never `source` .env here: a value containing a
+  # shell-special char (e.g. & in SMTP_PASSWORD) breaks `. ./.env` and aborts
+  # the build under `set -e`. Same grep|cut idiom used elsewhere in this script.
+  HERMES_TAG="$(grep -E '^HERMES_IMAGE=' .env 2>/dev/null | head -1 | cut -d= -f2-)"
+  HERMES_TAG="${HERMES_TAG:-bob-hermes-adapter:latest}"
   docker build -t "$HERMES_TAG" hermes-adapter/
   ok "Hermes adapter image built ($HERMES_TAG)"
 elif [ "$NO_HERMES" = true ]; then
