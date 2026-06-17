@@ -72,6 +72,43 @@ production. The single rule: **never skip step 2 of the upgrade flow.**
 
 Most recent first.
 
+### 0.12.5 → 0.12.6
+
+**Theme**: Make `bob-hermes-adapter` discoverable + buildable through
+the canonical install path. `HERMES_IMAGE` is now documented in
+`.env.example`, and `deploy-prod.sh` builds the adapter image
+automatically (gated on `hermes-adapter/Dockerfile` existing).
+
+- **Schema migrations**: none.
+- **Env vars**: new — `HERMES_IMAGE`, `HERMES_DEFAULT_TIMEOUT_SEC`,
+  `HERMES_USE_GATEWAY`, `HERMES_GATEWAY_URL`. All have sensible
+  defaults; the Hermes backend stays dormant if `HERMES_IMAGE` is
+  empty.
+- **Downtime**: ~10 s for the restart (no migrations).
+- **Action**: `git pull && bash deploy-prod.sh`.
+
+The redeploy auto-builds `bob-hermes-adapter:latest`. If you already
+had `HERMES_IMAGE` set in `.env` (manually, before 0.12.6), your value
+takes precedence — `deploy-prod.sh` reads it.
+
+First-time Hermes operators: open the updated `.env.example`, copy
+the new `HERMES_IMAGE=…` block into your `.env`, then redeploy. New
+flag `--no-hermes` skips the build for stripped-down deployments.
+
+#### Heads-up: small models via Hermes ≠ Claude Opus via claude-agent
+
+If you've been comparing `qwen2.5:14b` (Hermes backend) responses
+against `claude-agent:opus`, expect different behavior:
+
+- `claude-agent:*` runs Claude Code directly with its own tool stack
+  (web_search, web_fetch). It can autonomously research and synthesize.
+- `qwen2.5:14b` via Hermes runs inside an adapter that exposes
+  `tools: []` by design — no API-keyed search tools are wired up.
+  Small models correctly return `NEEDS_INPUT: …` asking for clarification.
+
+This is not a regression. Wiring search tools into the Hermes adapter
+is a separate roadmap item.
+
 ### 0.12.4 → 0.12.5
 
 **Theme**: Self-heal `lab_resources` + `qdrant_staging` volume

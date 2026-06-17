@@ -5,6 +5,55 @@ All notable changes to Bob Labs are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.6] — 2026-06-17 — Hermes-adapter discoverability: document `HERMES_IMAGE` + auto-build
+
+Operators adding their first Hermes-backed agent hit
+`ERROR: Hermes image not configured. Set HERMES_IMAGE to the
+hermes-adapter image…` with no breadcrumb to the fix. Two gaps:
+
+- `HERMES_IMAGE` was wired into `docker-compose.yml` but undocumented
+  in `.env.example` — operators following the example had no idea the
+  env var existed.
+- `deploy-prod.sh` built `bob-api`, `bob-ui`, `bob-remotion`, and
+  `bob-sandbox`, but never built `bob-hermes-adapter`. The adapter
+  image is not on Docker Hub — it ships as source under
+  `hermes-adapter/Dockerfile` and must be built locally.
+
+### Fixed
+
+- **`.env.example` now documents the `HERMES_IMAGE` + Hermes
+  timeout/gateway block** with inline guidance on the dormant default.
+- **`deploy-prod.sh` now builds `bob-hermes-adapter`** automatically
+  during redeploy, conditional on `hermes-adapter/Dockerfile` existing
+  (no-ops cleanly otherwise). New `--no-hermes` flag mirrors
+  `--no-sandbox` for skipping the build.
+
+### Not a regression — design clarification
+
+Users running `qwen2.5:14b` (or other small models) via the Hermes
+backend may see `NEEDS_INPUT: …` responses where Claude Opus (via
+`claude-agent:*`) returned a fully synthesized answer with web data.
+This is **expected behavior**, not a regression in 0.12.x:
+
+- `claude-agent:*` bypasses Hermes entirely and runs Claude Code with
+  its full tool stack (web_search, web_fetch).
+- `qwen2.5:14b` via Hermes goes through the adapter, which exposes
+  `tools: []` by design — Hermes runs its own internal tool stack
+  inside the container, but no API-keyed search tools are wired up by
+  default. Small models correctly ask for clarification rather than
+  hallucinating.
+
+Wiring real search tools (Exa/Tavily/etc) into the Hermes adapter is a
+separate feature, not a bug.
+
+### Upgrade notes
+
+Canonical path remains `bash deploy-prod.sh`. After this release, the
+redeploy automatically builds `bob-hermes-adapter:latest` — no manual
+`docker build` needed. First-time Hermes operators: copy the new
+`HERMES_IMAGE=…` block from `.env.example` into your `.env` if missing,
+then redeploy.
+
 ## [0.12.5] — 2026-06-17 — Self-heal `lab_resources` volume ownership on redeploy
 
 CSO #3 (released earlier in the 0.12.x line) dropped root for the

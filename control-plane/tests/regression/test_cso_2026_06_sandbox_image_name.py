@@ -114,3 +114,32 @@ def test_deploy_prod_sh_chowns_volumes_to_uid_1000() -> None:
         "deploy-prod.sh must chown the named volumes to 1000:1000 — "
         "otherwise pre-CSO #3 upgrades hit Errno 13 on every lab/agent Run."
     )
+
+
+def test_deploy_prod_sh_builds_hermes_adapter() -> None:
+    """deploy-prod.sh must build the hermes-adapter image (conditional).
+
+    Without this, operators who add a Hermes-backed agent hit `ERROR:
+    Hermes image not configured` because bob-hermes-adapter:latest is
+    not on Docker Hub. The build is gated on hermes-adapter/Dockerfile
+    existing so the script no-ops cleanly on builds without the source
+    (e.g. publish-public trimming).
+    """
+    candidates = [
+        Path(__file__).resolve().parents[3] / "deploy-prod.sh",
+        Path("/repo/deploy-prod.sh"),
+        Path("/workspace/deploy-prod.sh"),
+    ]
+    deploy_sh = next((p for p in candidates if p.exists()), None)
+    if deploy_sh is None:
+        pytest.skip("deploy-prod.sh not on disk in this runner")
+    src = deploy_sh.read_text()
+    assert "hermes-adapter/Dockerfile" in src, (
+        "deploy-prod.sh must conditionally check for hermes-adapter/Dockerfile"
+    )
+    assert "docker build -t" in src and "hermes-adapter/" in src, (
+        "deploy-prod.sh must build the hermes-adapter image"
+    )
+    assert "--no-hermes" in src, (
+        "deploy-prod.sh must accept --no-hermes to skip the hermes build"
+    )

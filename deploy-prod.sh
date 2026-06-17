@@ -14,15 +14,18 @@ err()  { echo -e "${RED}✖${NC} $1" >&2; }
 
 SKIP_MIGRATIONS=false
 NO_SANDBOX=false
+NO_HERMES=false
 
 for arg in "$@"; do
   case "$arg" in
     --skip-migrations) SKIP_MIGRATIONS=true ;;
     --no-sandbox)      NO_SANDBOX=true ;;
+    --no-hermes)       NO_HERMES=true ;;
     -h|--help)
-      echo "Usage: $0 [--skip-migrations] [--no-sandbox]"
+      echo "Usage: $0 [--skip-migrations] [--no-sandbox] [--no-hermes]"
       echo "  --skip-migrations  Skip database migration step"
       echo "  --no-sandbox       Skip sandbox image build"
+      echo "  --no-hermes        Skip hermes-adapter image build"
       exit 0 ;;
     *) err "Unknown argument: $arg"; exit 1 ;;
   esac
@@ -62,6 +65,22 @@ if [ "$NO_SANDBOX" = false ]; then
   ok "Sandbox image built"
 else
   warn "Sandbox build skipped (--no-sandbox)"
+fi
+
+# Conditional Hermes adapter build — only when the adapter source is on
+# disk (publish-public trimming may drop hermes-adapter/). Reads
+# HERMES_IMAGE from .env if set, else defaults to bob-hermes-adapter:latest.
+# bob-hermes-adapter is NOT on Docker Hub; without this step, operators
+# adding a Hermes-backed agent hit "ERROR: Hermes image not configured".
+if [ "$NO_HERMES" = false ] && [ -f hermes-adapter/Dockerfile ]; then
+  log "Building hermes-adapter image..."
+  # shellcheck disable=SC1091
+  if [ -f .env ]; then set -a; . ./.env; set +a; fi
+  HERMES_TAG="${HERMES_IMAGE:-bob-hermes-adapter:latest}"
+  docker build -t "$HERMES_TAG" hermes-adapter/
+  ok "Hermes adapter image built ($HERMES_TAG)"
+elif [ "$NO_HERMES" = true ]; then
+  warn "Hermes adapter build skipped (--no-hermes)"
 fi
 
 # ── Step 2.5: Ensure volume ownership matches container UID 1000 ──
