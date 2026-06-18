@@ -75,6 +75,18 @@ HERMES_IMAGE=bob-hermes-adapter:latest
 
 With `HERMES_IMAGE` unset the feature stays dormant: activation and runs return a clear "Hermes image not configured" error.
 
+### Tools available in the adapter
+
+The image bundles the runtimes Hermes' tools need — Node.js 22, ffmpeg, and a headless **Chromium** driven by the `agent-browser` CLI (`AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium`) — so a Hermes agent has a working toolset **in-container, with no API keys**. About **25 tools** are enabled by default:
+
+- **Compute / files:** `terminal`, `execute_code`, `read_file`, `write_file`, `patch`, `search_files`, `process`
+- **Agent:** `memory`, `todo`, `delegate_task` (subagents), `session_search`, `skill_view` / `skill_manage` / `skills_list`, `clarify`, `text_to_speech`
+- **Web (keyless):** `browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_scroll`, `browser_back`, `browser_press`, `browser_get_images`, `browser_console`
+
+**Web access is the keyless `browser` toolset**, *not* `web_search` / `web_extract` — those are gated behind a paid search key (`EXA_API_KEY` / `TAVILY_API_KEY` / `FIRECRAWL_*` …) and stay **off** unless you set one. So a Hermes agent fetches live data (weather, pages) by *browsing* (`browser_navigate` → `browser_snapshot`). Other gated toolsets (`x_search`, `image_gen`, `discord`, …) likewise need their own keys.
+
+These tools only do anything for a brain that can actually **call** them — see [Choosing a Claude brain](#choosing-a-claude-brain-for-a-hermes-agent) (a text-only `claude-cli:*` brain ignores them and hallucinates). New tools arrive via the image: after rebuilding `bob-hermes-adapter`, **recreate the per-instance containers** to pick them up (volumes are kept).
+
 ### Task-completion protocol (the two-loops problem)
 
 Hermes ends a *turn* whenever its model emits text without tool calls — including mid-work narration ("let me browse the web…"). The Lab loop must only re-engage when the *task* is done, so the adapter runs each task as a continuation loop on one in-memory `AIAgent`:
@@ -103,6 +115,21 @@ The hermes agent's `model_id` is validated **per task** and Hermes is pointed at
 Switching the model in the agent edit form takes effect on the **next task** — no restart, history preserved (the transcript is provider-agnostic).
 
 `HERMES_USE_GATEWAY=false` restores the legacy direct mode (the resolver hands Hermes the provider's own URL — no balancing, no feed events); kept as a debugging escape hatch.
+
+### Choosing a Claude brain for a Hermes agent
+
+Hermes drives its own tools only if the brain **returns structured tool calls**. That rules out the text-only `claude-cli:*` model — a Hermes agent on it executes **zero** tools and **hallucinates** results. Use one of:
+
+| Hermes brain | Drives Hermes' tools? | Cost |
+|---|---|---|
+| Ollama (e.g. `qwen3.6:35b`) | ✅ native `tool_calls` | free / local |
+| **`claude-bridge:opus`** | ✅ via `<tool_call>` text shim | Max subscription |
+| Anthropic API (`claude-opus-4-8`) | ✅ native `tool_use` | API credits |
+| `claude-cli:opus` | ❌ text-only → hallucinates | — |
+
+`claude-bridge:*` is the way to run **opus on the Max subscription** while keeping the full Hermes harness (SOUL, memory, skills). For Claude as its *own* agent (its own tools, not Hermes'), use `claude-agent:*` — but that bypasses Hermes. Full comparison: [`claude-cli/README.md` → Three modes](../claude-cli/README.md#three-modes-claude-cli-vs-claude-bridge-vs-claude-agent).
+
+> **Don't put a `claude-agent:*` model on a `backend=hermes` agent.** Hermes still runs as the harness and merely *wraps* Claude Code — Hermes' own tools (above) are bypassed and you pay for two nested loops. For opus driving *Hermes'* tools use `claude-bridge:*`; for *Claude Code's* own tools, make it a **native** (non-Hermes) agent so the control plane routes straight to the wrapper.
 
 ## Operator UI
 

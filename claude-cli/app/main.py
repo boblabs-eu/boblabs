@@ -43,6 +43,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import time
 import uuid
@@ -60,6 +61,12 @@ MODEL_PREFIX = "claude-cli:"
 # (see the agentic branch in _one_shot). Namespaced separately so labs keep
 # using the text-only claude-cli:* models exactly as before.
 AGENT_MODEL_PREFIX = "claude-agent:"
+# "Bridge" models keep the CALLER as the harness (e.g. Hermes): the caller's
+# tool schemas are described to Claude as text + the <tool_call> protocol, and
+# Claude's <tool_call> output is parsed back into structured tool_calls. So opus
+# drives the CALLER'S tools (Hermes' terminal/browser/memory/…) on the Max
+# subscription — no API. See _bridge_run.
+BRIDGE_MODEL_PREFIX = "claude-bridge:"
 
 # Every knob is env-driven — CLAUDE_CLI_MODELS is the single source of truth
 # for the model list (the literal below is only its default value).
@@ -107,6 +114,14 @@ _AGENT_PERMISSION_ARGS = (
     else ["--dangerously-skip-permissions"]
 )
 
+# ── Tool-bridge mode (claude-bridge:*) ────────────────────────────────
+# Lets opus drive the CALLER'S tools (e.g. Hermes' own toolset) on the Max sub:
+# the caller's tool schemas are described to Claude as text + the <tool_call>
+# protocol; Claude's <tool_call> output is parsed back into structured
+# tool_calls. ONE turn per request — the caller (Hermes) drives the loop, just
+# like the text-only path. Opt-in via CLAUDE_CLI_BRIDGE_MODELS (e.g. "opus").
+_BRIDGE_MODELS_DEFAULT = ""
+
 _claude_version: str | None = None
 
 
@@ -123,19 +138,31 @@ def configured_agent_models() -> list[str]:
     return [m.strip() for m in raw.split(",") if m.strip()]
 
 
+def configured_bridge_models() -> list[str]:
+    """Bare tool-bridge model ids from CLAUDE_CLI_BRIDGE_MODELS (opt-in)."""
+    raw = os.getenv("CLAUDE_CLI_BRIDGE_MODELS", _BRIDGE_MODELS_DEFAULT)
+    return [m.strip() for m in raw.split(",") if m.strip()]
+
+
 def namespaced_models() -> list[str]:
-    return [f"{MODEL_PREFIX}{m}" for m in configured_models()] + [
-        f"{AGENT_MODEL_PREFIX}{m}" for m in configured_agent_models()
-    ]
+    return (
+        [f"{MODEL_PREFIX}{m}" for m in configured_models()]
+        + [f"{AGENT_MODEL_PREFIX}{m}" for m in configured_agent_models()]
+        + [f"{BRIDGE_MODEL_PREFIX}{m}" for m in configured_bridge_models()]
+    )
 
 
 def is_agent_model(model: str) -> bool:
     return model.startswith(AGENT_MODEL_PREFIX)
 
 
+def is_bridge_model(model: str) -> bool:
+    return model.startswith(BRIDGE_MODEL_PREFIX)
+
+
 def strip_prefix(model: str) -> str:
-    """Accept 'claude-cli:opus' / 'claude-agent:opus' (control plane) or bare 'opus'."""
-    for prefix in (AGENT_MODEL_PREFIX, MODEL_PREFIX):
+    """Accept namespaced ids (claude-cli/-agent/-bridge:opus) or bare 'opus'."""
+    for prefix in (AGENT_MODEL_PREFIX, BRIDGE_MODEL_PREFIX, MODEL_PREFIX):
         if model.startswith(prefix):
             return model[len(prefix) :]
     return model
@@ -380,6 +407,166 @@ async def _one_shot(
     return content, tokens_in, tokens_out
 
 
+# ── Tool-bridge mode: opus drives the CALLER'S tools (e.g. Hermes') ───
+
+_TOOL_CALL_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
+
+
+def _build_tool_instructions(tools: list) -> str:
+    """Render the caller's OpenAI tool schemas as a text protocol Claude follows."""
+    lines = [
+        "## Tool-use protocol",
+        "You are the brain of an external tool harness. You have NO built-in tools",
+        "here — the ONLY way to act is to emit a tool_call block. To call a tool,",
+        "output EXACTLY one block per call:",
+        '<tool_call>{"name": "<tool_name>", "arguments": {<json args>}}</tool_call>',
+        "You may emit several blocks to call several tools. You will then receive each",
+        "tool's result and may call more. When the task is done and you need no tool,",
+        "reply normally with your final answer (no <tool_call> block). NEVER write fake",
+        "tool output or invent results — only the harness actually runs tools.",
+        "",
+        "### Available tools",
+    ]
+    for t in tools or []:
+        fn = t.get("function", t) if isinstance(t, dict) else {}
+        name = fn.get("name", "")
+        if not name:
+            continue
+        desc = (fn.get("description") or "").strip().replace("\n", " ")
+        try:
+            params_str = json.dumps(fn.get("parameters") or {}, ensure_ascii=False)
+        except (TypeError, ValueError):
+            params_str = "{}"
+        lines.append(f"- {name}: {desc}\n  parameters: {params_str}")
+    return "\n".join(lines)
+
+
+def _parse_bridge_tool_calls(text: str) -> list[dict]:
+    """Extract <tool_call>{json}</tool_call> blocks → [{name, arguments(dict)}]."""
+    calls: list[dict] = []
+    for m in _TOOL_CALL_RE.finditer(text or ""):
+        try:
+            obj = json.loads(m.group(1))
+        except (json.JSONDecodeError, ValueError):
+            continue
+        name = obj.get("name")
+        if not name:
+            continue
+        args = obj.get("arguments")
+        if not isinstance(args, dict):
+            args = {} if args is None else {"value": args}
+        calls.append({"name": name, "arguments": args})
+    return calls
+
+
+def _strip_bridge_tool_calls(text: str) -> str:
+    """Remove <tool_call> blocks, leaving Claude's prose (if any)."""
+    return _TOOL_CALL_RE.sub("", text or "").strip()
+
+
+async def _bridge_run(
+    model: str, system_prompt: str, prompt: str, tools: list
+) -> tuple[str, list[dict], int, int]:
+    """Bridge mode: opus drives the CALLER'S tools via the <tool_call> text
+    protocol. We describe the caller's tool schemas as text, run ONE text turn
+    (the caller drives the loop), and parse Claude's <tool_call> output (and any
+    native tool_use it emits anyway) back into structured tool_calls.
+
+    Returns (content, tool_calls, tokens_in, tokens_out) where
+    tool_calls = [{"id","name","arguments"(dict)}].
+    """
+    instructions = _build_tool_instructions(tools)
+    sys = (system_prompt + "\n\n" + instructions) if system_prompt else instructions
+    args = [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        model,
+        "--max-turns",
+        "1",
+        "--system-prompt",
+        sys,
+        "--tools",
+        "",  # Claude must NOT use its OWN tools — only emit <tool_call> for the caller's
+        "--strict-mcp-config",
+    ]
+    args += _EXTRA_ARGS
+    rc, stdout, stderr = await _run_claude(args, prompt, _TIMEOUT_SEC)
+
+    text_parts: list[str] = []
+    native_calls: list[dict] = []  # opus may emit a real tool_use despite --tools ""
+    result_event: dict | None = None
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            ev = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        etype = ev.get("type")
+        if etype == "assistant":
+            for block in (ev.get("message") or {}).get("content") or []:
+                btype = block.get("type")
+                if btype == "text":
+                    text_parts.append(block.get("text") or "")
+                elif btype == "tool_use":
+                    native_calls.append(
+                        {"name": block.get("name"), "arguments": block.get("input") or {}}
+                    )
+        elif etype == "result":
+            result_event = ev
+
+    raw_text = "\n".join(p for p in text_parts if p).strip()
+    if not raw_text and result_event:
+        raw_text = str(result_event.get("result") or "")
+
+    # Native tool_use (already structured) + parsed <tool_call> text, deduped.
+    combined = native_calls + _parse_bridge_tool_calls(raw_text)
+    seen: set = set()
+    tool_calls: list[dict] = []
+    for c in combined:
+        if not c.get("name"):
+            continue
+        key = (c["name"], json.dumps(c.get("arguments") or {}, sort_keys=True, ensure_ascii=False))
+        if key in seen:
+            continue
+        seen.add(key)
+        tool_calls.append(
+            {"id": f"call_{len(tool_calls)}", "name": c["name"], "arguments": c.get("arguments") or {}}
+        )
+
+    content = _strip_bridge_tool_calls(raw_text)
+    subtype = (result_event or {}).get("subtype")
+    if not content and not tool_calls:
+        tail = ((result_event or {}).get("result") or stderr or stdout or "unknown error").strip()[
+            -2000:
+        ]
+        logger.error("claude bridge produced nothing (rc=%s subtype=%s): %s", rc, subtype, tail)
+        raise HTTPException(502, f"claude CLI error (subtype={subtype}): {tail}")
+
+    if tool_calls:
+        logger.info(
+            "bridge: %d tool_call(s) (model=%s, native=%d, text=%d, subtype=%s)",
+            len(tool_calls),
+            model,
+            len(native_calls),
+            len(tool_calls) - len(native_calls),
+            subtype,
+        )
+
+    usage = (result_event or {}).get("usage") or {}
+    tokens_in = (
+        int(usage.get("input_tokens") or 0)
+        + int(usage.get("cache_creation_input_tokens") or 0)
+        + int(usage.get("cache_read_input_tokens") or 0)
+    )
+    tokens_out = int(usage.get("output_tokens") or 0)
+    return content, tool_calls, tokens_in, tokens_out
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────
 
 
@@ -438,36 +625,48 @@ async def chat_completions(request: Request):
     body = await request.json()
 
     requested = str(body.get("model") or "")
-    agentic = is_agent_model(requested)
     bare = strip_prefix(requested)
-    valid = configured_agent_models() if agentic else configured_models()
+    if is_agent_model(requested):
+        mode, valid = "agentic", configured_agent_models()
+    elif is_bridge_model(requested):
+        mode, valid = "bridge", configured_bridge_models()
+    else:
+        mode, valid = "text", configured_models()
     if bare not in valid:
         raise HTTPException(
             400,
             f"Unknown model '{requested}'. Configured: " + ", ".join(namespaced_models()),
         )
 
-    if body.get("tools") and not agentic:
+    if body.get("tools") and mode == "text":
         logger.warning("ignoring %d tools (claude-cli text-only model)", len(body["tools"]))
-    # In agentic mode the model uses Claude Code's OWN tools, so any `tools` the
-    # caller passes are intentionally ignored too. temperature/max_tokens: n/a.
+    # agentic: Claude uses its OWN tools (the caller's `tools` are ignored).
+    # bridge:  the caller's `tools` are described to Claude and driven via <tool_call>.
+    # temperature / max_tokens have no CLI equivalent — accepted and ignored.
 
     system_prompt, prompt = flatten_messages(body.get("messages") or [])
     if not prompt.strip():
         raise HTTPException(400, "messages contain no user content")
 
+    tool_calls: list[dict] = []
     async with _slots:
         started = time.time()
-        content, tokens_in, tokens_out = await _one_shot(
-            bare, system_prompt, prompt, agentic=agentic
-        )
+        if mode == "bridge":
+            content, tool_calls, tokens_in, tokens_out = await _bridge_run(
+                bare, system_prompt, prompt, body.get("tools") or []
+            )
+        else:
+            content, tokens_in, tokens_out = await _one_shot(
+                bare, system_prompt, prompt, agentic=(mode == "agentic")
+            )
         logger.info(
-            "%s done (model=%s, %.1fs, in=%d out=%d)",
-            "agentic" if agentic else "one-shot",
+            "%s done (model=%s, %.1fs, in=%d out=%d, tool_calls=%d)",
+            mode,
             requested,
             time.time() - started,
             tokens_in,
             tokens_out,
+            len(tool_calls),
         )
 
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
@@ -478,40 +677,60 @@ async def chat_completions(request: Request):
         "total_tokens": tokens_in + tokens_out,
     }
 
+    # OpenAI-format tool_calls (arguments serialized as a JSON string).
+    oai_tool_calls = [
+        {
+            "id": tc["id"],
+            "type": "function",
+            "function": {
+                "name": tc["name"],
+                "arguments": json.dumps(tc["arguments"], ensure_ascii=False),
+            },
+        }
+        for tc in tool_calls
+    ]
+    finish = "tool_calls" if oai_tool_calls else "stop"
+
     if not body.get("stream"):
+        message: dict = {"role": "assistant", "content": content or None}
+        if oai_tool_calls:
+            message["tool_calls"] = oai_tool_calls
         return {
             "id": completion_id,
             "object": "chat.completion",
             "created": created,
             "model": requested,
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": content},
-                    "finish_reason": "stop",
-                }
-            ],
+            "choices": [{"index": 0, "message": message, "finish_reason": finish}],
             "usage": usage,
         }
 
-    # The control plane always streams: the CLI gives us the full reply at
-    # once, so emit it as a single content chunk, then a stop chunk carrying
-    # usage, then [DONE] — exactly what OpenAICompatibleProvider parses.
-    def _chunk(delta: dict, finish: str | None = None, with_usage: bool = False) -> str:
+    # The control plane always streams: the CLI gives us the full reply at once,
+    # so emit it as a single content (or tool_calls) chunk, then a finish chunk
+    # carrying usage, then [DONE] — exactly what OpenAICompatibleProvider parses.
+    def _chunk(delta: dict, finish_reason: str | None = None, with_usage: bool = False) -> str:
         payload = {
             "id": completion_id,
             "object": "chat.completion.chunk",
             "created": created,
             "model": requested,
-            "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
         }
         if with_usage:
             payload["usage"] = usage
         return f"data: {json.dumps(payload)}\n\n"
 
     async def _stream():
-        yield _chunk({"role": "assistant", "content": content})
-        yield _chunk({}, finish="stop", with_usage=True)
+        if oai_tool_calls:
+            delta: dict = {
+                "role": "assistant",
+                "tool_calls": [{"index": i, **tc} for i, tc in enumerate(oai_tool_calls)],
+            }
+            if content:
+                delta["content"] = content
+            yield _chunk(delta)
+        else:
+            yield _chunk({"role": "assistant", "content": content})
+        yield _chunk({}, finish_reason=finish, with_usage=True)
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(_stream(), media_type="text/event-stream")

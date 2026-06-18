@@ -72,6 +72,27 @@ production. The single rule: **never skip step 2 of the upgrade flow.**
 
 Most recent first.
 
+### 0.12.7 → 0.12.8
+
+**Theme**: Two fresh-install fixes.
+
+- **Lab agents on `Default` model now resolve at call time.** Before
+  this release, `LabDispatcher.call_agent` raised
+  `Lab agent '<name>' has no model_id configured` whenever the FE's
+  `Default` choice (which stores `model_id=NULL`) was picked. Now it
+  falls back through `lab.orchestrator_model_id` → settings default →
+  first registered model, exactly like `call_orchestrator` already did.
+- **Agents console shows "Awaiting input" instead of "Paused"** when
+  a freshly-Run library agent instance is waiting for its first user
+  message. FE-only change — backend pause behaviour is unchanged. The
+  inject box surfaces a clear hint so operators know to type a message.
+
+- **Schema migrations**: none.
+- **Env vars**: no changes.
+- **Downtime**: ~10 s for the restart.
+- **Action**: `git pull && bash deploy-prod.sh`. Existing stuck labs
+  pick up the fix on the next Run click; no manual reset needed.
+
 ### 0.12.6 → 0.12.7
 
 **Theme**: Frontend fix — the Agents console no longer freezes on

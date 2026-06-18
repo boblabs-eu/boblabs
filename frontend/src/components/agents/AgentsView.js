@@ -76,6 +76,22 @@ function renderMsgContent(content) {
   return <>{parts}</>;
 }
 
+// Solo-agent strategy pauses at iter 0 when no user seed exists.
+// That's distinct from a user-initiated pause — the agent is alive and waiting
+// for the first message. Detector + label live here so every status badge in
+// this file renders the same nuance.
+function isAwaitingInput(inst) {
+  return !!inst && inst.status === 'paused' && (inst.current_iteration ?? 0) === 0;
+}
+
+function statusBadge(inst) {
+  if (isAwaitingInput(inst)) {
+    return { label: 'awaiting input', className: 'agents-inst-status agents-inst-status--awaiting' };
+  }
+  const s = inst?.status || 'unknown';
+  return { label: s, className: `agents-inst-status agents-inst-status--${s}` };
+}
+
 const EMPTY_AGENT = {
   name: '', description: '', system_prompt: '',
   role: '',
@@ -232,7 +248,7 @@ function InstancePanel({ instance, template, busy, onAction, onDelete }) {
       <div className="agents-editor-header">
         <h2>{instance.name}</h2>
         <div className="agents-editor-actions">
-          <span className={`agents-inst-status agents-inst-status--${status}`}>{status}</span>
+          {(() => { const b = statusBadge(instance); return <span className={b.className}>{b.label}</span>; })()}
         </div>
       </div>
       <div className="agents-form-grid">
@@ -396,7 +412,7 @@ function InstanceFeed({
       <div className="lab-timeline-header">
         <div className="lab-timeline-info" style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
           <h2 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>{instance.name}</h2>
-          <span className={`agents-inst-status agents-inst-status--${status}`}>{status}</span>
+          {(() => { const b = statusBadge(instance); return <span className={b.className}>{b.label}</span>; })()}
           {instance.current_iteration > 0 && (
             <span className="lab-iter-badge">
               Iteration {instance.current_iteration}{instance.max_iterations ? ` / ${instance.max_iterations}` : ''}
@@ -474,9 +490,14 @@ function InstanceFeed({
         </div>
       )}
 
+      {isAwaitingInput(instance) && (
+        <div className="agents-feed-await-hint">
+          Waiting for user input — type a message below to start the agent.
+        </div>
+      )}
       <div className="agents-feed-inject">
         <textarea
-          placeholder="Send a message to the agent…"
+          placeholder={isAwaitingInput(instance) ? 'Type a message to start the agent…' : 'Send a message to the agent…'}
           value={injectText}
           onChange={e => setInjectText(e.target.value)}
           onKeyDown={e => {
@@ -542,7 +563,7 @@ function InspectorAgentTab({
     <div className="agents-inspector-section">
       <div className="agents-inspector-row">
         <span className="agents-inspector-label">Status</span>
-        <span className={`agents-inst-status agents-inst-status--${instance.status}`}>{instance.status}</span>
+        {(() => { const b = statusBadge(instance); return <span className={b.className}>{b.label}</span>; })()}
       </div>
       <div className="agents-inspector-row">
         <span className="agents-inspector-label">Iteration</span>
@@ -901,7 +922,8 @@ function InspectorLinksTab({
 /* ── Empty-state dashboard ── */
 function AgentsDashboard({ templates, instances, onSelectTemplate, onSelectInstance, onCreateInstance }) {
   const runningCount = instances.filter(i => i.status === 'running').length;
-  const pausedCount = instances.filter(i => i.status === 'paused').length;
+  const awaitingCount = instances.filter(isAwaitingInput).length;
+  const pausedCount = instances.filter(i => i.status === 'paused').length - awaitingCount;
   const recent = [...instances]
     .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))
     .slice(0, 10);
@@ -912,6 +934,7 @@ function AgentsDashboard({ templates, instances, onSelectTemplate, onSelectInsta
         <div className="agents-stat-card"><div className="agents-stat-value">{templates.length}</div><div className="agents-stat-label">Templates</div></div>
         <div className="agents-stat-card"><div className="agents-stat-value">{instances.length}</div><div className="agents-stat-label">Instances</div></div>
         <div className="agents-stat-card agents-stat-success"><div className="agents-stat-value">{runningCount}</div><div className="agents-stat-label">Running</div></div>
+        <div className="agents-stat-card"><div className="agents-stat-value">{awaitingCount}</div><div className="agents-stat-label">Awaiting input</div></div>
         <div className="agents-stat-card"><div className="agents-stat-value">{pausedCount}</div><div className="agents-stat-label">Paused</div></div>
       </div>
 
@@ -926,7 +949,7 @@ function AgentsDashboard({ templates, instances, onSelectTemplate, onSelectInsta
               {recent.map(inst => (
                 <tr key={inst.lab_id} onClick={() => onSelectInstance(inst)}>
                   <td>{inst.name}</td>
-                  <td><span className={`agents-inst-status agents-inst-status--${inst.status}`}>{inst.status}</span></td>
+                  <td>{(() => { const b = statusBadge(inst); return <span className={b.className}>{b.label}</span>; })()}</td>
                   <td>{inst.current_iteration ?? 0}</td>
                   <td>{inst.updated_at ? new Date(inst.updated_at).toLocaleString() : ''}</td>
                 </tr>
@@ -1572,7 +1595,7 @@ export default function AgentsView({ allModels: allModelsRaw = [] }) {
                   >
                     <div className="agents-list-item-top">
                       <span className="agents-list-name">{IC.bot} {inst.name}</span>
-                      <span className={`agents-inst-status agents-inst-status--${inst.status}`}>{inst.status}</span>
+                      {(() => { const b = statusBadge(inst); return <span className={b.className}>{b.label}</span>; })()}
                     </div>
                     <div className="agents-list-meta">
                       {inst.current_iteration > 0 && (
@@ -2271,6 +2294,16 @@ export default function AgentsView({ allModels: allModelsRaw = [] }) {
         }
         .agents-inst-status--running { background: rgba(52,211,153,0.16); color: #34d399; }
         .agents-inst-status--paused { background: rgba(251,191,36,0.16); color: #fbbf24; }
+        .agents-inst-status--awaiting { background: rgba(59,130,246,0.18); color: #60a5fa; }
+        .agents-feed-await-hint {
+          margin: 0 8px 4px 8px;
+          padding: 6px 10px;
+          font-size: 0.72rem;
+          color: #60a5fa;
+          background: rgba(59,130,246,0.10);
+          border-left: 2px solid #60a5fa;
+          border-radius: 3px;
+        }
         .agents-inst-status--completed { background: rgba(34,211,238,0.14); color: #22d3ee; }
         .agents-inst-status--failed { background: rgba(248,113,113,0.16); color: #f87171; }
         .agents-inst-status--created { background: rgba(180,189,205,0.10); color: #b4bdcd; }

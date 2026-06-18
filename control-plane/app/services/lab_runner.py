@@ -1080,7 +1080,7 @@ class LabRunner:
                 if is_hermes_agent(agent):
                     agent_tools = []
                     result = await execute_hermes_turn(db, agent, task_item.instruction)
-                elif await dispatcher.is_claude_agent(agent):
+                elif await dispatcher.is_claude_agent(agent, lab=lab):
                     # ── Full-capacity claude-agent:* backend: Claude Code runs
                     # its OWN tools + loop inside the wrapper and returns the final
                     # text. Like Hermes, agent_tools MUST stay empty — it skips the
@@ -1095,7 +1095,9 @@ class LabRunner:
                         resources=lab_resources,
                         resolved_tools=[],
                     )
-                    result = await dispatcher.call_agent(agent, msgs, lab_id=lab.id, tools=None)
+                    result = await dispatcher.call_agent(
+                        agent, msgs, lab_id=lab.id, tools=None, lab=lab
+                    )
                 else:
                     # Build native tool schema for hybrid tool calling
                     agent_tools = await self._resolve_tools(
@@ -1120,7 +1122,7 @@ class LabRunner:
                         resolved_tools=agent_tools,
                     )
                     result = await dispatcher.call_agent(
-                        agent, msgs, lab_id=lab.id, tools=native_tools
+                        agent, msgs, lab_id=lab.id, tools=native_tools, lab=lab
                     )
 
                 # ── Tool call loop (hybrid: native + text fallback) ──
@@ -1404,7 +1406,7 @@ class LabRunner:
                             msgs.append({"role": "assistant", "content": result["content"]})
                             msgs.append({"role": "user", "content": tool_results_block})
                         result = await dispatcher.call_agent(
-                            agent, msgs, lab_id=lab.id, tools=native_tools
+                            agent, msgs, lab_id=lab.id, tools=native_tools, lab=lab
                         )
 
                 # Extract & save any generated images
@@ -1793,7 +1795,9 @@ class LabRunner:
                 resources=lab_resources,
                 resolved_tools=target_tools,
             )
-            result = await dispatcher.call_agent(target, msgs, lab_id=lab.id, tools=native_tools)
+            result = await dispatcher.call_agent(
+                target, msgs, lab_id=lab.id, tools=native_tools, lab=lab
+            )
 
             # Target agent tool loop (same logic as _execute_tasks but without call_agent to prevent loops)
             if target_tools:

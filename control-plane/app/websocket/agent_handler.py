@@ -701,21 +701,31 @@ async def _sync_claude_cli_models(
             model_id = m.get("model", m.get("name", ""))
             if not model_id:
                 continue
-            # Friendly name for name-displaying contexts; dropdowns render
-            # the namespaced model_identifier itself. claude-agent:* are the
-            # FULL-capacity models (Claude Code's own tools + multi-turn);
-            # claude-cli:* stay text-only for labs.
-            is_agentic = model_id.startswith("claude-agent:")
-            bare = model_id.removeprefix("claude-cli:").removeprefix("claude-agent:")
-            friendly = f"{bare} (Claude CLI agent)" if is_agentic else f"{bare} (Claude CLI)"
+            # Friendly name for name-displaying contexts; dropdowns render the
+            # namespaced model_identifier itself. Three families:
+            #   claude-cli:*    text-only (lab drives tools)
+            #   claude-bridge:* opus drives the CALLER's tools via <tool_call> shim
+            #   claude-agent:*  Claude Code with its OWN tools + multi-turn
+            if model_id.startswith("claude-agent:"):
+                kind, label = "claude-agent", "Claude CLI agent"
+            elif model_id.startswith("claude-bridge:"):
+                kind, label = "claude-bridge", "Claude CLI bridge"
+            else:
+                kind, label = "claude-cli", "Claude CLI"
+            bare = (
+                model_id.removeprefix("claude-cli:")
+                .removeprefix("claude-agent:")
+                .removeprefix("claude-bridge:")
+            )
+            friendly = f"{bare} ({label})"
             result = await model_repo.upsert(
                 provider_id=provider.id,
                 model_identifier=model_id,
                 name=friendly,
                 capabilities={
                     "family": "claude",
-                    "format": "claude-agent" if is_agentic else "claude-cli",
-                    "agentic": is_agentic,
+                    "format": kind,
+                    "agentic": kind == "claude-agent",
                 },
                 parameters={},
             )

@@ -143,3 +143,34 @@ def test_deploy_prod_sh_builds_hermes_adapter() -> None:
     assert "--no-hermes" in src, (
         "deploy-prod.sh must accept --no-hermes to skip the hermes build"
     )
+
+
+def test_lab_dispatcher_call_agent_falls_back_when_model_id_null() -> None:
+    """call_agent must mirror call_orchestrator's fallback chain.
+
+    Lab agents with model_id=NULL render as 'Default' in the FE — implying
+    'use the orchestrator default'. Before 0.12.8 the dispatcher raised
+    immediately on null model_id, so every lab run with a fresh template
+    (whose LabAgent rows have no model assigned) emitted 'no model_id
+    configured' on every orchestrator iteration. See CHANGELOG 0.12.8.
+    """
+    dispatcher = (
+        Path(__file__).resolve().parents[2]
+        / "app"
+        / "services"
+        / "lab_dispatcher.py"
+    )
+    src = dispatcher.read_text()
+    assert "_resolve_agent_model_identifier" in src, (
+        "lab_dispatcher.py must expose the shared agent model resolver helper"
+    )
+    assert (
+        'raise RuntimeError(f"Lab agent \'{agent.name}\' has no model_id configured.")'
+        not in src
+    ), (
+        "call_agent must no longer raise on null model_id — it now falls back "
+        "to lab.orchestrator_model_id → settings default → first registered model. "
+        "See _resolve_agent_model_identifier."
+    )
+
+

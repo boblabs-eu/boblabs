@@ -1,3 +1,3 @@
 """Bob Manager Control Plane — Version."""
 
-__version__ = "0.12.7"
+__version__ = "0.12.8"

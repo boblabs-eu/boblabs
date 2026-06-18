@@ -5,6 +5,51 @@ All notable changes to Bob Labs are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.8] — 2026-06-18 — Fresh-install fixes: `Default`-model labs run + "Awaiting input" UI hint
+
+Two distinct fresh-install bugs both surfaced from a clean deploy of 0.12.7.
+
+**Lab agents whose model dropdown reads `Default` raised
+`no model_id configured` on every orchestrator iteration.** The FE
+displays `Default` for any `LabAgent` with `model_id=NULL` — implying
+"use the lab/system default" — but `LabDispatcher.call_agent` raised
+immediately on null instead of falling back. The orchestrator kept
+looping, every call to an agent failed identically, and the lab
+appeared to "run" without ever making progress (visible as repeated
+`no model_id` lines in the chat from every agent).
+
+**Library agent instances flipped to a red `paused` badge within
+seconds of clicking Run on a fresh install.** `solo_agent` strategy
+returns `PauseAction` at iteration 0 when no user seed exists yet —
+which is correct behaviour (the agent is alive, waiting for the
+first message) but the FE label was indistinguishable from a
+user-initiated pause, so users thought something was broken.
+
+### Fixed
+
+- **`LabDispatcher.call_agent` falls back through
+  `lab.orchestrator_model_id` → `OrchestratorSettings.orchestrator_model`
+  → first registered model** when the agent's own `model_id` is null.
+  Mirrors `call_orchestrator`'s existing logic. `is_claude_agent` uses
+  the same resolver. The "Default" model dropdown choice now actually
+  resolves at call time. Same trap as 0.12.3 ("phantom-default-model"),
+  applied here to the lab-agent side.
+- **Agents console renders `paused + iteration 0` as `awaiting input`**
+  with a blue badge and an inline hint above the inject box:
+  "Waiting for user input — type a message below to start the agent."
+  The dashboard counter splits the two states so the operator can tell
+  at a glance which instances are blocked vs. which they paused.
+  FE-only change — no new backend status, no migration. At iter 0 the
+  only `solo_agent` pause path is the no-seed branch, so the detector
+  (`status='paused' && current_iteration === 0`) is unambiguous.
+
+### Upgrade notes
+
+Canonical path: `git pull && bash deploy-prod.sh`. No env changes,
+no migrations. Existing labs pick up the fix automatically — click
+Run again on any lab that was stuck on `no model_id`. The FE
+rebuilds automatically as part of `deploy-prod.sh`.
+
 ## [0.12.7] — 2026-06-17 — Agents console: status badge stops going stale after inject
 
 User reported that injecting a message into a **completed** agent

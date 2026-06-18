@@ -485,17 +485,56 @@ class LabDispatcher:
             tools=tools,
         )
 
-    async def is_claude_agent(self, agent: LabAgent) -> bool:
+    async def _resolve_agent_model_identifier(
+        self, agent: LabAgent, lab: Lab | None = None
+    ) -> str:
+        """Resolve the model identifier for a lab agent.
+
+        Mirrors call_orchestrator's fallback chain so an agent left on the
+        FE-displayed "Default" model (``model_id is None``) inherits the
+        lab's orchestrator model, then the system default, then the first
+        registered model. Raises RuntimeError when nothing is reachable.
+        """
+        if agent.model_id is not None:
+            return await self._get_model_identifier(agent.model_id)
+
+        from app.repositories.orchestrator_repo import (
+            AIModelRepository,
+            OrchestratorSettingsRepository,
+        )
+
+        if lab is not None and lab.orchestrator_model_id is not None:
+            return await self._get_model_identifier(lab.orchestrator_model_id)
+
+        settings = await OrchestratorSettingsRepository(self.db).get()
+        configured_ident = (settings.orchestrator_model if settings else "") or ""
+        if configured_ident:
+            return configured_ident
+
+        all_models = await AIModelRepository(self.db).get_all()
+        if all_models:
+            logger.warning(
+                "Lab agent '%s' has no model_id and no default model set; "
+                "falling back to first registered model '%s'",
+                agent.name,
+                all_models[0].model_identifier,
+            )
+            return all_models[0].model_identifier
+
+        raise RuntimeError(
+            f"Lab agent '{agent.name}' has no model_id and no fallback model is "
+            "registered with the orchestrator."
+        )
+
+    async def is_claude_agent(self, agent: LabAgent, lab: Lab | None = None) -> bool:
         """True when the agent's brain is a full-capacity claude-agent:* model.
 
         Such an agent runs Claude Code with its OWN tools + multi-turn inside the
         claude-cli wrapper; the caller delegates the whole task and takes the final
         text (no Bob Lab tool loop), exactly like the Hermes path.
         """
-        if getattr(agent, "model_id", None) is None:
-            return False
         try:
-            ident = await self._get_model_identifier(agent.model_id)
+            ident = await self._resolve_agent_model_identifier(agent, lab=lab)
         except Exception:
             return False
         return ident.startswith("claude-agent:")
@@ -506,16 +545,14 @@ class LabDispatcher:
         messages: list[dict],
         lab_id: UUID | None = None,
         tools: list[dict] | None = None,
+        lab: Lab | None = None,
     ) -> dict:
         """Call the LLM assigned to a lab agent with load balancing.
 
         Returns same dict shape as call_orchestrator.  When native tool
         calling is triggered the result includes a 'tool_calls' key.
         """
-        if agent.model_id is None:
-            raise RuntimeError(f"Lab agent '{agent.name}' has no model_id configured.")
-
-        model_identifier = await self._get_model_identifier(agent.model_id)
+        model_identifier = await self._resolve_agent_model_identifier(agent, lab=lab)
         return await self._call_with_loadbalance(
             model_identifier=model_identifier,
             messages=messages,

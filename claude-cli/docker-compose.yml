@@ -45,6 +45,12 @@ services:
       # Set acceptEdits|plan|… to use --permission-mode instead.
       CLAUDE_CLI_AGENT_PERMISSION_MODE: ${CLAUDE_CLI_AGENT_PERMISSION_MODE:-}
       CLAUDE_CLI_AGENT_EXTRA_ARGS: ${CLAUDE_CLI_AGENT_EXTRA_ARGS:-}
+      # --- Tool-bridge models (claude-bridge:*) --------------------------
+      # Opt-in. Each id here is ALSO served as claude-bridge:<id> and lets opus
+      # drive the CALLER's tools (e.g. Hermes' own toolset) via the <tool_call>
+      # text protocol — opus emits <tool_call>, the wrapper returns structured
+      # tool_calls the caller executes. Keeps Hermes as the harness; Max sub, no API.
+      CLAUDE_CLI_BRIDGE_MODELS: ${CLAUDE_CLI_BRIDGE_MODELS:-}
       # Optional bearer auth on /v1/* (put the same key in the provider's
       # api_key field in the control plane). Empty = unauthenticated (LAN).
       CLAUDE_CLI_API_KEY: ${CLAUDE_CLI_API_KEY:-}

@@ -261,7 +261,9 @@ async def _execute_agent_cron(
 
             dispatcher = LabDispatcher(db)
             hermes_backed = is_hermes_agent(agent)
-            claude_agent_backed = (not hermes_backed) and await dispatcher.is_claude_agent(agent)
+            claude_agent_backed = (not hermes_backed) and await dispatcher.is_claude_agent(
+                agent, lab=lab
+            )
             if hermes_backed or claude_agent_backed:
                 # Hermes runs its own loop+tools; claude-agent:* runs Claude Code's
                 # own loop+tools in the wrapper. Either way keep agent_tools empty so
@@ -308,7 +310,9 @@ async def _execute_agent_cron(
             else:
                 # claude-agent:* passes tools=None (native_tools already None) and
                 # uses Claude Code's OWN tools inside the wrapper.
-                result = await dispatcher.call_agent(agent, msgs, lab_id=lab.id, tools=native_tools)
+                result = await dispatcher.call_agent(
+                    agent, msgs, lab_id=lab.id, tools=native_tools, lab=lab
+                )
 
             # ── Tool loop ──
             if agent_tools:
@@ -461,7 +465,7 @@ async def _execute_agent_cron(
                         msgs.append({"role": "user", "content": "\n".join(tool_results_parts)})
 
                     result = await dispatcher.call_agent(
-                        agent, msgs, lab_id=lab.id, tools=native_tools
+                        agent, msgs, lab_id=lab.id, tools=native_tools, lab=lab
                     )
 
             # ── Save final result ──
