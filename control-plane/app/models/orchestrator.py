@@ -373,6 +373,11 @@ class LibraryAgent(Base):
     backend: Mapped[str] = mapped_column(
         String(20), default="native", server_default="native", nullable=False
     )
+    # Durable "keep this agent's Hermes container always-on" flag — set true when
+    # the agent has cron jobs (so the scheduler can tick them) or via Activate.
+    hermes_activated: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     temperature: Mapped[Decimal] = mapped_column(Numeric(3, 2), default=Decimal("0.70"))
     max_tokens: Mapped[int] = mapped_column(Integer, default=4096)
     tools: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
@@ -507,6 +512,11 @@ class LabAgent(Base):
     # See LibraryAgent.backend — copied template→instance on creation.
     backend: Mapped[str] = mapped_column(
         String(20), default="native", server_default="native", nullable=False
+    )
+    # Durable "keep this agent's Hermes container always-on" flag — set true when
+    # the agent has cron jobs (so the scheduler can tick them) or via Activate.
+    hermes_activated: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
     )
     temperature: Mapped[Decimal] = mapped_column(Numeric(3, 2), default=Decimal("0.70"))
     max_tokens: Mapped[int] = mapped_column(Integer, default=4096)

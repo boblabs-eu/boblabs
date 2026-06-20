@@ -87,6 +87,26 @@ The image bundles the runtimes Hermes' tools need — Node.js 22, ffmpeg, and a 
 
 These tools only do anything for a brain that can actually **call** them — see [Choosing a Claude brain](#choosing-a-claude-brain-for-a-hermes-agent) (a text-only `claude-cli:*` brain ignores them and hallucinates). New tools arrive via the image: after rebuilding `bob-hermes-adapter`, **recreate the per-instance containers** to pick them up (volumes are kept).
 
+### Files — the persistent workspace (inputs & outputs)
+
+A Hermes agent works on its **own filesystem**, in a real working directory — exactly like the standalone agent. The adapter pins that working directory (`TERMINAL_CWD`) to **`~/.hermes/workspace`** on the agent's private volume, so everything it builds — projects, renders, scripts — is **durable** (survives container recreate) and **visible**, instead of scattering to `/tmp` (invisible + wiped). Because a model can still *choose* an absolute `/tmp` path out of habit, **every task is prefixed with a short `<workspace>` directive** stating that this directory is its cwd and that anything written outside it is ephemeral and **not** delivered to the operator.
+
+- **Put a file in:** upload it as a **lab resource** (the existing Resources panel). It's written straight into the agent's workspace (its cwd) on the next task, and the per-task `<workspace>` directive lists it — so it `read_file`s / runs it directly instead of hunting for it.
+- **Get a file out:** anything the agent **creates or changes in the workspace** that turn is captured into the lab's **OUTPUTS panel** (relative paths preserved, downloadable). Dependency/cache dirs (`node_modules`, `.git`, `.venv`, caches) are excluded; outputs are size-capped.
+- **Tooling persists:** `bun`/`npm`/`pip`/XDG caches are redirected under `~/.hermes`, so installs survive a recreate instead of being rebuilt each time. (Heavy tools — ffmpeg, chromium, node, bun — are baked into the image.)
+- **Isolation:** each container mounts **only its own** `bob-hermes-<id>` volume — never `lab_resources` — so it is **physically unable** to see another lab's or agent's files. Inputs/outputs cross as base64 over the adapter call.
+
+### Native cron — self-scheduling ("do a daily report")
+
+Hermes' **native** scheduler works here, driven by Bob. Ask the agent to "give me the Lyon weather every 10 minutes" and it uses its own **`cronjob`** tool (enabled via `HERMES_INTERACTIVE=1`) to write a job into `~/.hermes/cron/jobs.json`. The native runner (`cron.scheduler.tick()`) normally needs the gateway's 60 s heartbeat; the adapter runs no gateway, so **Bob's control-plane scheduler is the heartbeat** — each poll it `POST /v1/cron/tick`s every always-on Hermes agent and `GET /v1/cron/output`s new job results into the **lab feed**.
+
+- **Always-on:** an agent with cron jobs is auto-flagged `hermes_activated` (a durable column), so its container stays running and the scheduler keeps ticking it — and **restores it after a bob-api restart** (the scheduler's reconcile step re-creates it on the current image). No jobs → the flag clears and the container goes back to lazy. You can also toggle it with the Activate/Deactivate controls.
+- **Model:** the adapter mirrors each task's model into `~/.hermes/config.yaml` (as Hermes' generic **`custom`** provider — its OpenAI-compatible path; `openai` is not a Hermes provider name and would fail to resolve), so autonomous job runs reach the same provider (Bob's **LLM gateway**) with the model you last picked — visible in the LLM-event feed like any agent call.
+- **Output:** job results land in the lab feed as `result` messages (`extra.source = "hermes_cron"`). Files a job writes to its workspace are captured to OUTPUTS like any turn.
+- **Cost/safety:** each scheduled agent keeps its container up 24/7; cron jobs run the agent's tools **auto-approved** inside the non-root, network-isolated container (Hermes' own prompt-injection scanners apply).
+
+Both features ride the image: after rebuilding `bob-hermes-adapter`, **recreate the per-instance containers** to pick them up (volumes are kept).
+
 ### Task-completion protocol (the two-loops problem)
 
 Hermes ends a *turn* whenever its model emits text without tool calls — including mid-work narration ("let me browse the web…"). The Lab loop must only re-engage when the *task* is done, so the adapter runs each task as a continuation loop on one in-memory `AIAgent`:

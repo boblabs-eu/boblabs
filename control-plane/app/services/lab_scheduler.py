@@ -306,7 +306,9 @@ async def _execute_agent_cron(
             if hermes_backed:
                 from app.services.hermes import execute_hermes_turn
 
-                result = await execute_hermes_turn(db, agent, instruction)
+                result = await execute_hermes_turn(
+                    db, agent, instruction, resources=lab_resources, lab_id=lab.id
+                )
             else:
                 # claude-agent:* passes tools=None (native_tools already None) and
                 # uses Claude Code's OWN tools inside the wrapper.
@@ -970,6 +972,123 @@ async def _check_library_agent_crons(db: AsyncSession, session_factory: async_se
             )
 
 
+# ── Native Hermes cron (Bob as the external scheduler heartbeat) ─────
+# Per-agent cursor (epoch secs) of the last surfaced cron output; on a fresh
+# start we skip history (cursor := the adapter's "now") to avoid replaying old
+# job output into the feed after a bob-api restart.
+_hermes_cron_cursors: dict[str, float] = {}
+# Keys with an in-flight container (re)start, so repeated polls don't pile up.
+_hermes_ensuring: set[str] = set()
+
+
+async def _safe_ensure_hermes(agent_key, name: str) -> None:
+    """(Re)start a down Hermes container in the background — container recreate
+    can take ~90s, so never await it inside the scheduler loop."""
+    k = str(agent_key)
+    if k in _hermes_ensuring:
+        return
+    _hermes_ensuring.add(k)
+    try:
+        from app.services.hermes import ensure_hermes
+
+        await ensure_hermes(agent_key)
+        logger.info("hermes cron: (re)started container for '%s'", name)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("hermes cron: ensure container for '%s' failed: %s", name, e)
+    finally:
+        _hermes_ensuring.discard(k)
+
+
+async def _surface_hermes_cron_output(db: AsyncSession, agent, output: dict) -> None:
+    """Post one native Hermes cron job result into its lab's message feed."""
+    content = (output.get("content") or "").strip()
+    lab_id = getattr(agent, "lab_id", None)
+    if not content or lab_id is None:
+        return
+    try:
+        lab = (await db.execute(select(Lab).where(Lab.id == lab_id))).scalar_one_or_none()
+        if not lab:
+            return
+        await LabMessageRepository(db).create(
+            lab_id=lab.id,
+            iteration=lab.current_iteration,
+            sender_type="agent",
+            sender_agent_id=agent.id,
+            sender_name=agent.name,
+            content=content,
+            message_type="result",
+            provider_used="hermes",
+            extra={
+                "source": "hermes_cron",
+                "job_id": output.get("job_id"),
+                "file": output.get("file"),
+            },
+        )
+        await db.commit()
+        await _broadcast_lab_event(
+            lab.id,
+            "lab.hermes_cron.result",
+            {"agent_id": str(agent.id), "agent_name": agent.name, "job_id": output.get("job_id")},
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error("hermes cron: surfacing output for '%s' failed: %s", agent.name, e)
+        await db.rollback()
+
+
+async def _check_hermes_cron(db: AsyncSession) -> None:
+    """For every always-on Hermes agent: keep its container up, tick its native
+    scheduler, and surface new job output into the lab feed. Bob is the external
+    ~60s heartbeat the native scheduler expects — tick() only runs DUE jobs, so a
+    finer poll is cheap. Non-blocking: a down container is (re)started in the
+    background and ticked on the next pass."""
+    from app.services.hermes import (
+        cron_output,
+        cron_tick,
+        get_hermes_status,
+        hermes_container_key,
+    )
+
+    try:
+        agents = (
+            await db.execute(
+                select(LabAgent).where(
+                    LabAgent.backend == "hermes",
+                    LabAgent.hermes_activated.is_(True),
+                )
+            )
+        ).scalars().all()
+    except Exception as e:  # noqa: BLE001
+        logger.error("hermes cron: query failed: %s", e)
+        return
+
+    for agent in agents:
+        key = hermes_container_key(agent)
+        try:
+            status = await get_hermes_status(key)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("hermes cron: status for '%s' failed: %s", agent.name, e)
+            continue
+        if not status.get("image_configured"):
+            return  # feature dormant — nothing to tick for any agent
+        if not (status.get("running") and status.get("healthy") and status.get("url")):
+            asyncio.create_task(_safe_ensure_hermes(key, agent.name))
+            continue
+
+        url = status["url"]
+        await cron_tick(url)
+
+        agent_key = str(agent.id)
+        cursor = _hermes_cron_cursors.get(agent_key)
+        data = await cron_output(url, since=cursor or 0.0)
+        now = float(data.get("now") or 0.0)
+        if cursor is None:
+            _hermes_cron_cursors[agent_key] = now  # first sight: don't replay history
+            continue
+        for o in data.get("outputs") or []:
+            await _surface_hermes_cron_output(db, agent, o)
+        _hermes_cron_cursors[agent_key] = now or cursor
+
+
 async def _scheduler_loop(session_factory: async_sessionmaker) -> None:
     """Main scheduler loop — runs indefinitely."""
     await asyncio.sleep(10)  # Wait for app startup
@@ -989,6 +1108,7 @@ async def _scheduler_loop(session_factory: async_sessionmaker) -> None:
                 await _check_agent_crons(db, session_factory)
                 await _check_lab_cron_jobs(db, session_factory)
                 await _check_library_agent_crons(db, session_factory)
+                await _check_hermes_cron(db)
         except Exception as e:
             logger.error("Scheduler loop error: %s", e)
 

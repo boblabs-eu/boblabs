@@ -72,6 +72,57 @@ production. The single rule: **never skip step 2 of the upgrade flow.**
 
 Most recent first.
 
+### 0.12.8 → 0.13.0
+
+**Theme**: Hermes native cron + persistent workspace.
+
+A per-agent Hermes container is now an always-on autonomous agent
+rather than a one-shot turn runner. The workspace persists across
+turns and recreates, the agent's deliverables land in the lab's
+OUTPUTS panel, and Hermes' native cron tool runs on a Bob-driven
+heartbeat. Operator-attached resources cross into the container as
+real files.
+
+- **Schema migration**: `0016_hermes_activated` — additive only.
+  Adds `library_agents.hermes_activated` and
+  `lab_agents.hermes_activated` (boolean, NOT NULL, DEFAULT false).
+  All existing rows backfill to `false` via the column default.
+  Zero downtime, idempotent.
+- **Env vars**: two new adapter-side env vars are set by the
+  control-plane at container start — no operator action needed:
+  - `HERMES_INTERACTIVE=1` unlocks Hermes' native `cronjob` tool.
+  - `AGENT_SECRET=<random>` (auto-generated) authenticates the new
+    `/v1/cron/tick` and `/v1/cron/output` endpoints.
+- **Downtime**: ~10–30 s for the bob-api restart + migration.
+
+**Action — main host**:
+```bash
+cd /path/to/boblabs
+git pull
+bash deploy-prod.sh
+```
+`deploy-prod.sh` runs the migration, rebuilds `bob-hermes-adapter:latest`
+(conditional on `hermes-adapter/Dockerfile` being present), and
+restarts the control-plane services.
+
+**Action — existing per-agent Hermes containers (required)**:
+
+Each per-agent Hermes container runs the adapter as its PID 1; the
+adapter has ~305 LOC of new Python (workspace preamble, cron
+endpoints, config persist). The new image is built by `deploy-prod.sh`,
+but **existing containers keep running the old image until they are
+recreated**. Recreate via either:
+
+- UI: Deactivate → Activate on each Hermes-backed library agent.
+- CLI: `docker ps --filter name=bob-hermes- -q | xargs docker rm -f`
+  then re-Activate (the control-plane recreates with the new image).
+
+The agent's memory/skills/sessions volume (`bob-hermes-<id>`) is
+preserved across the recreate; only the container is replaced.
+
+**No claude-cli rebuild required** — no changes under `claude-cli/`
+in this release.
+
 ### 0.12.7 → 0.12.8
 
 **Theme**: Two fresh-install fixes.

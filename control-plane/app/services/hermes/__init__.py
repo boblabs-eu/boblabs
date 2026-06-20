@@ -12,13 +12,20 @@ uses — resolved per-run to a concrete provider connection and sent with each
 task, so switching the model in the UI needs no container restart.
 """
 
-from app.services.hermes.client import HermesAdapterError, hermes_health, run_hermes_task
+from app.services.hermes.client import (
+    HermesAdapterError,
+    cron_output,
+    cron_tick,
+    hermes_health,
+    run_hermes_task,
+)
 from app.services.hermes.executor import (
     execute_hermes_turn,
     hermes_container_key,
     is_hermes_agent,
 )
 from app.services.hermes.resolver import resolve_model_spec
+from app.services.hermes.resources import build_resource_payload, persist_hermes_outputs
 from app.services.hermes.runtime import (
     HermesNotConfiguredError,
     cleanup_orphaned_hermes,
@@ -32,10 +39,14 @@ from app.services.hermes.runtime import (
 __all__ = [
     "HermesAdapterError",
     "HermesNotConfiguredError",
+    "build_resource_payload",
     "cleanup_orphaned_hermes",
+    "cron_output",
+    "cron_tick",
     "destroy_hermes",
     "ensure_hermes",
     "execute_hermes_turn",
+    "persist_hermes_outputs",
     "get_hermes_status",
     "hermes_container_key",
     "hermes_health",

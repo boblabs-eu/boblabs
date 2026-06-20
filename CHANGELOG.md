@@ -5,6 +5,83 @@ All notable changes to Bob Labs are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] — 2026-06-20 — Hermes native cron + persistent workspace
+
+Three Hermes-stack commits since 0.12.8 graduate a per-agent Hermes
+container from "one-shot turn runner" to **always-on autonomous agent**:
+the agent's `~/.hermes/workspace` is now persistent and captured into
+the lab's OUTPUTS panel, Hermes' native scheduler runs on a Bob-driven
+heartbeat, and operator-attached resources cross the container
+boundary as real files. Per [VERSIONING.md](VERSIONING.md), the
+schema migration alone takes this to a minor bump.
+
+### Added
+
+- **Persistent workspace** at `~/.hermes/workspace` (`TERMINAL_CWD`).
+  Each turn is prepended a short `<workspace>` directive naming the
+  cwd, listing any attached inputs, and stating that files written
+  outside the workspace (`/tmp`, `/root`, …) are ephemeral and not
+  captured — the model otherwise defaulted to `/tmp` for scratch
+  projects and the deliverables were silently wiped. Files the agent
+  creates or changes in the workspace are captured back into the
+  lab's `output/` dir each turn (relpaths preserved, dep/cache dirs
+  excluded, traversal-guarded). Tool caches redirected under
+  `~/.hermes` so installs survive container recreate.
+- **Native cron, driven by Bob.** Hermes' own `cronjob` tool is
+  unlocked (`HERMES_INTERACTIVE=1`); the gateway-thread heartbeat
+  Hermes normally provides is replaced by the control-plane's
+  scheduler, which ticks each always-on agent on every poll and
+  surfaces job output into the lab feed. New adapter endpoints:
+  - `POST /v1/cron/tick` — fire due jobs once (file-locked, safe to
+    overlap, returns immediately while the job runs in background).
+  - `GET /v1/cron/output?since=<epoch>` — collect output written
+    under `~/.hermes/cron/output/{job_id}/{ts}.md` since `since`.
+  Both endpoints are `Authorization: Bearer <AGENT_SECRET>`-authed
+  (same token the LLM gateway already uses).
+- **Operator-attached resources surface to Hermes.** Lab resources
+  cross the container boundary as base64 bytes over `/v1/agent/run`
+  (the Hermes container deliberately does not mount the shared
+  `lab_resources` volume) and are materialized into the workspace
+  cwd, where Hermes reads them with native `read_file` / `terminal`.
+  Per-file 20 MB cap, 30 MB total inbound, 50 MB total outbound.
+- **Durable `hermes_activated` flag.** Activate/Deactivate persist
+  the flag so the scheduler's reconciler can bring containers back
+  up after a `bob-api` restart. Auto-set true when the agent has
+  cron jobs (so the scheduler knows to keep it always-on).
+
+### Fixed
+
+- **Native cron jobs no longer fail with `Unknown provider 'openai'`.**
+  The adapter was persisting `model.provider="openai"` into
+  `~/.hermes/config.yaml`, but `openai` isn't in Hermes'
+  `PROVIDER_REGISTRY` (only `openai-api` / `openai-codex`). Persist
+  `provider: custom` instead — Hermes' `resolve_runtime_provider`
+  trusts the gateway `base_url` for the `custom` provider and rebuilds
+  the same `chat_completions` runtime that interactive turns use.
+- **Deliverables no longer land in `/tmp`** (invisible + wiped on
+  container recreate). Workspace directive is now prepended to
+  **every** task, not just tasks with attached inputs; the adapter
+  also chdir's to the workspace so any `os.getcwd()` fallback hits
+  the captured volume.
+
+### Schema migration
+
+- `0016_hermes_activated` — additive only.
+  - `ALTER TABLE library_agents ADD COLUMN IF NOT EXISTS hermes_activated boolean NOT NULL DEFAULT false`
+  - `ALTER TABLE lab_agents ADD COLUMN IF NOT EXISTS hermes_activated boolean NOT NULL DEFAULT false`
+  - Existing rows backfill to `false` via the column default. Zero
+    downtime, idempotent on re-run.
+
+### Upgrade notes
+
+Main host: `git pull && bash deploy-prod.sh`. `deploy-prod.sh` runs
+the migration automatically and rebuilds `bob-hermes-adapter:latest`
+when `hermes-adapter/Dockerfile` is present. **Existing per-agent
+Hermes containers must be recreated** to pick up the new adapter
+image (Deactivate → Activate in the UI, or `docker rm` + Activate).
+No `claude-cli/` rebuild required (no changes since 0.12.8).
+See [UPGRADE.md](UPGRADE.md#0128--0130) for the full procedure.
+
 ## [0.12.8] — 2026-06-18 — Fresh-install fixes: `Default`-model labs run + "Awaiting input" UI hint
 
 Two distinct fresh-install bugs both surfaced from a clean deploy of 0.12.7.

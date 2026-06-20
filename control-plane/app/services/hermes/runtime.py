@@ -130,6 +130,10 @@ async def ensure_hermes(agent_key: UUID | str) -> str:
                 detach=True,
                 network=DOCKER_NETWORK,
                 volumes={_volume(agent_key): {"bind": "/root/.hermes", "mode": "rw"}},
+                # AGENT_SECRET lets the adapter authenticate Bob's cron-driving
+                # calls (/v1/cron/tick, /v1/cron/output) — same shared token the
+                # LLM gateway already uses.
+                environment={"AGENT_SECRET": settings.agent_secret},
                 mem_limit=f"{HERMES_MEM_MB}m",
                 nano_cpus=int(HERMES_CPUS * 1e9),
                 labels={

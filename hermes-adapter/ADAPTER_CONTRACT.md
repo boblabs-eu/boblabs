@@ -48,7 +48,8 @@ return the final reply. Request:
     "api_key":          "secret-or-null",
     "model_identifier": "qwen2.5:14b"
   },
-  "options": {}
+  "options": {},
+  "resources": [{"name": "data.csv", "content_b64": "...", "size_bytes": 1234}]
 }
 ```
 
@@ -65,6 +66,17 @@ Contract points:
 - `options` keys understood: `max_iterations` (Hermes loop cap per turn, default 30),
   `max_continuations` (task-completion rounds, default 6), `session_id` (default `boblab`).
   Ignore unknown keys.
+- `resources` (optional) are operator-attached **input files**, each
+  `{name, content_b64, size_bytes?}`. The adapter materializes them as **real files**
+  into the agent's **workspace** — `TERMINAL_CWD` (`~/.hermes/workspace`), Hermes' own
+  working directory — so the agent reads them straight from its cwd with native
+  `read_file`/`terminal`. Every task (with or without inputs) is prepended a short
+  `<workspace>` directive naming the cwd, listing any attached inputs, and stating that
+  files written outside the workspace (`/tmp`, `/root`, …) are ephemeral and **not**
+  captured — the model otherwise defaults to `/tmp` for scratch projects. The control-plane
+  reads inputs off the shared `lab_resources` volume; the Hermes container never mounts that
+  volume (deliberate isolation), so files cross as bytes here. Names are reduced to their
+  basename (path-traversal safe). Missing/oversize files are skipped.
 - Run synchronously; the control-plane waits up to `HERMES_DEFAULT_TIMEOUT_SEC`
   (default **900s**). Long turns are expected.
 
@@ -86,14 +98,49 @@ Response `200`:
 
 ```json
 {
-  "content": "Hermes' final reply for the turn (required, plain text/markdown)",
-  "usage":   {"tokens_in": 123, "tokens_out": 456},
-  "steps":   [{"type": "tool", "name": "web_search", "summary": "..."}]
+  "content":   "Hermes' final reply for the turn (required, plain text/markdown)",
+  "usage":     {"tokens_in": 123, "tokens_out": 456},
+  "steps":     [{"type": "tool", "name": "web_search", "summary": "..."}],
+  "outputs":   [{"name": "proj/renders/out.mp4", "content_b64": "...", "size_bytes": 789}],
+  "cron_jobs": 0
 }
 ```
-`usage` and `steps` are optional (defaulted to zero/empty by the control-plane).
+`usage`, `steps`, `outputs`, `cron_jobs` are optional (defaulted by the control-plane).
+`outputs` are files the agent **created or changed in its workspace this turn** (paths
+RELATIVE to the workspace; dependency/cache dirs excluded). The control-plane writes them
+under the lab's `output/` dir, structure preserved, so the existing OUTPUTS panel +
+download endpoint surface them. Each is size-capped; oversize files are skipped and logged.
+`cron_jobs` is the count of native cron jobs the agent currently has — the control-plane
+uses it to keep the container always-on (see below).
 Errors: any non-2xx with a JSON `{"detail": "..."}` body; the message is surfaced
 verbatim to the operator in the lab transcript.
+
+### Native cron — driven by Bob (`/v1/cron/tick`, `/v1/cron/output`)
+
+Hermes' native scheduler (`cronjob` tool → `~/.hermes/cron/jobs.json`; runner
+`cron.scheduler.tick()`) normally fires from the gateway's 60 s background thread. The
+adapter runs no gateway, so **Bob is the external heartbeat**. Both endpoints require
+`Authorization: Bearer <AGENT_SECRET>` (the same shared token the LLM gateway uses; passed
+into the container as the `AGENT_SECRET` env). When `AGENT_SECRET` is unset the adapter
+allows unauthenticated calls (dev compat, like the gateway).
+
+- **`POST /v1/cron/tick`** → `{"triggered": true}`. Runs due jobs once in a background
+  thread (a job can take minutes — the call returns immediately). `tick()` is file-locked,
+  so overlapping ticks are safe (a second returns 0 while one runs). The control-plane calls
+  this on its scheduler poll for every always-on Hermes agent.
+- **`GET /v1/cron/output?since=<epoch_seconds>`** → `{"outputs": [{job_id, file, mtime,
+  content}], "now": <epoch>}`. Job output written under `~/.hermes/cron/output/{job_id}/
+  {ts}.md` since `since`. The control-plane polls this and posts new entries to the lab feed.
+
+For autonomous runs to have an LLM, the adapter persists each request's `model` into
+`~/.hermes/config.yaml` (`model.default/provider/base_url/api_key`); `run_job` reads it
+fresh each tick, so scheduled jobs reach the same provider (Bob's LLM gateway) with the
+model the operator last selected. The OpenAI-compatible gateway is persisted as Hermes'
+generic **`custom`** provider (its `resolve_runtime_provider` trusts `model.base_url` once
+the provider is `custom`, yielding the same `chat_completions` runtime as an interactive
+turn). Do **not** persist `provider: openai` — it isn't in Hermes' provider registry and a
+cron run would raise `Unknown provider 'openai'`. The `cronjob` tool is enabled via
+`HERMES_INTERACTIVE=1`.
 
 ## Image sketch
 

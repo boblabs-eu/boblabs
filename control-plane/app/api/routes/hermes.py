@@ -52,7 +52,7 @@ async def _get_hermes_agent(db, agent_id: UUID):
 @router.post("/{agent_id}/hermes/activate")
 async def activate_hermes(agent_id: UUID, db: DbSession, _user: dict = Depends(require_admin)):
     """Pop (or start) the agent's Hermes container and wait until healthy."""
-    _agent, key = await _get_hermes_agent(db, agent_id)
+    agent, key = await _get_hermes_agent(db, agent_id)
     try:
         url = await ensure_hermes(key)
     except HermesNotConfiguredError as exc:
@@ -61,13 +61,26 @@ async def activate_hermes(agent_id: UUID, db: DbSession, _user: dict = Depends(r
         raise HTTPException(504, str(exc))
     except Exception as exc:  # noqa: BLE001 — docker daemon errors etc.
         raise HTTPException(502, f"Failed to start Hermes container: {exc}")
+    # Persist activation so the scheduler keeps this container always-on and
+    # restores it after a bob-api restart.
+    try:
+        agent.hermes_activated = True
+        await db.commit()
+    except Exception:  # noqa: BLE001 — never fail activation over the flag
+        await db.rollback()
     return {"status": "running", "url": url}
 
 
 @router.post("/{agent_id}/hermes/deactivate")
 async def deactivate_hermes(agent_id: UUID, db: DbSession, _user: dict = Depends(require_admin)):
     """Stop the agent's Hermes container (memory volume is kept)."""
-    _agent, key = await _get_hermes_agent(db, agent_id)
+    agent, key = await _get_hermes_agent(db, agent_id)
+    # Clear the durable flag so the scheduler stops keeping it always-on.
+    try:
+        agent.hermes_activated = False
+        await db.commit()
+    except Exception:  # noqa: BLE001
+        await db.rollback()
     stopped = await stop_hermes(key)
     return {"status": "stopped" if stopped else "not_running"}
 

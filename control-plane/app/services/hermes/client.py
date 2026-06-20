@@ -34,12 +34,16 @@ async def run_hermes_task(
     model: dict,
     history: list[dict] | None = None,
     options: dict | None = None,
+    resources: list[dict] | None = None,
     timeout_sec: int | None = None,
 ) -> dict:
     """Run one Hermes agent turn. Returns the adapter's result dict:
 
-    ``{"content": str, "usage": {"tokens_in": int, "tokens_out": int}, "steps": [...]}``
-    (usage/steps optional per contract — normalized to safe defaults here).
+    ``{"content": str, "usage": {"tokens_in", "tokens_out"}, "steps": [...], "outputs": [...]}``
+    (usage/steps/outputs optional per contract — normalized to safe defaults here).
+    ``resources`` are operator-attached input files (``{name, content_b64}``) the
+    adapter materializes inside the agent's container; ``outputs`` are files the
+    agent produced.
     """
     payload = {
         "system_prompt": system_prompt or "",
@@ -47,6 +51,7 @@ async def run_hermes_task(
         "model": model,
         "history": history or [],
         "options": options or {},
+        "resources": resources or [],
     }
     timeout = float(timeout_sec or settings.hermes_default_timeout_sec)
     try:
@@ -75,7 +80,45 @@ async def run_hermes_task(
         "tokens_in": int(usage.get("tokens_in") or 0),
         "tokens_out": int(usage.get("tokens_out") or 0),
         "steps": data.get("steps") or [],
+        "outputs": data.get("outputs") or [],
+        "cron_jobs": int(data.get("cron_jobs") or 0),
     }
+
+
+async def cron_tick(base_url: str) -> bool:
+    """Fire the agent's native cron scheduler once — Bob is the external 60 s
+    heartbeat the scheduler expects. Fire-and-forget (the adapter runs jobs in a
+    background thread); returns True if the trigger was accepted."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(
+                f"{base_url}/v1/cron/tick",
+                headers={"Authorization": f"Bearer {settings.agent_secret}"},
+            )
+            return r.status_code < 400
+    except httpx.HTTPError as exc:
+        logger.debug("cron tick to %s failed: %s", base_url, exc)
+        return False
+
+
+async def cron_output(base_url: str, since: float = 0.0) -> dict:
+    """Fetch cron job outputs written since ``since`` (epoch seconds). Returns the
+    adapter's ``{"outputs": [{job_id, file, mtime, content}], "now": float}`` —
+    or empty/echoed-cursor on failure (so the caller never advances past unread output)."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(
+                f"{base_url}/v1/cron/output",
+                params={"since": since},
+                headers={"Authorization": f"Bearer {settings.agent_secret}"},
+            )
+            if r.status_code >= 400:
+                return {"outputs": [], "now": since}
+            data = r.json()
+            return data if isinstance(data, dict) else {"outputs": [], "now": since}
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.debug("cron output from %s failed: %s", base_url, exc)
+        return {"outputs": [], "now": since}
 
 
 async def hermes_health(base_url: str) -> bool:

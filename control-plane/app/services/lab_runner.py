@@ -1079,7 +1079,13 @@ class LabRunner:
 
                 if is_hermes_agent(agent):
                     agent_tools = []
-                    result = await execute_hermes_turn(db, agent, task_item.instruction)
+                    result = await execute_hermes_turn(
+                        db,
+                        agent,
+                        task_item.instruction,
+                        resources=lab_resources,
+                        lab_id=lab.id,
+                    )
                 elif await dispatcher.is_claude_agent(agent, lab=lab):
                     # ── Full-capacity claude-agent:* backend: Claude Code runs
                     # its OWN tools + loop inside the wrapper and returns the final
